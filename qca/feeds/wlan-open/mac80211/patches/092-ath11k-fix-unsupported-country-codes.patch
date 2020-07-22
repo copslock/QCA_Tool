@@ -1,0 +1,31 @@
+--- a/drivers/net/wireless/ath/ath11k/reg.c
++++ b/drivers/net/wireless/ath/ath11k/reg.c
+@@ -41,6 +41,15 @@ static bool ath11k_regdom_changes(struct
+ 	return memcmp(regd->alpha2, alpha2, 2) != 0;
+ }
+ 
++static bool ath11k_reg_validate_alpha2(char *alpha2)
++{
++	if (alpha2[0] < 'A' || alpha2[0] > 'Z' ||
++	    alpha2[1] < 'A' || alpha2[1] > 'Z')
++		return false;
++	else
++		return true;
++}
++
+ static void
+ ath11k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
+ {
+@@ -69,6 +78,12 @@ ath11k_reg_notifier(struct wiphy *wiphy,
+ 		return;
+ 	}
+ 
++	if (!ath11k_reg_validate_alpha2(request->alpha2)) {
++		ath11k_warn(ar->ab,
++			    "Unsupported country code, only ISO/IEC alpha2 is allowed\n");
++		return;
++	}
++
+ 	if (!ath11k_regdom_changes(ar, request->alpha2)) {
+ 		ath11k_dbg(ar->ab, ATH11K_DBG_REG, "Country is already set\n");
+ 		return;

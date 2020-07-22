@@ -1,0 +1,38 @@
+--- a/ap.c
++++ b/ap.c
+@@ -6835,6 +6835,7 @@ enum sigma_cmd_result cmd_ap_config_comm
+ 	enum driver_type drv;
+ 	DIR *dir;
+ 	struct dirent *entry;
++	struct stat stats;
+ 	const char *key_mgmt;
+ #ifdef ANDROID
+ 	struct group *gr;
+@@ -7959,13 +7960,20 @@ skip_key_mgmt:
+ 
+ 			path[sizeof(path) - 1] = 0;
+ 
+-			snprintf(buf, sizeof(buf),
+-				 "echo %s > %s/ath10k/burst_dur", "0 0 8000 8000", path);
+-			system(buf);
+-			if (system(buf) != 0) {
+-				sigma_dut_print(dut, DUT_MSG_ERROR, "failed to set burst");
+-				closedir(dir);
+-				return 0;
++			/*
++			 * Burst duration is only applicable for ath10k
++			 * So that limiting to ath10k
++			 */
++			snprintf(path+strlen(path), sizeof(buf), "/%s", "ath10k");
++			if(stat(path, &stats) == 0) {
++				snprintf(buf, sizeof(buf),
++					 "echo %s > %s/burst_dur", "0 0 8000 8000", path);
++				system(buf);
++				if (system(buf) != 0) {
++					sigma_dut_print(dut, DUT_MSG_ERROR, "failed to set burst");
++					closedir(dir);
++					return 0;
++				}
+ 			}
+ 
+ 			break;

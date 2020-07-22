@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+#
+# Copyright (c) 2019-2020 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+START=15
+
+boot() {
+        if  [ -e "/tmp/acfg-app" ]
+        then
+            killall acfg_tool
+            rm -f /tmp/acfg-app
+        fi
+        /usr/sbin/acfg_tool -e -s > /dev/console &
+}

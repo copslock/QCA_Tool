@@ -1,0 +1,261 @@
+Index: sigma-dut-20190930/ap.c
+===================================================================
+--- sigma-dut-20190930.orig/ap.c
++++ sigma-dut-20190930/ap.c
+@@ -423,6 +423,8 @@ static enum ap_mode get_mode(const char
+ 		return AP_11ac;
+ 	else if (strcasecmp(str, "11ad") == 0)
+ 		return AP_11ad;
++	else if (strcasecmp(str, "11ax") == 0 || strcasecmp(str, "ax") == 0)
++		return AP_11ax;
+ 	else
+ 		return AP_inval;
+ }
+@@ -643,7 +645,8 @@ static enum sigma_cmd_result cmd_ap_set_
+ 			free(str);
+ 			return 0;
+ 		}
+-		if (dut->ap_mode == AP_11ac && dut->ap_80plus80 != 1)
++		if ((dut->ap_mode == AP_11ac || dut->ap_mode == AP_11ax)
++		     && dut->ap_80plus80 != 1)
+ 			dut->ap_chwidth = AP_80;
+ 
+ 		if (pos) {
+@@ -654,7 +657,7 @@ static enum sigma_cmd_result cmd_ap_set_
+ 				free(str);
+ 				return 0;
+ 			}
+-			if (dut->ap_mode_1 == AP_11ac)
++			if (dut->ap_mode_1 == AP_11ac || dut->ap_mode == AP_11ax)
+ 				dut->ap_chwidth_1 = AP_80;
+ 			dut->ap_is_dual = 1;
+ 		}
+@@ -6956,6 +6959,13 @@ enum sigma_cmd_result cmd_ap_config_comm
+ 		ifname = get_main_ifname();
+ 		fprintf(f, "hw_mode=ad\n");
+ 		break;
++	case AP_11ax:
++		ifname = get_main_ifname();
++		if (dut->ap_channel >= 36)
++			fprintf(f, "hw_mode=a\n");
++		else
++			fprintf(f, "hw_mode=g\n");
++		break;
+ 	default:
+ 		fclose(f);
+ 		return -1;
+@@ -7021,9 +7031,12 @@ enum sigma_cmd_result cmd_ap_config_comm
+ 
+ 	if ((drv == DRIVER_MAC80211 || drv == DRIVER_QNXNTO ||
+ 	     drv == DRIVER_LINUX_WCN) &&
+-	    dut->ap_mode == AP_11ac) {
++	     (dut->ap_mode == AP_11ac || dut->ap_mode == AP_11ax)) {
+ 		int ht40plus = 0, ht40minus = 0;
+ 
++		if (dut->ap_mode == AP_11ax)
++			fprintf(f, "ieee80211ax=1\n");
++
+ 		fprintf(f, "ieee80211ac=1\n"
+ 			"ieee80211n=1\n");
+ 
+@@ -7042,7 +7055,8 @@ enum sigma_cmd_result cmd_ap_config_comm
+ 
+ 	if ((drv == DRIVER_MAC80211 || drv == DRIVER_QNXNTO ||
+ 	     drv == DRIVER_LINUX_WCN) &&
+-	    (dut->ap_mode == AP_11ac || dut->ap_mode == AP_11na)) {
++	    (dut->ap_mode == AP_11ac || dut->ap_mode == AP_11na ||
++	     (dut->ap_mode == AP_11ax && dut->ap_channel >= 36))) {
+ 		if (dut->ap_countrycode[0])
+ 			fprintf(f, "country_code=%s\n", dut->ap_countrycode);
+                 else
+@@ -7698,7 +7712,7 @@ skip_key_mgmt:
+ 			fprintf(f, "fragment_size=128\n");
+ 	}
+ 
+-	if (dut->program == PROGRAM_VHT) {
++	if (dut->program == PROGRAM_VHT || dut->program == PROGRAM_HE) {
+ 		int vht_oper_centr_freq_idx;
+ 		char vht_capab[256] = "";
+ 		int len = 0;
+@@ -7712,31 +7726,31 @@ skip_key_mgmt:
+ 
+ 		switch (dut->ap_chwidth) {
+ 		case AP_20:
+-			dut->ap_vht_chwidth = AP_20_40_VHT_OPER_CHWIDTH;
++			dut->ap_oper_chwidth = AP_20_40_OPER_CHWIDTH;
+ 			vht_oper_centr_freq_idx =
+ 				get_oper_centr_freq_seq_idx(20,
+ 							    dut->ap_channel);
+ 			break;
+ 		case AP_40:
+-			dut->ap_vht_chwidth = AP_20_40_VHT_OPER_CHWIDTH;
++			dut->ap_oper_chwidth = AP_20_40_OPER_CHWIDTH;
+ 			vht_oper_centr_freq_idx =
+ 				get_oper_centr_freq_seq_idx(40,
+ 							    dut->ap_channel);
+ 			break;
+ 		case AP_80:
+-			dut->ap_vht_chwidth = AP_80_VHT_OPER_CHWIDTH;
++			dut->ap_oper_chwidth = AP_80_OPER_CHWIDTH;
+ 			vht_oper_centr_freq_idx =
+ 				get_oper_centr_freq_seq_idx(80,
+ 							    dut->ap_channel);
+ 			break;
+ 		case AP_160:
+-			dut->ap_vht_chwidth = AP_160_VHT_OPER_CHWIDTH;
++			dut->ap_oper_chwidth = AP_160_OPER_CHWIDTH;
+ 			vht_oper_centr_freq_idx =
+ 				get_oper_centr_freq_seq_idx(160,
+ 							    dut->ap_channel);
+ 			break;
+ 		default:
+-			dut->ap_vht_chwidth = VHT_DEFAULT_OPER_CHWIDTH;
++			dut->ap_oper_chwidth = VHT_DEFAULT_OPER_CHWIDTH;
+ 			vht_oper_centr_freq_idx =
+ 				get_oper_centr_freq_seq_idx(80,
+ 							    dut->ap_channel);
+@@ -7744,7 +7758,7 @@ skip_key_mgmt:
+ 		}
+ 		fprintf(f, "vht_oper_centr_freq_seg0_idx=%d\n",
+ 			vht_oper_centr_freq_idx);
+-		fprintf(f, "vht_oper_chwidth=%d\n", dut->ap_vht_chwidth);
++		fprintf(f, "vht_oper_chwidth=%d\n", dut->ap_oper_chwidth);
+ 
+ 		if (dut->ap_sgi80 || dut->ap_txBF ||
+ 		    dut->ap_ldpc != VALUE_NOT_SET ||
+@@ -7764,6 +7778,57 @@ skip_key_mgmt:
+ 		}
+ 	}
+ 
++	if (dut->program == PROGRAM_HE) {
++		int he_oper_centr_freq_idx;
++
++		if (check_channel(dut->ap_channel) < 0) {
++			send_resp(dut, conn, SIGMA_INVALID,
++				  "errorCode,Invalid channel");
++			fclose(f);
++			return 0;
++		}
++
++		switch (dut->ap_chwidth) {
++		case AP_20:
++			dut->ap_oper_chwidth = AP_20_40_OPER_CHWIDTH;
++			he_oper_centr_freq_idx =
++				get_oper_centr_freq_seq_idx(20,
++							    dut->ap_channel);
++			break;
++		case AP_40:
++			dut->ap_oper_chwidth = AP_20_40_OPER_CHWIDTH;
++			he_oper_centr_freq_idx =
++				get_oper_centr_freq_seq_idx(40,
++							    dut->ap_channel);
++			break;
++		case AP_80:
++			dut->ap_oper_chwidth = AP_80_OPER_CHWIDTH;
++			he_oper_centr_freq_idx =
++				get_oper_centr_freq_seq_idx(80,
++							    dut->ap_channel);
++			break;
++		case AP_160:
++			dut->ap_oper_chwidth = AP_160_OPER_CHWIDTH;
++			he_oper_centr_freq_idx =
++				get_oper_centr_freq_seq_idx(160,
++							    dut->ap_channel);
++			break;
++		default:
++			dut->ap_oper_chwidth = HE_DEFAULT_OPER_CHWIDTH;
++			he_oper_centr_freq_idx =
++				get_oper_centr_freq_seq_idx(80,
++							    dut->ap_channel);
++			break;
++		}
++		fprintf(f, "he_oper_centr_freq_seg0_idx=%d\n",
++			he_oper_centr_freq_idx);
++		fprintf(f, "he_oper_chwidth=%d\n", dut->ap_oper_chwidth);
++		fprintf(f, "he_su_beamformer=%d\n", dut->ap_txBF);
++		fprintf(f, "he_mu_beamformer=%d\n", dut->ap_mu_txBF);
++		/* Disable BSS Color config by default */
++		fprintf(f, "he_bss_color=1\n");
++	}
++
+ 	if (dut->ap_key_mgmt == AP_WPA2_OWE && dut->ap_tag_ssid[0][0] &&
+ 	    dut->ap_tag_key_mgmt[0] == AP2_OPEN) {
+ 		/* OWE transition mode */
+@@ -8576,6 +8641,38 @@ static enum sigma_cmd_result cmd_ap_rese
+ 			ath_reset_vht_defaults(dut);
+ 	}
+ 
++	if (dut->program == PROGRAM_HE) {
++		dut->ap_mode = AP_11ax;
++		dut->ap_channel = 36;
++		dut->ap_chwidth = AP_80;
++		dut->ap_bcc = VALUE_DISABLED;
++		dut->ap_ampdu = VALUE_NOT_SET;
++		dut->ap_dfs_mode = AP_DFS_MODE_ENABLED;
++		dut->ap_he_frag = VALUE_NOT_SET;
++		dut->ap_he_dlofdma = VALUE_NOT_SET;
++		dut->ap_he_ulofdma = VALUE_NOT_SET;
++		dut->ap_he_ppdu = PPDU_NOT_SET;
++		dut->ap_ba_bufsize = BA_BUFSIZE_NOT_SET;
++		dut->ap_fixed_rate = 0;
++		dut->ap_txBF = 1;
++		dut->ap_mu_txBF = 1;
++		dut->ap_numsounddim = -1;
++		if (dut->device_type == AP_testbed) {
++			dut->ap_amsdu = VALUE_DISABLED;
++			dut->ap_bcc = VALUE_DISABLED;
++			dut->ap_ldpc = VALUE_DISABLED;
++			dut->ap_tx_stbc = 0;
++			dut->ap_he_dlofdma = VALUE_DISABLED;
++			dut->ap_he_frag = VALUE_DISABLED;
++			dut->ap_noack = VALUE_DISABLED;
++			dut->ap_rx_streams = 2;
++			dut->ap_tx_streams = 2;
++			dut->ap_txBF = 0;
++			dut->ap_mu_txBF = 0;
++			dut->ap_ba_bufsize = BA_BUFSIZE_64;
++               }
++	}
++
+ 	if (dut->program == PROGRAM_IOTLP) {
+ 		dut->wnm_bss_max_feature = VALUE_DISABLED;
+ 		dut->wnm_bss_max_idle_time = 0;
+Index: sigma-dut-20190930/sigma_dut.h
+===================================================================
+--- sigma-dut-20190930.orig/sigma_dut.h
++++ sigma-dut-20190930/sigma_dut.h
+@@ -82,7 +82,8 @@ struct sigma_dut;
+ #define MAX_RADIO 3
+ 
+ /* Set default operating channel width 80 MHz */
+-#define VHT_DEFAULT_OPER_CHWIDTH AP_80_VHT_OPER_CHWIDTH
++#define VHT_DEFAULT_OPER_CHWIDTH AP_80_OPER_CHWIDTH
++#define HE_DEFAULT_OPER_CHWIDTH AP_80_OPER_CHWIDTH
+ 
+ typedef unsigned int u32;
+ typedef uint16_t u16;
+@@ -430,6 +431,7 @@ struct sigma_dut {
+ 		AP_11ng,
+ 		AP_11ac,
+ 		AP_11ad,
++		AP_11ax,
+ 		AP_inval
+ 	} ap_mode;
+ 	int ap_channel;
+@@ -587,11 +589,11 @@ struct sigma_dut {
+ 	int ap_allow_vht_wep;
+ 	int ap_allow_vht_tkip;
+ 
+-	enum ap_vht_chwidth {
+-		AP_20_40_VHT_OPER_CHWIDTH,
+-		AP_80_VHT_OPER_CHWIDTH,
+-		AP_160_VHT_OPER_CHWIDTH
+-	} ap_vht_chwidth;
++	enum ap_oper_chwidth {
++		AP_20_40_OPER_CHWIDTH,
++		AP_80_OPER_CHWIDTH,
++		AP_160_OPER_CHWIDTH
++	} ap_oper_chwidth;
+ 	int ap_txBF;
+ 	int ap_mu_txBF;
+ 	enum ap_regulatory_mode {

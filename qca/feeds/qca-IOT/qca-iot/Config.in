@@ -1,0 +1,6 @@
+config FEATURE_QCA_IOT
+	bool "Enables qca-iot package for QCA402x support"
+	default no
+	select PACKAGE_qca-IOT
+	help
+		Enables qca-IOT for QCA402x support

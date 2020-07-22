@@ -1,0 +1,30 @@
+--- a/drivers/net/wireless/ath/ath11k/debugfs_sta.c
++++ b/drivers/net/wireless/ath/ath11k/debugfs_sta.c
+@@ -9,6 +9,27 @@
+ #include "peer.h"
+ #include "debug.h"
+ 
++static u8 mac80211_bw_to_ath11k_bw( u8 bw)
++{
++	u8 ret = 0;
++	switch (bw) {
++	case RATE_INFO_BW_20:
++		ret = ATH11K_BW_20;
++		break;
++	case RATE_INFO_BW_40:
++		ret = ATH11K_BW_40;
++		break;
++	case RATE_INFO_BW_80:
++		ret = ATH11K_BW_80;
++		break;
++	case RATE_INFO_BW_160:
++		ret = ATH11K_BW_160;
++		break;
++	}
++
++	return ret;
++}
++
+ void
+ ath11k_accumulate_per_peer_tx_stats(struct ath11k_sta *arsta,
+ 				    struct ath11k_per_peer_tx_stats *peer_stats,

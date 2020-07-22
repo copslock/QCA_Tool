@@ -1,0 +1,74 @@
+--- a/ap.c
++++ b/ap.c
+@@ -2955,12 +2955,7 @@ static void get_if_name(struct sigma_dut
+ 	} else if (drv == DRIVER_WIL6210) {
+ 		ifname = get_main_ifname();
+ 	} else {
+-		if ((dut->ap_mode == AP_11a || dut->ap_mode == AP_11na ||
+-		     dut->ap_mode == AP_11ac) &&
+-		    if_nametoindex("wlan1") > 0)
+-			ifname = "wlan1";
+-		else
+-			ifname = "wlan0";
++		ifname = get_main_ifname();
+ 	}
+ 
+ 	if (drv == DRIVER_OPENWRT && wlan_tag > 1) {
+@@ -6879,28 +6874,13 @@ enum sigma_cmd_result cmd_ap_config_comm
+ 	case AP_11g:
+ 	case AP_11b:
+ 	case AP_11ng:
+-		ifname = (drv == DRIVER_MAC80211) ? "wlan0" : "ath0";
+-		if ((drv == DRIVER_QNXNTO || drv == DRIVER_LINUX_WCN) &&
+-		    sigma_main_ifname)
+-			ifname = sigma_main_ifname;
++		ifname = get_main_ifname();
+ 		fprintf(f, "hw_mode=g\n");
+ 		break;
+ 	case AP_11a:
+ 	case AP_11na:
+ 	case AP_11ac:
+-		if (drv == DRIVER_QNXNTO || drv == DRIVER_LINUX_WCN) {
+-			if (sigma_main_ifname)
+-				ifname = sigma_main_ifname;
+-			else
+-				ifname = "wlan0";
+-		} else if (drv == DRIVER_MAC80211) {
+-			if (if_nametoindex("wlan1") > 0)
+-				ifname = "wlan1";
+-			else
+-				ifname = "wlan0";
+-		} else {
+-			ifname = get_main_ifname();
+-		}
++		ifname = get_main_ifname();
+ 		fprintf(f, "hw_mode=a\n");
+ 		break;
+ 	case AP_11ad:
+@@ -8621,9 +8601,9 @@ static enum sigma_cmd_result cmd_ap_get_
+ 		else
+ 			version = "Unknown";
+ 
+-		if (if_nametoindex("wlan1") > 0)
+-			snprintf(resp, sizeof(resp), "interface,wlan0_24G "
+-				 "wlan1_5G,agent,1.0,version,%s", version);
++		if (if_nametoindex("wlan0") > 0)
++			snprintf(resp, sizeof(resp), "interface,wlan0_5G "
++				 "wlan1_24G,agent,1.0,version,%s", version);
+ 		else
+ 			snprintf(resp, sizeof(resp), "interface,wlan0_any,"
+ 				 "agent,1.0,version,%s", version);
+@@ -8737,12 +8717,7 @@ static int ap_inject_frame(struct sigma_
+ 	char cbuf[100];
+ 	struct ifreq ifr;
+ 
+-	if ((dut->ap_mode == AP_11a || dut->ap_mode == AP_11na ||
+-	     dut->ap_mode == AP_11ac) &&
+-	    if_nametoindex("wlan1") > 0)
+-		ifname = "wlan1";
+-	else
+-		ifname = "wlan0";
++	ifname = get_main_ifname();
+ 
+ 	if (hwaddr_aton(sta_addr, addr_sta) < 0)
+ 		return -1;

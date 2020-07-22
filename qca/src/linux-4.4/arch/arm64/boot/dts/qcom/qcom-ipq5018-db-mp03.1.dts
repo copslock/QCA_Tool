@@ -1,0 +1,271 @@
+/dts-v1/;
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#include "qcom-ipq5018.dtsi"
+
+/ {
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+	model = "Qualcomm Technologies, Inc. IPQ5018/DB-MP03.1";
+	compatible = "qcom,ipq5018-db-mp03.1", "qcom,ipq5018";
+	interrupt-parent = <&intc>;
+
+	aliases {
+		sdhc1 = &sdhc_1; /* SDC1 eMMC slot */
+		serial0 = &blsp1_uart1;
+	};
+
+	chosen {
+		linux,initrd-end = <0x46000000>;
+		linux,initrd-start = <0x44000000>;
+		bootargs = "root=/dev/ram0 rw init=/init";
+		stdout-path = "serial0";
+	};
+
+	soc {
+		gcc: gcc@1800000 {
+			gcc-use-dummy;
+		};
+
+		serial@78af000 {
+			status = "ok";
+		};
+
+		qpic_bam: dma@7984000{
+			status = "ok";
+		};
+
+		nand: qpic-nand@79b0000 {
+			pinctrl-0 = <&qspi_nand_pins>;
+			pinctrl-names = "default";
+			status = "ok";
+		};
+
+		spi_0: spi@78b5000 { /* BLSP1 QUP0 */
+			pinctrl-0 = <&blsp0_spi_pins>;
+			pinctrl-names = "default";
+			cs-select = <0>;
+			status = "ok";
+
+			m25p80@0 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0>;
+				compatible = "n25q128a11";
+				linux,modalias = "m25p80", "n25q128a11";
+				spi-max-frequency = <50000000>;
+				use-default-sizes;
+			};
+		};
+
+		mdio0: mdio@88000 {
+			status = "ok";
+
+			ethernet-phy@0 {
+				reg = <7>;
+			};
+		};
+
+		mdio1: mdio@90000 {
+			status = "ok";
+			pinctrl-0 = <&mdio1_pins>;
+			pinctrl-names = "default";
+			phy-reset-gpio = <&tlmm 39 0>;
+
+			ethernet-phy@0 {
+				reg = <0>;
+			};
+
+			ethernet-phy@1 {
+				reg = <1>;
+			};
+
+			ethernet-phy@2 {
+				reg = <2>;
+			};
+
+			ethernet-phy@3 {
+				reg = <3>;
+			};
+		};
+
+		ess-instance {
+			num_devices = <0x2>;
+			ess-switch@0x39c00000 {
+				compatible = "qcom,ess-switch-ipq50xx";
+				device_id = <0>;
+				switch_mac_mode = <0xf>; /* mac mode for uniphy instance*/
+				qcom,port_phyinfo {
+					port@0 {
+						port_id = <1>;
+						phy_address = <7>;
+					};
+					port@1 {
+						port_id = <2>;
+						forced-speed = <1000>;
+						forced-duplex = <1>;
+					};
+				};
+			};
+			ess-switch1@1 {
+				compatible = "qcom,ess-switch-qca83xx";
+				device_id = <1>;
+				switch_access_mode = "mdio";
+				mdio-bus = <&mdio1>;
+				switch_cpu_bmp = <0x40>;  /* cpu port bitmap */
+				switch_lan_bmp = <0x1e>; /* lan port bitmap */
+				switch_wan_bmp = <0x0>;  /* wan port bitmap */
+				qca,ar8327-initvals = <
+						0x00004 0x7600000   /* PAD0_MODE */
+						0x00008 0x1000000   /* PAD5_MODE */
+						0x0000c 0x80        /* PAD6_MODE */
+						0x000e4 0xaa545     /* MAC_POWER_SEL */
+						0x000e0 0xc74164de  /* SGMII_CTRL */
+						0x0007c 0x4e        /* PORT0_STATUS */
+						0x00094 0x4e        /* PORT6_STATUS */
+				>;
+				qcom,port_phyinfo {
+					port@0 {
+						port_id = <1>;
+						phy_address = <0>;
+					};
+					port@1 {
+						port_id = <2>;
+						phy_address = <1>;
+					};
+					port@2 {
+						port_id = <3>;
+						phy_address = <2>;
+					};
+					port@3 {
+						port_id = <4>;
+						phy_address = <3>;
+					};
+				};
+			};
+		};
+
+		pcie1: pci@a0000000 {
+			status = "ok";
+		};
+
+		wifi0: wifi@c000000 {
+			status = "disabled";
+		};
+
+		qcom,test@0 {
+			status = "ok";
+		};
+
+		pcie1_rp {
+		        status = "ok";
+
+			mhi_1: qcom,mhi@1 {
+				reg = <0 0 0 0 0 >;
+				qrtr_instance_id = <0x8002>;
+			};
+		};
+	};
+};
+
+&tlmm {
+	pinctrl-0 = <&uart_pins>;
+	pinctrl-names = "default";
+
+	uart_pins: uart_pins {
+		uart_rx_tx {
+			pins = "gpio20", "gpio21";
+			function = "blsp0_uart0";
+			bias-disable;
+		};
+	};
+
+	blsp0_spi_pins: blsp0_spi_pins {
+		mux {
+			pins = "gpio10", "gpio11", "gpio12", "gpio13";
+			function = "blsp0_spi";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	qspi_nand_pins: qspi_nand_pins {
+		qspi_cs {
+				pins = "gpio8";
+				function = "qspi_cs";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		qspi_data_0 {
+				pins = "gpio7";
+				function = "qspi0";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		qspi_data_1 {
+				pins = "gpio6";
+				function = "qspi1";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		qspi_data_2 {
+				pins = "gpio5";
+				function = "qspi2";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		qspi_data_3 {
+				pins = "gpio4";
+				function = "qspi3";
+				drive-strength = <8>;
+				bias-disable;
+			};
+	};
+
+	mdio1_pins: mdio_pinmux {
+		mux_0 {
+			pins = "gpio36";
+			function = "mdc";
+			drive-strength = <8>;
+			bias-pull-up;
+		};
+
+		mux_1 {
+			pins = "gpio37";
+			function = "mdio";
+			drive-strength = <8>;
+			bias-pull-up;
+		};
+	};
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&eud {
+	status = "ok";
+};
+
+&pcie0 {
+	status = "ok";
+	perst-gpio = <&tlmm 15 1>;
+};
+
+&pcie1 {
+	status = "ok";
+	perst-gpio = <&tlmm 18 1>;
+};

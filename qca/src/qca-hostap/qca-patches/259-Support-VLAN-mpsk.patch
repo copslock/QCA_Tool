@@ -1,0 +1,980 @@
+diff --git a/hostapd/ctrl_iface.c b/hostapd/ctrl_iface.c
+index 8692284..dea11d0 100644
+--- a/hostapd/ctrl_iface.c
++++ b/hostapd/ctrl_iface.c
+@@ -2150,7 +2150,7 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
+ 		if (hostapd_drv_set_key(hapd->conf->iface, hapd,
+ 					hapd->last_igtk_alg,
+ 					broadcast_ether_addr,
+-					hapd->last_igtk_key_idx, 1, NULL, 0,
++					hapd->last_igtk_key_idx, 0, 0, 1, NULL, 0,
+ 					zero, hapd->last_igtk_len) < 0)
+ 			return -1;
+ 
+@@ -2158,7 +2158,7 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
+ 		return hostapd_drv_set_key(hapd->conf->iface, hapd,
+ 					   hapd->last_igtk_alg,
+ 					   broadcast_ether_addr,
+-					   hapd->last_igtk_key_idx, 1, NULL, 0,
++					   hapd->last_igtk_key_idx, 0, 0, 1, NULL, 0,
+ 					   hapd->last_igtk,
+ 					   hapd->last_igtk_len);
+ 	}
+@@ -2174,7 +2174,7 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
+ 		if (hostapd_drv_set_key(hapd->conf->iface, hapd,
+ 					hapd->last_gtk_alg,
+ 					broadcast_ether_addr,
+-					hapd->last_gtk_key_idx, 1, NULL, 0,
++					hapd->last_gtk_key_idx, 0, 0, 1, NULL, 0,
+ 					zero, hapd->last_gtk_len) < 0)
+ 			return -1;
+ 
+@@ -2182,7 +2182,7 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
+ 		return hostapd_drv_set_key(hapd->conf->iface, hapd,
+ 					   hapd->last_gtk_alg,
+ 					   broadcast_ether_addr,
+-					   hapd->last_gtk_key_idx, 1, NULL, 0,
++					   hapd->last_gtk_key_idx, 0, 0, 1, NULL, 0,
+ 					   hapd->last_gtk, hapd->last_gtk_len);
+ 	}
+ 
+@@ -2199,13 +2199,13 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
+ 	/* First, use a zero key to avoid any possible duplicate key avoidance
+ 	 * in the driver. */
+ 	if (hostapd_drv_set_key(hapd->conf->iface, hapd, sta->last_tk_alg,
+-				sta->addr, sta->last_tk_key_idx, 1, NULL, 0,
++				sta->addr, sta->last_tk_key_idx, 0, 0, 1, NULL, 0,
+ 				zero, sta->last_tk_len) < 0)
+ 		return -1;
+ 
+ 	/* Set the previously configured key to reset its TSC/RSC */
+ 	return hostapd_drv_set_key(hapd->conf->iface, hapd, sta->last_tk_alg,
+-				   sta->addr, sta->last_tk_key_idx, 1, NULL, 0,
++				   sta->addr, sta->last_tk_key_idx, 0, 0, 1, NULL, 0,
+ 				   sta->last_tk, sta->last_tk_len);
+ }
+ 
+@@ -2253,7 +2253,7 @@ static int hostapd_ctrl_set_key(struct hostapd_data *hapd, const char *cmd)
+ 		return -1;
+ 
+ 	wpa_printf(MSG_INFO, "TESTING: Set key");
+-	return hostapd_drv_set_key(hapd->conf->iface, hapd, alg, addr, idx,
++	return hostapd_drv_set_key(hapd->conf->iface, hapd, alg, addr, idx, 0, 0,
+ 				   set_tx, seq, 6, key, key_len);
+ }
+ 
+@@ -2269,7 +2269,7 @@ static void restore_tk(void *ctx1, void *ctx2)
+ 	 * in replay protection issues for now since there is no clean way of
+ 	 * preventing encryption of a single EAPOL frame. */
+ 	hostapd_drv_set_key(hapd->conf->iface, hapd, sta->last_tk_alg,
+-			    sta->addr, sta->last_tk_key_idx, 1, NULL, 0,
++			    sta->addr, sta->last_tk_key_idx, 0, 0, 1, NULL, 0,
+ 			    sta->last_tk, sta->last_tk_len);
+ }
+ 
+@@ -2293,7 +2293,7 @@ static int hostapd_ctrl_resend_m1(struct hostapd_data *hapd, const char *cmd)
+ 		wpa_printf(MSG_INFO, "TESTING: Clear TK for " MACSTR,
+ 			   MAC2STR(sta->addr));
+ 		hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_NONE,
+-				    sta->addr, sta->last_tk_key_idx, 0, NULL, 0,
++				    sta->addr, sta->last_tk_key_idx, 0, 0, 0, NULL, 0,
+ 				    NULL, 0);
+ 	}
+ 
+@@ -2323,7 +2323,7 @@ static int hostapd_ctrl_resend_m3(struct hostapd_data *hapd, const char *cmd)
+ 		wpa_printf(MSG_INFO, "TESTING: Clear TK for " MACSTR,
+ 			   MAC2STR(sta->addr));
+ 		hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_NONE,
+-				    sta->addr, sta->last_tk_key_idx, 0, NULL, 0,
++				    sta->addr, sta->last_tk_key_idx, 0, 0, 0, NULL, 0,
+ 				    NULL, 0);
+ 	}
+ 
+@@ -2353,7 +2353,7 @@ static int hostapd_ctrl_resend_group_m1(struct hostapd_data *hapd,
+ 		wpa_printf(MSG_INFO, "TESTING: Clear TK for " MACSTR,
+ 			   MAC2STR(sta->addr));
+ 		hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_NONE,
+-				    sta->addr, sta->last_tk_key_idx, 0, NULL, 0,
++				    sta->addr, sta->last_tk_key_idx, 0, 0, 0, NULL, 0,
+ 				    NULL, 0);
+ 	}
+ 
+diff --git a/qca-patches/120-Do-not-clear-wep_default_key-values-when-interface-is-down.patch b/qca-patches/120-Do-not-clear-wep_default_key-values-when-interface-is-down.patch
+index 03f76c9..905250a 100644
+--- a/qca-patches/120-Do-not-clear-wep_default_key-values-when-interface-is-down.patch
++++ b/qca-patches/120-Do-not-clear-wep_default_key-values-when-interface-is-down.patch
+@@ -17,7 +17,7 @@ index 961ed92..72b9100 100644
+ -	if (hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
+ +	ret = hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
+  				broadcast_ether_addr,
+- 				eapol->default_wep_key_idx, 1, NULL, 0,
++ 				eapol->default_wep_key_idx, 0, 0, 1, NULL, 0,
+  				eapol->default_wep_key,
+ -				hapd->conf->default_wep_key_len)) {
+ +				hapd->conf->default_wep_key_len);
+diff --git a/src/ap/ap_drv_ops.c b/src/ap/ap_drv_ops.c
+index 89baff0..a074b5b 100644
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
+@@ -688,14 +688,14 @@ int hostapd_driver_set_noa(struct hostapd_data *hapd, u8 count, int start,
+ 
+ int hostapd_drv_set_key(const char *ifname, struct hostapd_data *hapd,
+ 			enum wpa_alg alg, const u8 *addr,
+-			int key_idx, int set_tx,
++			int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 			const u8 *seq, size_t seq_len,
+ 			const u8 *key, size_t key_len)
+ {
+ 	if (hapd->driver == NULL || hapd->driver->set_key == NULL)
+ 		return 0;
+ 	return hapd->driver->set_key(ifname, hapd->drv_priv, alg, addr,
+-				     key_idx, set_tx, seq, seq_len, key,
++				     key_idx, vlan_id, vlan_found, set_tx, seq, seq_len, key,
+ 				     key_len);
+ }
+ 
+diff --git a/src/ap/ap_drv_ops.h b/src/ap/ap_drv_ops.h
+index ac14d41..18289a7 100644
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
+@@ -90,7 +90,7 @@ int hostapd_driver_set_noa(struct hostapd_data *hapd, u8 count, int start,
+ int hostapd_drv_set_key(const char *ifname,
+ 			struct hostapd_data *hapd,
+ 			enum wpa_alg alg, const u8 *addr,
+-			int key_idx, int set_tx,
++			int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 			const u8 *seq, size_t seq_len,
+ 			const u8 *key, size_t key_len);
+ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
+@@ -158,12 +158,12 @@ static inline int hostapd_drv_set_countermeasures(struct hostapd_data *hapd,
+ 
+ static inline int hostapd_drv_set_sta_vlan(const char *ifname,
+ 					   struct hostapd_data *hapd,
+-					   const u8 *addr, int vlan_id)
++					   const u8 *addr, int vlan_id, u8 vlan_found)
+ {
+ 	if (hapd->driver == NULL || hapd->driver->set_sta_vlan == NULL)
+ 		return 0;
+ 	return hapd->driver->set_sta_vlan(hapd->drv_priv, addr, ifname,
+-					  vlan_id);
++					  vlan_id, vlan_found);
+ }
+ 
+ static inline int hostapd_drv_get_inact_sec(struct hostapd_data *hapd,
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 60e9468..f5eecda 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -291,7 +291,7 @@ static void hostapd_broadcast_key_clear_iface(struct hostapd_data *hapd,
+ 	if (!ifname || !hapd->drv_priv)
+ 		return;
+ 	for (i = 0; i < NUM_WEP_KEYS; i++) {
+-		if (hostapd_drv_set_key(ifname, hapd, WPA_ALG_NONE, NULL, i,
++		if (hostapd_drv_set_key(ifname, hapd, WPA_ALG_NONE, NULL, i, 0, 0,
+ 					0, NULL, 0, NULL, 0)) {
+ 			wpa_printf(MSG_DEBUG, "Failed to clear default "
+ 				   "encryption keys (ifname=%s keyidx=%d)",
+@@ -301,7 +301,7 @@ static void hostapd_broadcast_key_clear_iface(struct hostapd_data *hapd,
+ 	if (hapd->conf->ieee80211w) {
+ 		for (i = NUM_WEP_KEYS; i < NUM_WEP_KEYS + 2; i++) {
+ 			if (hostapd_drv_set_key(ifname, hapd, WPA_ALG_NONE,
+-						NULL, i, 0, NULL,
++						NULL, i, 0, 0, 0, NULL,
+ 						0, NULL, 0)) {
+ 				wpa_printf(MSG_DEBUG, "Failed to clear "
+ 					   "default mgmt encryption keys "
+@@ -327,7 +327,7 @@ static int hostapd_broadcast_wep_set(struct hostapd_data *hapd)
+ 	idx = ssid->wep.idx;
+ 	if (ssid->wep.default_len &&
+ 	    hostapd_drv_set_key(hapd->conf->iface,
+-				hapd, WPA_ALG_WEP, broadcast_ether_addr, idx,
++				hapd, WPA_ALG_WEP, broadcast_ether_addr, idx, 0, 0,
+ 				1, NULL, 0, ssid->wep.key[idx],
+ 				ssid->wep.len[idx])) {
+ 		wpa_printf(MSG_WARNING, "Could not set WEP encryption.");
+@@ -553,7 +553,7 @@ static int hostapd_setup_encryption(char *iface, struct hostapd_data *hapd)
+ 	for (i = 0; i < 4; i++) {
+ 		if (hapd->conf->ssid.wep.key[i] &&
+ 		    hostapd_drv_set_key(iface, hapd, WPA_ALG_WEP, NULL, i,
+-					i == hapd->conf->ssid.wep.idx, NULL, 0,
++					i == hapd->conf->ssid.wep.idx, 0, 0, NULL, 0,
+ 					hapd->conf->ssid.wep.key[i],
+ 					hapd->conf->ssid.wep.len[i])) {
+ 			wpa_printf(MSG_WARNING, "Could not set WEP "
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index e38e5f4..a726d89 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -4948,7 +4948,7 @@ static void hostapd_set_wds_encryption(struct hostapd_data *hapd,
+ 	for (i = 0; i < 4; i++) {
+ 		if (ssid->wep.key[i] &&
+ 		    hostapd_drv_set_key(ifname_wds, hapd, WPA_ALG_WEP, NULL, i,
+-					i == ssid->wep.idx, NULL, 0,
++					i == ssid->wep.idx, 0, 0, NULL, 0,
+ 					ssid->wep.key[i], ssid->wep.len[i])) {
+ 			wpa_printf(MSG_WARNING,
+ 				   "Could not set WEP keys for WDS interface; %s",
+diff --git a/src/ap/ieee802_1x.c b/src/ap/ieee802_1x.c
+index 3031a20..9808376 100644
+--- a/src/ap/ieee802_1x.c
++++ b/src/ap/ieee802_1x.c
+@@ -281,10 +281,10 @@ static void ieee802_1x_tx_key(struct hostapd_data *hapd, struct sta_info *sta)
+ 		ieee802_1x_tx_key_one(hapd, sta, 0, 0, ikey,
+ 				      hapd->conf->individual_wep_key_len);
+ 
+-		/* TODO: set encryption in TX callback, i.e., only after STA
++		/*  set encryption in TX callback, i.e., only after STA
+ 		 * has ACKed EAPOL-Key frame */
+ 		if (hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
+-					sta->addr, 0, 1, NULL, 0, ikey,
++					sta->addr, 0, 0, 0, 1, NULL, 0, ikey,
+ 					hapd->conf->individual_wep_key_len)) {
+ 			wpa_printf(MSG_ERROR,
+ 				   "Could not set individual WEP encryption");
+@@ -2178,7 +2178,7 @@ static void ieee802_1x_rekey(void *eloop_ctx, void *timeout_ctx)
+ 	 * after new broadcast key has been sent to all stations. */
+ 	ret = hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
+ 				broadcast_ether_addr,
+-				eapol->default_wep_key_idx, 1, NULL, 0,
++				eapol->default_wep_key_idx, 0, 0, 1, NULL, 0,
+ 				eapol->default_wep_key,
+ 				hapd->conf->default_wep_key_len);
+ 	if (ret && (ret != -ENETDOWN)) {
+@@ -2475,7 +2475,7 @@ int ieee802_1x_init(struct hostapd_data *hapd)
+ 	if (hapd->conf->default_wep_key_len) {
+ 		for (i = 0; i < 4; i++)
+ 			hostapd_drv_set_key(hapd->conf->iface, hapd,
+-					    WPA_ALG_NONE, NULL, i, 0, NULL, 0,
++					    WPA_ALG_NONE, NULL, i, 0, 0, 0, NULL, 0,
+ 					    NULL, 0);
+ 
+ 		ieee802_1x_rekey(hapd, NULL);
+diff --git a/src/ap/sta_info.c b/src/ap/sta_info.c
+index f3c76a5..8285451 100644
+--- a/src/ap/sta_info.c
++++ b/src/ap/sta_info.c
+@@ -1026,6 +1026,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
+ 	struct hostapd_vlan *vlan = NULL;
+ 	int ret;
+ 	int old_vlanid = sta->vlan_id_bound;
++	u8 vlan_found= 1;
+ 
+ 	iface = hapd->conf->iface;
+ 	if (hapd->conf->ssid.vlan[0])
+@@ -1053,8 +1054,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
+ 			       HOSTAPD_LEVEL_DEBUG, "could not find VLAN for "
+ 			       "binding station to (vlan_id=%d)",
+ 			       sta->vlan_id);
+-		ret = -1;
+-		goto done;
++		vlan_found = 0;
+ 	} else if (vlan && vlan->dynamic_vlan > 0) {
+ 		vlan->dynamic_vlan++;
+ 		hostapd_logger(hapd, sta->addr,
+@@ -1075,7 +1075,7 @@ skip_counting:
+ 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
+ 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
+ 
+-	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
++	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id, vlan_found);
+ 	if (ret < 0) {
+ 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+ 			       HOSTAPD_LEVEL_DEBUG, "could not bind the STA "
+@@ -1085,7 +1085,6 @@ skip_counting:
+ 	/* During 1x reauth, if the vlan id changes, then remove the old id. */
+ 	if (old_vlanid > 0 && old_vlanid != sta->vlan_id)
+ 		vlan_remove_dynamic(hapd, old_vlanid);
+-done:
+ 
+ 	return ret;
+ #else /* CONFIG_NO_VLAN */
+diff --git a/src/ap/wpa_auth_glue.c b/src/ap/wpa_auth_glue.c
+index 7c1bb6c..a40b6e8 100644
+--- a/src/ap/wpa_auth_glue.c
++++ b/src/ap/wpa_auth_glue.c
+@@ -368,11 +368,16 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
+ {
+ 	struct hostapd_data *hapd = ctx;
+ 	const char *ifname = hapd->conf->iface;
++	u8 vlan_found = 0;
+ 
+ 	if (vlan_id > 0) {
+ 		ifname = hostapd_get_vlan_id_ifname(hapd->conf->vlan, vlan_id);
+-		if (ifname == NULL)
+-			return -1;
++		if (ifname == NULL) {
++			vlan_found = 0;
++			ifname = hapd->conf->iface;
++		} else {
++			vlan_found = 1;
++		}
+ 	}
+ 
+ #ifdef CONFIG_TESTING_OPTIONS
+@@ -404,7 +409,7 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
+ 		hapd->last_gtk_len = key_len;
+ 	}
+ #endif /* CONFIG_TESTING_OPTIONS */
+-	return hostapd_drv_set_key(ifname, hapd, alg, addr, idx, 1, NULL, 0,
++	return hostapd_drv_set_key(ifname, hapd, alg, addr, idx, vlan_id, vlan_found, 1, NULL, 0,
+ 				   key, key_len);
+ }
+ 
+@@ -809,27 +814,31 @@ static int hostapd_wpa_auth_update_vlan(void *ctx, const u8 *addr, int vlan_id)
+ #ifndef CONFIG_NO_VLAN
+ 	struct hostapd_data *hapd = ctx;
+ 	struct sta_info *sta;
+-	struct vlan_description vlan_desc;
++	//struct vlan_description vlan_desc;
+ 
+ 	sta = ap_get_sta(hapd, addr);
+ 	if (!sta)
+ 		return -1;
+ 
++#if 0
+ 	os_memset(&vlan_desc, 0, sizeof(vlan_desc));
+ 	vlan_desc.notempty = 1;
+ 	vlan_desc.untagged = vlan_id;
+ 	if (!hostapd_vlan_valid(hapd->conf->vlan, &vlan_desc)) {
+ 		wpa_printf(MSG_INFO, "Invalid VLAN ID %d in wpa_psk_file",
+ 			   vlan_id);
+-		return -1;
++		//return -1;
+ 	}
+ 
+ 	if (ap_sta_set_vlan(hapd, sta, &vlan_desc) < 0) {
+ 		wpa_printf(MSG_INFO,
+ 			   "Failed to assign VLAN ID %d from wpa_psk_file to "
+ 			   MACSTR, vlan_id, MAC2STR(sta->addr));
+-		return -1;
++		//return -1;
+ 	}
++#endif
++
++	sta->vlan_id = vlan_id;
+ 
+ 	wpa_printf(MSG_INFO,
+ 		   "Assigned VLAN ID %d from wpa_psk_file to " MACSTR,
+@@ -950,6 +959,7 @@ static int hostapd_wpa_auth_set_vlan(void *ctx, const u8 *sta_addr,
+ 	if (!sta || !sta->wpa_sm)
+ 		return -1;
+ 
++#if 0
+ 	if (vlan->notempty &&
+ 	    !hostapd_vlan_valid(hapd->conf->vlan, vlan)) {
+ 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+@@ -958,6 +968,7 @@ static int hostapd_wpa_auth_set_vlan(void *ctx, const u8 *sta_addr,
+ 			       vlan->untagged, vlan->tagged[0] ? "+" : "");
+ 		return -1;
+ 	}
++#endif
+ 
+ 	if (ap_sta_set_vlan(hapd, sta, vlan) < 0)
+ 		return -1;
+diff --git a/src/common/qca-vendor.h b/src/common/qca-vendor.h
+index 18df4bb..7d6971a 100644
+--- a/src/common/qca-vendor.h
++++ b/src/common/qca-vendor.h
+@@ -609,6 +609,20 @@ enum qca_radiotap_vendor_ids {
+  *	coex chain mode from application/service.
+  *	The attributes defined in enum qca_vendor_attr_btc_chain_mode are used
+  *	to deliver the parameters.
++ *
++ * @QCA_NL80211_VENDOR_SUBCMD_VLAN_ID: This vendor subcommand
++ *	is used by the driver to set VLAN ID to STA based on the psk,
++ *	when driver doesn't create vlan interface. VLAN ID is used to add
++ *	VLAN header for rx packet from wireless client before giving to bridge.
++ *	Attributes for this event are specified in
++ *	enum qca_wlan_set_vlan_id_attr.
++ * @QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY: This vendor subcommand
++ *	is used by the driver to set VLAN group key only,
++ *	when driver doesn't create vlan interface but uses vconfig to
++ *	create seperate netdev for each VLAN. non-VLAN group key will use
++ *	set_key as default. Attributes for this event
++ *	are specified in enum qca_wlan_vlan_setkey_attr.
++ *
+  */
+ enum qca_nl80211_vendor_subcmds {
+ 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
+@@ -784,6 +798,8 @@ enum qca_nl80211_vendor_subcmds {
+ 	QCA_NL80211_VENDOR_SUBCMD_AVOID_FREQUENCY_EXT = 183,
+ 	QCA_NL80211_VENDOR_SUBCMD_ADD_STA_NODE = 184,
+ 	QCA_NL80211_VENDOR_SUBCMD_BTC_CHAIN_MODE = 185,
++	QCA_NL80211_VENDOR_SUBCMD_VLAN_ID = 297,
++	QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY = 298,
+ };
+ 
+ enum qca_wlan_vendor_attr {
+@@ -8051,4 +8067,46 @@ enum qca_vendor_attr_btc_chain_mode {
+ 	QCA_VENDOR_ATTR_BTC_CHAIN_MODE_LAST - 1,
+ };
+ 
++/**
++ * enum qca_wlan_vlan_attr - Parameters for setting STA VLAN ID
++ *
++ * Associated Vendor Command:
++ * QCA_NL80211_VENDOR_SUBCMD_VLAN_ID
++ */
++enum qca_wlan_set_vlan_id_attr {
++	QCA_WLAN_VENDOR_ATTR_VLAN_INVALID = 0,
++	/* 6-byte MAC address */
++	QCA_WLAN_VENDOR_ATTR_VLAN_MAC_ADDR,
++	/* Unsigned 16-bit attribute for holding the VLAN ID */
++	QCA_WLAN_VENDOR_ATTR_VLAN_ID,
++
++	/* keep last */
++	QCA_WLAN_VENDOR_ATTR_VLAN_LAST,
++	QCA_WLAN_VENDOR_ATTR_VLAN_PARAM_MAX =
++		QCA_WLAN_VENDOR_ATTR_VLAN_LAST - 1,
++};
++
++/**
++ * enum qca_wlan_vlan_setkey_attr - Parameters for VLAN group key
++ *
++ * Associated Vendor Command:
++ * QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY
++ */
++enum qca_wlan_vlan_setkey_attr {
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_INVALID = 0,
++	/* 6-byte MAC address */
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_MAC_ADDR,
++	/* Unsigned 16-bit attribute for holding the VLAN ID */
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_VLAN_ID,
++	/* Unsigned 32-bit attribute for holding the key index */
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYIX,
++	/* An array of unsigned 8-bit keydata */
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYDATA,
++
++	/* keep last */
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_LAST,
++	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_PARAM_MAX =
++		QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_LAST - 1,
++};
++
+ #endif /* QCA_VENDOR_H */
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 5ba2d10..ba03898 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2325,6 +2325,7 @@ struct wpa_driver_ops {
+ 	 *	specified key index is to be cleared
+ 	 * @key_idx: key index (0..3), usually 0 for unicast keys;
+ 	 *      4..5 for IGTK; 6..7 for BIGTK
++	 * @vlan_id: vlan index is 12-bit,range can be 0..4095
+ 	 * @set_tx: configure this key as the default Tx key (only used when
+ 	 *	driver does not support separate unicast/individual key
+ 	 * @seq: sequence number/packet number, seq_len octets, the next
+@@ -2359,7 +2360,7 @@ struct wpa_driver_ops {
+ 	 * example on how this can be done.
+ 	 */
+ 	int (*set_key)(const char *ifname, void *priv, enum wpa_alg alg,
+-		       const u8 *addr, int key_idx, int set_tx,
++		       const u8 *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 		       const u8 *seq, size_t seq_len,
+ 		       const u8 *key, size_t key_len);
+ 
+@@ -3123,7 +3124,7 @@ struct wpa_driver_ops {
+ 	 * domains to be used with a single BSS.
+ 	 */
+ 	int (*set_sta_vlan)(void *priv, const u8 *addr, const char *ifname,
+-			    int vlan_id);
++			    int vlan_id, u8 vlan_found);
+ 
+ 	/**
+ 	 * commit - Optional commit changes handler (AP only)
+diff --git a/src/drivers/driver_atheros.c b/src/drivers/driver_atheros.c
+index a572985..c516ed5 100644
+--- a/src/drivers/driver_atheros.c
++++ b/src/drivers/driver_atheros.c
+@@ -536,7 +536,7 @@ atheros_del_key(void *priv, const u8 *addr, int key_idx)
+ 
+ static int
+ atheros_set_key(const char *ifname, void *priv, enum wpa_alg alg,
+-		const u8 *addr, int key_idx, int set_tx, const u8 *seq,
++		const u8 *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx, const u8 *seq,
+ 		size_t seq_len, const u8 *key, size_t key_len)
+ {
+ 	struct atheros_driver_data *drv = priv;
+diff --git a/src/drivers/driver_bsd.c b/src/drivers/driver_bsd.c
+index 8667ee5..d6e2a71 100644
+--- a/src/drivers/driver_bsd.c
++++ b/src/drivers/driver_bsd.c
+@@ -332,7 +332,8 @@ bsd_ctrl_iface(void *priv, int enable)
+ 
+ static int
+ bsd_set_key(const char *ifname, void *priv, enum wpa_alg alg,
+-	    const unsigned char *addr, int key_idx, int set_tx, const u8 *seq,
++	    const unsigned char *addr, int key_idx, int vlan_id, int vlan_found,
++	     int set_tx, const u8 *seq,
+ 	    size_t seq_len, const u8 *key, size_t key_len)
+ {
+ 	struct ieee80211req_key wk;
+diff --git a/src/drivers/driver_hostap.c b/src/drivers/driver_hostap.c
+index 186eccb..32e9411 100644
+--- a/src/drivers/driver_hostap.c
++++ b/src/drivers/driver_hostap.c
+@@ -397,7 +397,7 @@ static int hostapd_ioctl(void *priv, struct prism2_hostapd_param *param,
+ 
+ static int wpa_driver_hostap_set_key(const char *ifname, void *priv,
+ 				     enum wpa_alg alg, const u8 *addr,
+-				     int key_idx, int set_tx,
++				     int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 				     const u8 *seq, size_t seq_len,
+ 				     const u8 *key, size_t key_len)
+ {
+diff --git a/src/drivers/driver_ndis.c b/src/drivers/driver_ndis.c
+index 5b4b924..7c60f59 100644
+--- a/src/drivers/driver_ndis.c
++++ b/src/drivers/driver_ndis.c
+@@ -965,7 +965,7 @@ static int wpa_driver_ndis_add_wep(struct wpa_driver_ndis_data *drv,
+ 
+ static int wpa_driver_ndis_set_key(const char *ifname, void *priv,
+ 				   enum wpa_alg alg, const u8 *addr,
+-				   int key_idx, int set_tx,
++				   int key_idx, int vlan_id, int vlan_found, int set_tx,
+ 				   const u8 *seq, size_t seq_len,
+ 				   const u8 *key, size_t key_len)
+ {
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 63cf4a3..a21eed0 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -3005,7 +3005,7 @@ static int nl80211_set_pmk(struct wpa_driver_nl80211_data *drv,
+ 
+ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
+ 				      enum wpa_alg alg, const u8 *addr,
+-				      int key_idx, int set_tx,
++				      int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 				      const u8 *seq, size_t seq_len,
+ 				      const u8 *key, size_t key_len)
+ {
+@@ -3013,6 +3013,7 @@ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
+ 	int ifindex;
+ 	struct nl_msg *msg;
+ 	struct nl_msg *key_msg;
++	struct nlattr *attr;
+ 	int ret;
+ 	int tdls = 0;
+ 
+@@ -3121,48 +3122,70 @@ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
+ 	    !is_broadcast_ether_addr(addr))
+ 		return ret;
+ 
+-	key_msg = nlmsg_alloc();
+-	if (!key_msg)
+-		return -ENOBUFS;
++	if (vlan_id && !vlan_found) {
++		if (!drv->vendor_vlan_setkey) {
++			return -1;
++		}
++		if (!(msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR)) ||
++				nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
++				nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
++					QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY) ||
++				!(attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA)) ||
++				nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYIX, key_idx) ||
++				nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_VLAN_ID, vlan_id) ||
++				nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_MAC_ADDR, ETH_ALEN, addr) ||
++				nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYDATA, key_len, key)) {
++			nl80211_nlmsg_clear(msg);
++			nlmsg_free(msg);
++			return -1;
++		}
++		nla_nest_end(msg, attr);
++	} else {
++		key_msg = nlmsg_alloc();
++		if (!key_msg)
++			return -ENOBUFS;
++		msg = nl80211_ifindex_msg(drv, ifindex, 0, NL80211_CMD_SET_KEY);
+ 
+-	msg = nl80211_ifindex_msg(drv, ifindex, 0, NL80211_CMD_SET_KEY);
+-	if (!msg)
+-		goto fail2;
+-	if (!key_msg ||
+-	    nla_put_u8(key_msg, NL80211_KEY_IDX, key_idx) ||
+-	    nla_put_flag(key_msg, (alg == WPA_ALG_IGTK ||
++		if (!msg)
++			goto fail2;
++		if (!key_msg ||
++	    	    nla_put_u8(key_msg, NL80211_KEY_IDX, key_idx) ||
++	    	    nla_put_flag(key_msg, (alg == WPA_ALG_IGTK ||
+ 				   alg == WPA_ALG_BIP_GMAC_128 ||
+ 				   alg == WPA_ALG_BIP_GMAC_256 ||
+ 				   alg == WPA_ALG_BIP_CMAC_256) ?
+-			 (key_idx == 6 || key_idx == 7 ?
+-			  NL80211_KEY_DEFAULT_BEACON :
+-			  NL80211_KEY_DEFAULT_MGMT) :
+-			 NL80211_KEY_DEFAULT))
+-		goto fail;
+-	if (addr && is_broadcast_ether_addr(addr)) {
+-		struct nlattr *types;
+-
+-		types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
+-		if (!types ||
+-		    nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_MULTICAST))
++			 	(key_idx == 6 || key_idx == 7 ?
++			  	NL80211_KEY_DEFAULT_BEACON :
++			 	NL80211_KEY_DEFAULT_MGMT) :
++			 	NL80211_KEY_DEFAULT))
+ 			goto fail;
+-		nla_nest_end(key_msg, types);
+-	} else if (addr) {
+-		struct nlattr *types;
+ 
+-		types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
+-		if (!types ||
+-		    nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_UNICAST))
++		if (addr && is_broadcast_ether_addr(addr)) {
++			struct nlattr *types;
++
++			types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
++			if (!types ||
++		    		nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_MULTICAST))
++
++				goto fail;
++			nla_nest_end(key_msg, types);
++		} else if (addr) {
++			struct nlattr *types;
++
++			types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
++			if (!types ||
++		    		nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_UNICAST))
++				goto fail;
++			nla_nest_end(key_msg, types);
++		}
++
++		if (nla_put_nested(msg, NL80211_ATTR_KEY, key_msg))
+ 			goto fail;
+-		nla_nest_end(key_msg, types);
++		nl80211_nlmsg_clear(key_msg);
++		nlmsg_free(key_msg);
++		key_msg = NULL;
+ 	}
+ 
+-	if (nla_put_nested(msg, NL80211_ATTR_KEY, key_msg))
+-		goto fail;
+-	nl80211_nlmsg_clear(key_msg);
+-	nlmsg_free(key_msg);
+-	key_msg = NULL;
+-
+ 	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
+ 	if (ret == -ENOENT)
+ 		ret = 0;
+@@ -3484,7 +3507,7 @@ retry:
+ 		if (!params->wep_key[i])
+ 			continue;
+ 		wpa_driver_nl80211_set_key(bss->ifname, bss, WPA_ALG_WEP,
+-					   NULL, i,
++					   NULL, i, 0, 0,
+ 					   i == params->wep_tx_keyidx, NULL, 0,
+ 					   params->wep_key[i],
+ 					   params->wep_key_len[i]);
+@@ -6636,22 +6659,43 @@ fail:
+ 
+ 
+ static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
+-			     const char *ifname, int vlan_id)
++			     const char *ifname, int vlan_id, u8 vlan_found)
+ {
+ 	struct wpa_driver_nl80211_data *drv = bss->drv;
+ 	struct nl_msg *msg;
++	struct nlattr *attr;
+ 	int ret;
+ 
+ 	wpa_printf(MSG_DEBUG, "nl80211: %s[%d]: set_sta_vlan(" MACSTR
+ 		   ", ifname=%s[%d], vlan_id=%d)",
+ 		   bss->ifname, if_nametoindex(bss->ifname),
+ 		   MAC2STR(addr), ifname, if_nametoindex(ifname), vlan_id);
+-	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_STATION)) ||
+-	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
+-	    nla_put_u32(msg, NL80211_ATTR_STA_VLAN, if_nametoindex(ifname))) {
+-		nlmsg_free(msg);
+-		return -ENOBUFS;
++
++	if (vlan_found || !vlan_id) 
++	{
++		if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_STATION)) ||
++		    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
++		    nla_put_u32(msg, NL80211_ATTR_STA_VLAN, if_nametoindex(ifname))) {
++			nlmsg_free(msg);
++			return -ENOBUFS;
++		}
+ 	}
++        else if(drv->vendor_vlan_id) {
++		if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
++			nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
++			nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
++			QCA_NL80211_VENDOR_SUBCMD_VLAN_ID) ||
++			!(attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA)) ||
++			nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_VLAN_ID, vlan_id) ||
++			nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_MAC_ADDR, ETH_ALEN, addr)) {
++			        nlmsg_free(msg);
++			        return -ENOBUFS;
++		}
++	       nla_nest_end(msg, attr);
++
++	 } else {
++		return -1;
++	 }
+ 
+ 	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
+ 	if (ret < 0) {
+@@ -6905,7 +6949,7 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
+ 			wpa_printf(MSG_ERROR, "nl80211: Failed to set WDS STA "
+ 				   "interface %s up", name);
+ 		}
+-		return i802_set_sta_vlan(priv, addr, name, 0);
++		return i802_set_sta_vlan(priv, addr, name, 0, 0);
+ 	} else {
+ 		if (bridge_ifname &&
+ 		    linux_br_del_if(drv->global->ioctl_sock, bridge_ifname,
+@@ -6914,7 +6958,7 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
+ 				   "nl80211: Failed to remove interface %s from bridge %s: %s",
+ 				   name, bridge_ifname, strerror(errno));
+ 
+-		i802_set_sta_vlan(priv, addr, bss->ifname, 0);
++		i802_set_sta_vlan(priv, addr, bss->ifname, 0, 0);
+ 		nl80211_remove_iface(drv, if_nametoindex(name));
+ 		os_memset(&event, 0, sizeof(event));
+ 		event.wds_sta_interface.sta_addr = addr;
+@@ -8675,12 +8719,12 @@ nl80211_tdls_disable_channel_switch(void *priv, const u8 *addr)
+ 
+ static int driver_nl80211_set_key(const char *ifname, void *priv,
+ 				  enum wpa_alg alg, const u8 *addr,
+-				  int key_idx, int set_tx,
++				  int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+ 				  const u8 *seq, size_t seq_len,
+ 				  const u8 *key, size_t key_len)
+ {
+ 	struct i802_bss *bss = priv;
+-	return wpa_driver_nl80211_set_key(ifname, bss, alg, addr, key_idx,
++	return wpa_driver_nl80211_set_key(ifname, bss, alg, addr, key_idx, vlan_id, vlan_found,
+ 					  set_tx, seq, seq_len, key, key_len);
+ }
+ 
+@@ -8762,10 +8806,10 @@ static int driver_nl80211_sta_remove(void *priv, const u8 *addr)
+ 
+ 
+ static int driver_nl80211_set_sta_vlan(void *priv, const u8 *addr,
+-				       const char *ifname, int vlan_id)
++				       const char *ifname, int vlan_id, u8 vlan_found)
+ {
+ 	struct i802_bss *bss = priv;
+-	return i802_set_sta_vlan(bss, addr, ifname, vlan_id);
++	return i802_set_sta_vlan(bss, addr, ifname, vlan_id, vlan_found);
+ }
+ 
+ 
+diff --git a/src/drivers/driver_nl80211.h b/src/drivers/driver_nl80211.h
+index 716504c..70ff70f 100644
+--- a/src/drivers/driver_nl80211.h
++++ b/src/drivers/driver_nl80211.h
+@@ -173,6 +173,8 @@ struct wpa_driver_nl80211_data {
+ 	unsigned int roam_vendor_cmd_avail:1;
+ 	unsigned int get_supported_akm_suites_avail:1;
+ 	unsigned int add_sta_node_vendor_cmd_avail:1;
++	unsigned int vendor_vlan_setkey:1;
++	unsigned int vendor_vlan_id:1;
+ 
+ 	u64 vendor_scan_cookie;
+ 	u64 remain_on_chan_cookie;
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index 0e0e8a2..7474c8f 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -797,6 +797,12 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
+ 				case QCA_NL80211_VENDOR_SUBCMD_ADD_STA_NODE:
+ 					drv->add_sta_node_vendor_cmd_avail = 1;
+ 					break;
++				case QCA_NL80211_VENDOR_SUBCMD_VLAN_ID:
++					drv->vendor_vlan_id = 1;
++					break;
++				case QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY:
++					drv->vendor_vlan_setkey = 1;
++					break;
+ #endif /* CONFIG_DRIVER_NL80211_QCA */
+ 				}
+ 			}
+diff --git a/src/drivers/driver_openbsd.c b/src/drivers/driver_openbsd.c
+index c06e75c..ec08507 100644
+--- a/src/drivers/driver_openbsd.c
++++ b/src/drivers/driver_openbsd.c
+@@ -70,8 +70,8 @@ wpa_driver_openbsd_get_capa(void *priv, struct wpa_driver_capa *capa)
+ 
+ static int
+ wpa_driver_openbsd_set_key(const char *ifname, void *priv, enum wpa_alg alg,
+-	    const unsigned char *addr, int key_idx, int set_tx, const u8 *seq,
+-	    size_t seq_len, const u8 *key, size_t key_len)
++	    const unsigned char *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx,
++	    const u8 *seq, size_t seq_len, const u8 *key, size_t key_len)
+ {
+ 	struct openbsd_driver_data *drv = priv;
+ 	struct ieee80211_keyavail keyavail;
+diff --git a/src/drivers/driver_privsep.c b/src/drivers/driver_privsep.c
+index 55cf618..b63ec4c 100644
+--- a/src/drivers/driver_privsep.c
++++ b/src/drivers/driver_privsep.c
+@@ -207,7 +207,7 @@ wpa_driver_privsep_get_scan_results2(void *priv)
+ 
+ static int wpa_driver_privsep_set_key(const char *ifname, void *priv,
+ 				      enum wpa_alg alg, const u8 *addr,
+-				      int key_idx, int set_tx,
++				      int key_idx,int vlan_id, u8 vlan_found, int set_tx,
+ 				      const u8 *seq, size_t seq_len,
+ 				      const u8 *key, size_t key_len)
+ {
+diff --git a/src/drivers/driver_wext.c b/src/drivers/driver_wext.c
+index 32c2971..447adcb 100644
+--- a/src/drivers/driver_wext.c
++++ b/src/drivers/driver_wext.c
+@@ -1827,7 +1827,7 @@ static int wpa_driver_wext_set_key_ext(void *priv, enum wpa_alg alg,
+  * SIOCSIWENCODE if the extended ioctl fails when configuring a WEP key.
+  */
+ int wpa_driver_wext_set_key(const char *ifname, void *priv, enum wpa_alg alg,
+-			    const u8 *addr, int key_idx,
++			    const u8 *addr, int key_idx, int vlan_id, u8 vlan_found,
+ 			    int set_tx, const u8 *seq, size_t seq_len,
+ 			    const u8 *key, size_t key_len)
+ {
+diff --git a/src/drivers/driver_wext.h b/src/drivers/driver_wext.h
+index b4b5960..4e0afdd 100644
+--- a/src/drivers/driver_wext.h
++++ b/src/drivers/driver_wext.h
+@@ -53,7 +53,7 @@ int wpa_driver_wext_set_ssid(void *priv, const u8 *ssid, size_t ssid_len);
+ int wpa_driver_wext_set_freq(void *priv, int freq);
+ int wpa_driver_wext_set_mode(void *priv, int mode);
+ int wpa_driver_wext_set_key(const char *ifname, void *priv, enum wpa_alg alg,
+-			    const u8 *addr, int key_idx,
++			    const u8 *addr, int key_idx, int vlan_id, u8 vlan_found,
+ 			    int set_tx, const u8 *seq, size_t seq_len,
+ 			    const u8 *key, size_t key_len);
+ int wpa_driver_wext_scan(void *priv, struct wpa_driver_scan_params *params);
+diff --git a/tests/test-eapol.c b/tests/test-eapol.c
+index 944e4cf..9b0a156 100644
+--- a/tests/test-eapol.c
++++ b/tests/test-eapol.c
+@@ -235,7 +235,7 @@ static int supp_get_beacon_ie(void *ctx)
+ 
+ 
+ static int supp_set_key(void *ctx, enum wpa_alg alg,
+-			const u8 *addr, int key_idx, int set_tx,
++			const u8 *addr, int key_idx, int vlan_id, int vlan_found, int set_tx,
+ 			const u8 *seq, size_t seq_len,
+ 			const u8 *key, size_t key_len)
+ {
+diff --git a/wpa_supplicant/driver_i.h b/wpa_supplicant/driver_i.h
+index cf9972a..e685446 100644
+--- a/wpa_supplicant/driver_i.h
++++ b/wpa_supplicant/driver_i.h
+@@ -150,7 +150,7 @@ static inline int wpa_drv_get_ssid(struct wpa_supplicant *wpa_s, u8 *ssid)
+ 
+ static inline int wpa_drv_set_key(struct wpa_supplicant *wpa_s,
+ 				  enum wpa_alg alg, const u8 *addr,
+-				  int key_idx, int set_tx,
++				  int key_idx, u8 vlan_id, u8 vlan_found, int set_tx,
+ 				  const u8 *seq, size_t seq_len,
+ 				  const u8 *key, size_t key_len)
+ {
+@@ -162,7 +162,7 @@ static inline int wpa_drv_set_key(struct wpa_supplicant *wpa_s,
+ 	}
+ 	if (wpa_s->driver->set_key) {
+ 		return wpa_s->driver->set_key(wpa_s->ifname, wpa_s->drv_priv,
+-					      alg, addr, key_idx, set_tx,
++					      alg, addr, key_idx, vlan_id, vlan_found, set_tx,
+ 					      seq, seq_len, key, key_len);
+ 	}
+ 	return -1;
+diff --git a/wpa_supplicant/wpa_priv.c b/wpa_supplicant/wpa_priv.c
+index f197352..728410b 100644
+--- a/wpa_supplicant/wpa_priv.c
++++ b/wpa_supplicant/wpa_priv.c
+@@ -404,7 +404,7 @@ static void wpa_priv_cmd_set_key(struct wpa_priv_interface *iface,
+ 
+ 	res = iface->driver->set_key(iface->ifname, iface->drv_priv,
+ 				     params->alg,
+-				     params->addr, params->key_idx,
++				     params->addr, params->key_idx, 0, 0,
+ 				     params->set_tx,
+ 				     params->seq_len ? params->seq : NULL,
+ 				     params->seq_len,
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index e6e7f6e..a05f16a 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -141,7 +141,7 @@ int wpa_set_wep_keys(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
+ 
+ 		set = 1;
+ 		wpa_drv_set_key(wpa_s, WPA_ALG_WEP, NULL,
+-				i, i == ssid->wep_tx_keyidx, NULL, 0,
++				i, 0, 0, i == ssid->wep_tx_keyidx, NULL, 0,
+ 				ssid->wep_key[i], ssid->wep_key_len[i]);
+ 	}
+ 
+@@ -197,10 +197,10 @@ int wpa_supplicant_set_wpa_none_key(struct wpa_supplicant *wpa_s,
+ 		return -1;
+ 	}
+ 
+-	/* TODO: should actually remember the previously used seq#, both for TX
++	/* should actually remember the previously used seq#, both for TX
+ 	 * and RX from each STA.. */
+ 
+-	ret = wpa_drv_set_key(wpa_s, alg, NULL, 0, 1, seq, 6, key, keylen);
++	ret = wpa_drv_set_key(wpa_s, alg, NULL, 0, 0, 0, 1, seq, 6, key, keylen);
+ 	os_memset(key, 0, sizeof(key));
+ 	return ret;
+ }
+@@ -706,12 +706,12 @@ void wpa_clear_keys(struct wpa_supplicant *wpa_s, const u8 *addr)
+ 	for (i = 0; i < max; i++) {
+ 		if (wpa_s->keys_cleared & BIT(i))
+ 			continue;
+-		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, NULL, i, 0, NULL, 0,
++		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, NULL, i, 0, 0, 0, NULL, 0,
+ 				NULL, 0);
+ 	}
+ 	if (!(wpa_s->keys_cleared & BIT(0)) && addr &&
+ 	    !is_zero_ether_addr(addr)) {
+-		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, addr, 0, 0, NULL, 0, NULL,
++		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, addr, 0, 0, 0, 0, NULL, 0, NULL,
+ 				0);
+ 		/* MLME-SETPROTECTION.request(None) */
+ 		wpa_drv_mlme_setprotection(
+diff --git a/wpa_supplicant/wpas_glue.c b/wpa_supplicant/wpas_glue.c
+index b9ca450..8904895 100644
+--- a/wpa_supplicant/wpas_glue.c
++++ b/wpa_supplicant/wpas_glue.c
+@@ -242,7 +242,7 @@ static int wpa_eapol_set_wep_key(void *ctx, int unicast, int keyidx,
+ 	}
+ 	return wpa_drv_set_key(wpa_s, WPA_ALG_WEP,
+ 			       unicast ? wpa_s->bssid : NULL,
+-			       keyidx, unicast, NULL, 0, key, keylen);
++			       keyidx, 0, 0, unicast, NULL, 0, key, keylen);
+ }
+ 
+ 
+@@ -340,7 +340,7 @@ static void wpa_supplicant_eapol_cb(struct eapol_sm *eapol,
+ 	wpa_hexdump_key(MSG_DEBUG, "RSN: Configure PMK for driver-based 4-way "
+ 			"handshake", pmk, pmk_len);
+ 
+-	if (wpa_drv_set_key(wpa_s, WPA_ALG_PMK, NULL, 0, 0, NULL, 0, pmk,
++	if (wpa_drv_set_key(wpa_s, WPA_ALG_PMK, NULL, 0, 0, 0, 0, NULL, 0, pmk,
+ 			    pmk_len)) {
+ 		wpa_printf(MSG_DEBUG, "Failed to set PMK to the driver");
+ 	}
+@@ -516,7 +516,7 @@ static int wpa_supplicant_set_key(void *_wpa_s, enum wpa_alg alg,
+ 		wpa_s->last_tk_len = key_len;
+ 	}
+ #endif /* CONFIG_TESTING_OPTIONS */
+-	return wpa_drv_set_key(wpa_s, alg, addr, key_idx, set_tx, seq, seq_len,
++	return wpa_drv_set_key(wpa_s, alg, addr, key_idx, 0, 0, set_tx, seq, seq_len,
+ 			       key, key_len);
+ }
+ 
+@@ -1160,7 +1160,7 @@ static int wpa_supplicant_key_mgmt_set_pmk(void *ctx, const u8 *pmk,
+ 
+ 	if (wpa_s->conf->key_mgmt_offload &&
+ 	    (wpa_s->drv_flags & WPA_DRIVER_FLAGS_KEY_MGMT_OFFLOAD))
+-		return wpa_drv_set_key(wpa_s, WPA_ALG_PMK, NULL, 0, 0,
++		return wpa_drv_set_key(wpa_s, WPA_ALG_PMK, NULL, 0, 0, 0, 0,
+ 				       NULL, 0, pmk, pmk_len);
+ 	else
+ 		return 0;

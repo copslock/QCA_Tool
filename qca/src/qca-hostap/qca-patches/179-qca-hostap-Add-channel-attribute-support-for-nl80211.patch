@@ -1,0 +1,28 @@
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index 37eeb5e..4999d85 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -1447,6 +1447,11 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
+ 	if (ieee80211_freq_to_chan(chan->freq, &channel) != NUM_HOSTAPD_MODES)
+ 		chan->chan = channel;
+ 
++	/*
++	 * Override Channel with driver's channel provided by regulatory
++	 */
++	if (tb_freq[NL80211_FREQUENCY_ATTR_CHANNEL])
++		chan->chan = nla_get_u16(tb_freq[NL80211_FREQUENCY_ATTR_CHANNEL]);
+ 	if (tb_freq[NL80211_FREQUENCY_ATTR_DISABLED])
+ 		chan->flag |= HOSTAPD_CHAN_DISABLED;
+ 	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_IR])
+diff --git a/src/drivers/nl80211_copy.h b/src/drivers/nl80211_copy.h
+index dd4f86e..9c537a7 100644
+--- a/src/drivers/nl80211_copy.h
++++ b/src/drivers/nl80211_copy.h
+@@ -3493,6 +3493,7 @@ enum nl80211_frequency_attr {
+ 	NL80211_FREQUENCY_ATTR_NO_20MHZ,
+ 	NL80211_FREQUENCY_ATTR_NO_10MHZ,
+ 	NL80211_FREQUENCY_ATTR_WMM,
++	NL80211_FREQUENCY_ATTR_CHANNEL,
+ 
+ 	/* keep last */
+ 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,

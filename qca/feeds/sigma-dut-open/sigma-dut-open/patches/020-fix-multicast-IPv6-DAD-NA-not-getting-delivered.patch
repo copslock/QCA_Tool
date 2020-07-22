@@ -1,0 +1,18 @@
+ ap.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/ap.c
++++ b/ap.c
+@@ -7429,8 +7429,11 @@ skip_key_mgmt:
+ 		fprintf(f, "ap_isolate=1\n");
+ 	}
+ 
+-	if (dut->ap_proxy_arp)
++	if (dut->ap_proxy_arp) {
+ 		fprintf(f, "proxy_arp=1\n");
++		if (!dut->ap_dgaf_disable)
++			fprintf(f, "na_mcast_to_ucast=1\n");
++	}
+ 
+ 	if (dut->ap_wme)
+ 		fprintf(f, "wmm_enabled=1\n");

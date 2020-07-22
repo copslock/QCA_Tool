@@ -1,0 +1,84 @@
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index b8ddf01..d9a108b 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -2913,6 +2913,52 @@ static u32 wpa_cipher_to_cipher_suite(unsigned int cipher)
+ 	return 0;
+ }
+ 
++static int wpa_cipher_to_keymgmt_suites(unsigned int keymgmt_suites, u32 suites[],
++				       int max_suites)
++{
++	int num_suites = 0;
++
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_UNSPEC_802_1X;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_PSK)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_IEEE8021X)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_802_1X;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_PSK)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_PSK;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SHA256)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SHA256;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_PSK_SHA256)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_SHA256;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_SAE)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_SAE;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_SAE)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_SAE;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SUITE_B)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FILS_SHA256)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FILS_SHA256;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FILS_SHA384)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FILS_SHA384;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_FILS_SHA256)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_FILS_SHA256;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_FILS_SHA384)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_FILS_SHA384;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_OWE)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_OWE;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_DPP)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_DPP;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_IEEE8021X_SHA384)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_802_1X_SHA384;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_CCKM)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_CCKM;
++	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_OSEN)
++		suites[num_suites++] = RSN_AUTH_KEY_MGMT_OSEN;
++
++	return num_suites;
++}
+ 
+ static int wpa_cipher_to_cipher_suites(unsigned int ciphers, u32 suites[],
+ 				       int max_suites)
+@@ -4057,6 +4103,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
+ 	int num_suites;
+ 	int smps_mode;
+ 	u32 suites[10], suite;
++	u32 akm_suites[NL80211_MAX_NR_AKM_SUITES];
+ 	u32 ver;
+ #ifdef CONFIG_MESH
+ 	struct wpa_driver_mesh_bss_params mesh_params;
+@@ -4150,14 +4197,12 @@ static int wpa_driver_nl80211_set_ap(void *priv,
+ 
+ 	wpa_printf(MSG_DEBUG, "nl80211: key_mgmt_suites=0x%x",
+ 		   params->key_mgmt_suites);
+-	num_suites = 0;
+-	if (params->key_mgmt_suites & WPA_KEY_MGMT_IEEE8021X)
+-		suites[num_suites++] = RSN_AUTH_KEY_MGMT_UNSPEC_802_1X;
+-	if (params->key_mgmt_suites & WPA_KEY_MGMT_PSK)
+-		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X;
++	num_suites = wpa_cipher_to_keymgmt_suites(params->key_mgmt_suites,
++					akm_suites, ARRAY_SIZE(akm_suites));
++
+ 	if (num_suites &&
+ 	    nla_put(msg, NL80211_ATTR_AKM_SUITES, num_suites * sizeof(u32),
+-		    suites))
++		    akm_suites))
+ 		goto fail;
+ 
+ 	if (params->key_mgmt_suites & WPA_KEY_MGMT_IEEE8021X_NO_WPA &&
