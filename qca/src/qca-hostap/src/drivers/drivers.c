@@ -46,6 +46,9 @@ const struct wpa_driver_ops *const wpa_drivers[] =
 #ifdef CONFIG_DRIVER_ATHEROS
 	&wpa_driver_atheros_ops,
 #endif /* CONFIG_DRIVER_ATHEROS */
+#ifdef CONFIG_DRIVER_ATHR
+        &wpa_driver_athr_ops, /* driver_athr.c */
+#endif /* CONFIG_DRIVER_ATHR */
 #ifdef CONFIG_DRIVER_NONE
 	&wpa_driver_none_ops,
 #endif /* CONFIG_DRIVER_NONE */

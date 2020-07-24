@@ -154,6 +154,7 @@ struct wpa_state_machine {
 	size_t fils_key_auth_len;
 	unsigned int fils_completed:1;
 #endif /* CONFIG_FILS */
+	int identity_request_retry_interval;
 
 #ifdef CONFIG_DPP2
 	struct wpabuf *dpp_z;
@@ -234,6 +235,7 @@ struct wpa_authenticator {
 #ifdef CONFIG_P2P
 	struct bitfield *ip_pool;
 #endif /* CONFIG_P2P */
+	int identity_request_retry_interval;
 };
 
 

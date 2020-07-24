@@ -6,6 +6,8 @@ ifndef CFLAGS
 CFLAGS = -MMD -O2 -Wall -g
 endif
 
+LIBS_c += -pie -znow -zrelro
+
 export LIBDIR ?= /usr/local/lib/
 export INCDIR ?= /usr/local/include/
 export BINDIR ?= /usr/local/sbin/

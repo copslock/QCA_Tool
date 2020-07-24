@@ -374,6 +374,7 @@ struct hostapd_bss_config {
 	int rsn_pairwise;
 	int rsn_preauth;
 	char *rsn_preauth_interfaces;
+	int identity_request_retry_interval;
 
 #ifdef CONFIG_IEEE80211R_AP
 	/* IEEE 802.11r - Fast BSS Transition */
@@ -742,9 +743,21 @@ struct hostapd_bss_config {
 
 	u8 transition_disable;
 
-#define BACKHAUL_BSS 1
-#define FRONTHAUL_BSS 2
-	int multi_ap; /* bitmap of BACKHAUL_BSS, FRONTHAUL_BSS */
+	/* backhaul bss is supported */
+#define BACKHAUL_BSS  BIT(0)
+	/* fronthaul bss is supported */
+#define FRONTHAUL_BSS BIT(1)
+	/* bitmap of BACKHAUL_BSS, FRONTHAUL_BSS */
+	int multi_ap;
+	/* multi_ap_profile - multi ap profile default profile is 2 */
+	int multi_ap_profile;
+	/* multi ap profile 1 clients not allowed to connect */
+#define PROFILE1_CLIENT_ASSOC_DISALLOW BIT(0)
+	/* multi ap profile 2 clients not allowed to connect */
+#define PROFILE2_CLIENT_ASSOC_DISALLOW BIT(1)
+	int multi_ap_client_disallow;
+	/* primary vlan id to used in multi_ap*/
+	int multi_ap_vlanid;
 
 #ifdef CONFIG_AIRTIME_POLICY
 	unsigned int airtime_weight;
@@ -816,6 +829,13 @@ struct hostapd_bss_config {
 	 * Range: 0-255 (default: 255)
 	 */
 	int mka_priority;
+
+	/**
+	 * macsec_csindex - chipher suite index of macsec
+	 *
+	 * Range: 0-1 (default: 0)
+	 */
+	int macsec_csindex;
 
 	/**
 	 * mka_ckn - MKA pre-shared CKN

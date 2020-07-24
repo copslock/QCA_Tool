@@ -173,6 +173,8 @@ struct wpa_driver_nl80211_data {
 	unsigned int roam_vendor_cmd_avail:1;
 	unsigned int get_supported_akm_suites_avail:1;
 	unsigned int add_sta_node_vendor_cmd_avail:1;
+	unsigned int vendor_vlan_setkey:1;
+	unsigned int vendor_vlan_id:1;
 
 	u64 vendor_scan_cookie;
 	u64 remain_on_chan_cookie;

@@ -720,11 +720,13 @@ int hostapd_check_ht_capab(struct hostapd_iface *iface)
 	    !ieee80211ac_supported_vht_capab(iface))
 		return -1;
 #endif /* CONFIG_IEEE80211AC */
-	ret = ieee80211n_check_40mhz(iface);
-	if (ret)
-		return ret;
-	if (!ieee80211n_allowed_ht40_channel_pair(iface))
-		return -1;
+	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DISABLE_OBSS_SCAN)){
+		ret = ieee80211n_check_40mhz(iface);
+		if (ret)
+			return ret;
+		if (!ieee80211n_allowed_ht40_channel_pair(iface))
+			return -1;
+	}
 #endif /* CONFIG_IEEE80211N */
 
 	return 0;

@@ -283,6 +283,7 @@ static void wiphy_info_cipher_suites(struct wiphy_info_data *info,
 			break;
 		case RSN_CIPHER_SUITE_WEP104:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_WEP104;
+                        info->capa->enc |= WPA_DRIVER_CAPA_ENC_WEP128;
 			break;
 		case RSN_CIPHER_SUITE_WEP40:
 			info->capa->enc |= WPA_DRIVER_CAPA_ENC_WEP40;
@@ -433,6 +434,10 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER))
 		capa->flags |= WPA_DRIVER_FLAGS_FTM_RESPONDER;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_FILS_CRYPTO_OFFLOAD))
+		capa->flags |= WPA_DRIVER_FLAGS_FILS_CRYPTO_OFFLOAD;
 
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_BEACON_PROTECTION))
@@ -770,8 +775,10 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 					drv->set_prob_oper_freq = 1;
 					break;
 				case QCA_NL80211_VENDOR_SUBCMD_DO_ACS:
-					drv->capa.flags |=
-						WPA_DRIVER_FLAGS_ACS_OFFLOAD;
+					drv->capa.flags |= (
+						WPA_DRIVER_FLAGS_ACS_OFFLOAD |
+						 WPA_DRIVER_FLAGS_DISABLE_OBSS_SCAN);
+
 					break;
 				case QCA_NL80211_VENDOR_SUBCMD_SETBAND:
 					drv->setband_vendor_cmd_avail = 1;
@@ -793,6 +800,12 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 					break;
 				case QCA_NL80211_VENDOR_SUBCMD_ADD_STA_NODE:
 					drv->add_sta_node_vendor_cmd_avail = 1;
+					break;
+				case QCA_NL80211_VENDOR_SUBCMD_VLAN_ID:
+					drv->vendor_vlan_id = 1;
+					break;
+				case QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY:
+					drv->vendor_vlan_setkey = 1;
 					break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 				}
@@ -1376,6 +1389,11 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 	if (ieee80211_freq_to_chan(chan->freq, &channel) != NUM_HOSTAPD_MODES)
 		chan->chan = channel;
 
+	/*
+	 * Override Channel with driver's channel provided by regulatory
+	 */
+	if (tb_freq[NL80211_FREQUENCY_ATTR_CHANNEL])
+		chan->chan = nla_get_u16(tb_freq[NL80211_FREQUENCY_ATTR_CHANNEL]);
 	if (tb_freq[NL80211_FREQUENCY_ATTR_DISABLED])
 		chan->flag |= HOSTAPD_CHAN_DISABLED;
 	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_IR])

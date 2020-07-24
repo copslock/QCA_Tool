@@ -1110,7 +1110,8 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	}
 
 	if (conf->wpa & WPA_PROTO_RSN) {
-		if (conf->wpa_key_mgmt & WPA_KEY_MGMT_PSK)
+		if (conf->wpa_key_mgmt & (WPA_KEY_MGMT_PSK |
+						WPA_KEY_MGMT_PSK_SHA256))
 			wps->auth_types |= WPS_AUTH_WPA2PSK;
 		if (conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X)
 			wps->auth_types |= WPS_AUTH_WPA2;

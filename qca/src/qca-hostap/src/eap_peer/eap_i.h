@@ -385,6 +385,8 @@ struct eap_sm {
 	unsigned int use_machine_cred:1;
 
 	struct dl_list erp_keys; /* struct eap_erp_key */
+	int identity_request_retry_interval;
+
 };
 
 const u8 * eap_get_config_identity(struct eap_sm *sm, size_t *len);

@@ -623,6 +623,14 @@ int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
 						 cw_min, cw_max, burst_time);
 }
 
+int hostapd_get_freq(struct hostapd_data *hapd, int* freq)
+{
+	if (hapd->driver == NULL ||
+	    hapd->driver->get_freq == NULL)
+		return -1;
+
+	return hapd->driver->get_freq(hapd->drv_priv, freq);
+}
 
 struct hostapd_hw_modes *
 hostapd_get_hw_feature_data(struct hostapd_data *hapd, u16 *num_modes,
@@ -680,14 +688,14 @@ int hostapd_driver_set_noa(struct hostapd_data *hapd, u8 count, int start,
 
 int hostapd_drv_set_key(const char *ifname, struct hostapd_data *hapd,
 			enum wpa_alg alg, const u8 *addr,
-			int key_idx, int set_tx,
+			int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 			const u8 *seq, size_t seq_len,
 			const u8 *key, size_t key_len)
 {
 	if (hapd->driver == NULL || hapd->driver->set_key == NULL)
 		return 0;
 	return hapd->driver->set_key(ifname, hapd->drv_priv, alg, addr,
-				     key_idx, set_tx, seq, seq_len, key,
+				     key_idx, vlan_id, vlan_found, set_tx, seq, seq_len, key,
 				     key_len);
 }
 

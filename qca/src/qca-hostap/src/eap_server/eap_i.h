@@ -189,6 +189,7 @@ struct eap_sm {
 
 	Boolean initiate_reauth_start_sent;
 	Boolean try_initiate_reauth;
+	int identity_request_retry_interval;
 
 #ifdef CONFIG_TESTING_OPTIONS
 	u32 tls_test_flags;

@@ -36,5 +36,8 @@ int hostapd_dpp_init(struct hostapd_data *hapd);
 void hostapd_dpp_deinit(struct hostapd_data *hapd);
 void hostapd_dpp_init_global(struct hapd_interfaces *ifaces);
 void hostapd_dpp_deinit_global(struct hapd_interfaces *ifaces);
+int dpp_pkex_prepare_channel_list(struct dpp_pkex *dpp_pkex,
+					struct hostapd_hw_modes *own_modes,
+					u16 num_modes);
 
 #endif /* DPP_HOSTAPD_H */

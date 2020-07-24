@@ -71,16 +71,27 @@ static void handle_auth(struct hostapd_data *hapd,
 
 u8 * hostapd_eid_multi_ap(struct hostapd_data *hapd, u8 *eid)
 {
-	u8 multi_ap_val = 0;
+	struct multi_ap_params multi_ap = {0};
 
 	if (!hapd->conf->multi_ap)
 		return eid;
-	if (hapd->conf->multi_ap & BACKHAUL_BSS)
-		multi_ap_val |= MULTI_AP_BACKHAUL_BSS;
-	if (hapd->conf->multi_ap & FRONTHAUL_BSS)
-		multi_ap_val |= MULTI_AP_FRONTHAUL_BSS;
 
-	return eid + add_multi_ap_ie(eid, 9, multi_ap_val);
+	if (hapd->conf->multi_ap & BACKHAUL_BSS)
+		multi_ap.capability |= MULTI_AP_BACKHAUL_BSS;
+	if (hapd->conf->multi_ap & FRONTHAUL_BSS)
+		multi_ap.capability |= MULTI_AP_FRONTHAUL_BSS;
+
+	if (hapd->conf->multi_ap_client_disallow
+			& PROFILE1_CLIENT_ASSOC_DISALLOW)
+		multi_ap.capability |= MULTI_AP_PROFILE1_BACKHAUL_STA_DISALLOWED;
+	if (hapd->conf->multi_ap_client_disallow
+			& PROFILE2_CLIENT_ASSOC_DISALLOW)
+		multi_ap.capability |= MULTI_AP_PROFILE2_BACKHAUL_STA_DISALLOWED;
+
+	multi_ap.profile = hapd->conf->multi_ap_profile;
+	multi_ap.vlanid = hapd->conf->multi_ap_vlanid;
+
+	return eid + add_multi_ap_ie(eid, 9, &multi_ap);
 }
 
 
@@ -2063,7 +2074,17 @@ static void handle_auth_fils_finish(struct hostapd_data *hapd,
 				    struct wpabuf *data, int pub)
 {
 	u16 auth_alg;
+	struct wpa_driver_sta_auth_params params;
 
+	if (hostapd_drv_fils_crypto_capable(hapd)) {
+		wpa_auth_get_fils_aead_params(sta->wpa_sm,
+					      params.fils_anonce,
+					      params.fils_snonce,
+					      params.fils_kek,
+					      &params.fils_kek_len);
+		params.addr = sta->addr;
+		hostapd_set_fils_aad(hapd, &params);
+	}
 	auth_alg = (pub ||
 		    resp == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED) ?
 		WLAN_AUTH_FILS_SK_PFS : WLAN_AUTH_FILS_SK;
@@ -2679,37 +2700,67 @@ static u16 check_wmm(struct hostapd_data *hapd, struct sta_info *sta,
 static u16 check_multi_ap(struct hostapd_data *hapd, struct sta_info *sta,
 			  const u8 *multi_ap_ie, size_t multi_ap_len)
 {
-	u8 multi_ap_value = 0;
+	struct multi_ap_params multi_ap = {0};
+	u16 status = WLAN_STATUS_SUCCESS;
+
+	/* default profile is 1, when profile subelement is not present in IE */
+	multi_ap.profile = 1;
 
 	sta->flags &= ~WLAN_STA_MULTI_AP;
 
 	if (!hapd->conf->multi_ap)
 		return WLAN_STATUS_SUCCESS;
 
-	if (multi_ap_ie) {
-		const u8 *multi_ap_subelem;
-
-		multi_ap_subelem = get_ie(multi_ap_ie + 4,
-					  multi_ap_len - 4,
-					  MULTI_AP_SUB_ELEM_TYPE);
-		if (multi_ap_subelem && multi_ap_subelem[1] == 1) {
-			multi_ap_value = multi_ap_subelem[2];
-		} else {
+	if (!multi_ap_ie) {
+		if(!(hapd->conf->multi_ap & FRONTHAUL_BSS)) {
 			hostapd_logger(hapd, sta->addr,
-				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_INFO,
-				       "Multi-AP IE has missing or invalid Multi-AP subelement");
-			return WLAN_STATUS_INVALID_IE;
+					HOSTAPD_MODULE_IEEE80211,
+					HOSTAPD_LEVEL_INFO,
+					"Non-Multi-AP STA tries to associate with backhaul-only BSS");
+			return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
+		}
+		return WLAN_STATUS_SUCCESS;
+	}
+
+	if (multi_ap_len < 7) {
+		hostapd_logger(hapd, sta->addr,
+				HOSTAPD_MODULE_IEEE80211,
+				HOSTAPD_LEVEL_INFO,
+				"Multi-AP IE invalid length %zd", multi_ap_len);
+		return WLAN_STATUS_INVALID_IE;
+	}
+	
+	status = check_multi_ap_ie(multi_ap_ie+4, multi_ap_len-4, &multi_ap); 
+	if (status != WLAN_STATUS_SUCCESS)
+		return status;
+	
+	if (multi_ap.capability && multi_ap.capability != MULTI_AP_BACKHAUL_STA)
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				HOSTAPD_LEVEL_INFO,
+				"Multi-AP IE with unexpected value 0x%02x",
+				multi_ap.capability);
+
+	if (hapd->conf->multi_ap_client_disallow) {
+		if (multi_ap.profile == MULTI_AP_PROFILE_01 &&
+				(hapd->conf->multi_ap_client_disallow &
+				 PROFILE1_CLIENT_ASSOC_DISALLOW)) {
+			hostapd_logger(hapd, sta->addr,
+					HOSTAPD_MODULE_IEEE80211,
+					HOSTAPD_LEVEL_INFO,
+					"Multi ap profile 1 clients not allowed");
+			return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
+		} else if (multi_ap.profile == MULTI_AP_PROFILE_02 &&
+				(hapd->conf->multi_ap_client_disallow &
+				 PROFILE2_CLIENT_ASSOC_DISALLOW)) {
+			hostapd_logger(hapd, sta->addr,
+					HOSTAPD_MODULE_IEEE80211,
+					HOSTAPD_LEVEL_INFO,
+					"Multi ap profile 2 clients not allowed");
+			return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
 		}
 	}
 
-	if (multi_ap_value && multi_ap_value != MULTI_AP_BACKHAUL_STA)
-		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_INFO,
-			       "Multi-AP IE with unexpected value 0x%02x",
-			       multi_ap_value);
-
-	if (!(multi_ap_value & MULTI_AP_BACKHAUL_STA)) {
+	if (!(multi_ap.capability & MULTI_AP_BACKHAUL_STA)) {
 		if (hapd->conf->multi_ap & FRONTHAUL_BSS)
 			return WLAN_STATUS_SUCCESS;
 
@@ -3207,7 +3258,11 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		sta->flags |= WLAN_STA_MAYBE_WPS;
 	} else
 #endif /* CONFIG_WPS */
-	if (hapd->conf->wpa && wpa_ie == NULL) {
+	if ((hapd->conf->wpa && wpa_ie == NULL)
+#ifdef CONFIG_HS20
+		&& (!hapd->conf->osen)
+#endif
+	) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO,
 			       "No WPA/RSN IE in association request");
@@ -3241,8 +3296,12 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if ((sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP)) ==
 		    (WLAN_STA_ASSOC | WLAN_STA_MFP) &&
 		    !sta->sa_query_timed_out &&
-		    sta->sa_query_count > 0)
-			ap_check_sa_query_timeout(hapd, sta);
+		    sta->sa_query_count > 0) {
+			if(ap_check_sa_query_timeout(hapd, sta)) {
+				sta = NULL;
+				return WLAN_STATUS_UNSPECIFIED_FAILURE;
+			}
+		}
 		if ((sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP)) ==
 		    (WLAN_STA_ASSOC | WLAN_STA_MFP) &&
 		    !sta->sa_query_timed_out &&
@@ -3906,15 +3965,26 @@ rsnxe_done:
 			goto done;
 		}
 
-		/* FILS Session */
-		*p++ = WLAN_EID_EXTENSION; /* Element ID */
-		*p++ = 1 + FILS_SESSION_LEN; /* Length */
-		*p++ = WLAN_EID_EXT_FILS_SESSION; /* Element ID Extension */
-		os_memcpy(p, elems.fils_session, FILS_SESSION_LEN);
-		send_len += 2 + 1 + FILS_SESSION_LEN;
+		if (hostapd_drv_fils_crypto_capable(hapd)) {
+			u8 *buff = p;
 
-		send_len = fils_encrypt_assoc(sta->wpa_sm, buf, send_len,
-					      buflen, sta->fils_hlp_resp);
+			p = hostapd_eid_assoc_fils_session(sta->wpa_sm, p,
+							   elems.fils_session,
+							   sta->fils_hlp_resp);
+			wpa_hexdump(MSG_DEBUG, "FILS Assoc Resp BUF (IEs)",
+				    buff, p - buff);
+			send_len += p - buff;
+		} else {
+			/* FILS Session */
+			*p++ = WLAN_EID_EXTENSION; /* Element ID */
+			*p++ = 1 + FILS_SESSION_LEN; /* Length */
+			*p++ = WLAN_EID_EXT_FILS_SESSION; /* Element ID Extension */
+			os_memcpy(p, elems.fils_session, FILS_SESSION_LEN);
+			send_len += 2 + 1 + FILS_SESSION_LEN;
+			send_len = fils_encrypt_assoc(sta->wpa_sm, buf,
+						      send_len, buflen,
+						      sta->fils_hlp_resp);
+		}
 		if (send_len < 0) {
 			res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto done;
@@ -4253,23 +4323,49 @@ static void handle_assoc(struct hostapd_data *hapd,
 	    sta->auth_alg == WLAN_AUTH_FILS_PK) {
 		int res;
 
-		/* The end of the payload is encrypted. Need to decrypt it
-		 * before parsing. */
-
 		tmp = os_memdup(pos, left);
 		if (!tmp) {
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
 
-		res = fils_decrypt_assoc(sta->wpa_sm, sta->fils_session, mgmt,
-					 len, tmp, left);
-		if (res < 0) {
-			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto fail;
+		if (hostapd_drv_fils_crypto_capable(hapd)) {
+			const u8* ses;
+
+			ses = wpa_fils_validate_fils_session(sta->wpa_sm, pos,
+							     left,
+							     sta->fils_session);
+			if (!ses) {
+				wpa_printf(MSG_DEBUG,
+					   "FILS: Session validation failed");
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+
+			res = wpa_fils_validate_key_confirm(sta->wpa_sm, pos,
+							    left);
+			if (res < 0) {
+				wpa_printf(MSG_DEBUG,
+					   "FILS: Key validation failed");
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+
+			pos = tmp;
+		} else {
+			/* The end of the payload is encrypted. Need to decrypt
+			 * it before parsing. */
+
+			res = fils_decrypt_assoc(sta->wpa_sm, sta->fils_session, mgmt,
+						 len, tmp, left);
+			if (res < 0) {
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+
+			pos = tmp;
+			left = res;
 		}
-		pos = tmp;
-		left = res;
 	}
 #endif /* CONFIG_FILS */
 
@@ -4740,6 +4836,11 @@ static int handle_action(struct hostapd_data *hapd,
 	case WLAN_ACTION_RADIO_MEASUREMENT:
 		hostapd_handle_radio_measurement(hapd, (const u8 *) mgmt, len);
 		return 1;
+        case WLAN_ACTION_HT:
+        case WLAN_ACTION_VHT:
+                wpa_printf(MSG_DEBUG, "IEEE 802.11: Received HT / VHT action frame"
+                        " droping frame as no action required");
+                return 1;
 	}
 
 	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
@@ -4968,7 +5069,7 @@ static void hostapd_set_wds_encryption(struct hostapd_data *hapd,
 	for (i = 0; i < 4; i++) {
 		if (ssid->wep.key[i] &&
 		    hostapd_drv_set_key(ifname_wds, hapd, WPA_ALG_WEP, NULL, i,
-					i == ssid->wep.idx, NULL, 0,
+					i == ssid->wep.idx, 0, 0, NULL, 0,
 					ssid->wep.key[i], ssid->wep.len[i])) {
 			wpa_printf(MSG_WARNING,
 				   "Could not set WEP keys for WDS interface; %s",

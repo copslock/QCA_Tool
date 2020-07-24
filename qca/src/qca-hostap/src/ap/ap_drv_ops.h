@@ -78,6 +78,7 @@ int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
 struct hostapd_hw_modes *
 hostapd_get_hw_feature_data(struct hostapd_data *hapd, u16 *num_modes,
 			    u16 *flags, u8 *dfs_domain);
+int hostapd_get_freq(struct hostapd_data *hapd, int* freq);
 int hostapd_driver_commit(struct hostapd_data *hapd);
 int hostapd_drv_none(struct hostapd_data *hapd);
 int hostapd_driver_scan(struct hostapd_data *hapd,
@@ -89,7 +90,7 @@ int hostapd_driver_set_noa(struct hostapd_data *hapd, u8 count, int start,
 int hostapd_drv_set_key(const char *ifname,
 			struct hostapd_data *hapd,
 			enum wpa_alg alg, const u8 *addr,
-			int key_idx, int set_tx,
+			int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 			const u8 *seq, size_t seq_len,
 			const u8 *key, size_t key_len);
 int hostapd_drv_send_mlme(struct hostapd_data *hapd,
@@ -157,12 +158,12 @@ static inline int hostapd_drv_set_countermeasures(struct hostapd_data *hapd,
 
 static inline int hostapd_drv_set_sta_vlan(const char *ifname,
 					   struct hostapd_data *hapd,
-					   const u8 *addr, int vlan_id)
+					   const u8 *addr, int vlan_id, u8 vlan_found)
 {
 	if (hapd->driver == NULL || hapd->driver->set_sta_vlan == NULL)
 		return 0;
 	return hapd->driver->set_sta_vlan(hapd->drv_priv, addr, ifname,
-					  vlan_id);
+					  vlan_id, vlan_found);
 }
 
 static inline int hostapd_drv_get_inact_sec(struct hostapd_data *hapd,
@@ -390,4 +391,20 @@ hostapd_drv_set_band(struct hostapd_data *hapd, enum set_band band)
 	return hapd->driver->set_band(hapd->drv_priv, band);
 }
 
+static inline int hostapd_drv_fils_crypto_capable(struct hostapd_data *hapd)
+{
+	if (!hapd->driver ||
+	    !hapd->driver->is_drv_fils_crypto_capable || !hapd->drv_priv)
+		return 0;
+	return hapd->driver->is_drv_fils_crypto_capable(hapd->drv_priv);
+}
+
+static inline int hostapd_set_fils_aad(struct hostapd_data *hapd,
+				       struct wpa_driver_sta_auth_params *param)
+{
+	if (!hapd->driver ||
+	    !hapd->driver->set_fils_aad || !hapd->drv_priv)
+		return -1;
+	return hapd->driver->set_fils_aad(hapd->drv_priv, param);
+}
 #endif /* AP_DRV_OPS */

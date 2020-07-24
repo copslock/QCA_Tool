@@ -17,7 +17,7 @@ index 961ed92..72b9100 100644
 -	if (hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
 +	ret = hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
  				broadcast_ether_addr,
- 				eapol->default_wep_key_idx, 1, NULL, 0,
+ 				eapol->default_wep_key_idx, 0, 0, 1, NULL, 0,
  				eapol->default_wep_key,
 -				hapd->conf->default_wep_key_len)) {
 +				hapd->conf->default_wep_key_len);

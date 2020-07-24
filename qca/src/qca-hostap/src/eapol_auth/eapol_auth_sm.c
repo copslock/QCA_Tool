@@ -1168,6 +1168,7 @@ static int eapol_auth_conf_clone(struct eapol_auth_config *dst,
 	dst->eap_reauth_period = src->eap_reauth_period;
 	dst->wpa = src->wpa;
 	dst->individual_wep_key_len = src->individual_wep_key_len;
+	dst->identity_request_retry_interval = src->identity_request_retry_interval;
 	os_free(dst->eap_req_id_text);
 	if (src->eap_req_id_text) {
 		dst->eap_req_id_text = os_memdup(src->eap_req_id_text,

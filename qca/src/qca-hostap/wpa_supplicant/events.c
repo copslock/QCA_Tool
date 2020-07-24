@@ -120,8 +120,17 @@ void wpas_network_reenabled(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
 
-	if (wpa_s->disconnected || wpa_s->wpa_state != WPA_SCANNING)
+	if (wpa_s->disconnected) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Return here as wpa_s->disconnected is set");
 		return;
+        }
+
+	if (wpa_s->wpa_state != WPA_SCANNING) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Ignore Disconnect event and set state to scanning");
+		wpa_supplicant_set_state(wpa_s, WPA_SCANNING);
+	}
 
 	wpa_dbg(wpa_s, MSG_DEBUG,
 		"Try to associate due to network getting re-enabled");
@@ -2329,6 +2338,11 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	struct ieee802_11_elems elems;
 	const u8 *map_sub_elem, *pos;
 	size_t len;
+	struct multi_ap_params multi_ap = {0};
+	u16 status = 0;
+
+	/* default profile is 1, when profile subelement is not present in IE */
+	multi_ap.profile = 1;
 
 	wpa_s->multi_ap_ie = 0;
 
@@ -2344,8 +2358,13 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	if (!map_sub_elem || map_sub_elem[1] < 1)
 		return;
 
-	wpa_s->multi_ap_backhaul = !!(map_sub_elem[2] & MULTI_AP_BACKHAUL_BSS);
-	wpa_s->multi_ap_fronthaul = !!(map_sub_elem[2] &
+	status = check_multi_ap_ie(pos, len, &multi_ap);
+
+	if (status != WLAN_STATUS_SUCCESS) {
+		return;
+	}
+	wpa_s->multi_ap_backhaul = !!(multi_ap.capability & MULTI_AP_BACKHAUL_BSS);
+	wpa_s->multi_ap_fronthaul = !!(multi_ap.capability &
 				       MULTI_AP_FRONTHAUL_BSS);
 	wpa_s->multi_ap_ie = 1;
 }
@@ -2785,6 +2804,13 @@ static void wpas_fst_update_mb_assoc(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_FST */
 }
 
+
+static void wpa_supplicant_event_dfs_start(struct wpa_supplicant *wpa_s,
+                       struct dfs_event *radar)
+{
+	wpa_printf(MSG_DEBUG, "DFS CAC started on  %d MHz timout %d",radar->freq,radar->timeout+10);	
+	wpa_supplicant_req_auth_timeout(wpa_s, (radar->timeout+10), 0);
+}
 
 static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 				       union wpa_event_data *data)
@@ -4355,8 +4381,12 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 		}
 		break;
 	case EVENT_DISASSOC:
-		wpas_event_disassoc(wpa_s,
-				    data ? &data->disassoc_info : NULL);
+		if (wpa_s->wpa_state != WPA_SCANNING)
+			wpas_event_disassoc(wpa_s,
+					    data ? &data->disassoc_info : NULL);
+		else
+			wpa_dbg(wpa_s, MSG_DEBUG, "Disassoc event received during scan state for %s",
+				wpa_s->ifname);
 		break;
 	case EVENT_DEAUTH:
 #ifdef CONFIG_TESTING_OPTIONS
@@ -4623,8 +4653,13 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 #endif /* NEED_AP_MLME */
 #endif /* CONFIG_AP */
 	case EVENT_DFS_CAC_STARTED:
-		if (data)
-			wpas_event_dfs_cac_started(wpa_s, &data->dfs_event);
+		if (data){
+            if (wpa_s->ap_iface && wpa_s->ap_iface->bss[0])
+			    wpas_event_dfs_cac_started(wpa_s, &data->dfs_event);
+            else
+                wpa_supplicant_event_dfs_start(wpa_s, &data->dfs_event);
+        }            
+        wpa_msg(wpa_s, MSG_DEBUG, "EVENT_DFS_CAC_STARTED");
 		break;
 	case EVENT_DFS_CAC_FINISHED:
 		if (data)

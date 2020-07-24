@@ -26,6 +26,8 @@ static void hostapd_dpp_reply_wait_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_dpp_auth_success(struct hostapd_data *hapd, int initiator);
 static void hostapd_dpp_init_timeout(void *eloop_ctx, void *timeout_ctx);
 static int hostapd_dpp_auth_init_next(struct hostapd_data *hapd);
+static void hostapd_dpp_pkex_req_timeout(void *eloop_ctx, void *timeout_ctx);
+static int hostapd_dpp_pkex_next(struct hostapd_data *hapd);
 
 static const u8 broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
@@ -314,6 +316,30 @@ static void hostapd_dpp_set_testing_options(struct hostapd_data *hapd,
 #endif /* CONFIG_TESTING_OPTIONS */
 }
 
+static int hostapd_dpp_pkex_next(struct hostapd_data *hapd)
+{
+	struct dpp_pkex *dpp_pkex;
+
+	dpp_pkex = hapd->dpp_pkex;
+
+	if (dpp_pkex->freq_idx >= dpp_pkex->num_freq)
+		return -1;
+	hostapd_drv_send_action(hapd, dpp_pkex->freqlist[dpp_pkex->freq_idx], 2000, broadcast,
+		wpabuf_head(dpp_pkex->exchange_req),
+		wpabuf_len(dpp_pkex->exchange_req));	
+	dpp_pkex->freq_idx++;
+	return 0;
+}
+
+static void hostapd_dpp_pkex_req_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_data *hapd = eloop_ctx;
+
+	if (!hapd->dpp_pkex)
+		return;
+
+	hostapd_dpp_pkex_next(hapd);
+}
 
 static void hostapd_dpp_init_timeout(void *eloop_ctx, void *timeout_ctx)
 {
@@ -419,6 +445,8 @@ int hostapd_dpp_auth_init(struct hostapd_data *hapd, const char *cmd)
 	struct dpp_bootstrap_info *peer_bi, *own_bi = NULL;
 	u8 allowed_roles = DPP_CAPAB_CONFIGURATOR;
 	unsigned int neg_freq = 0;
+	struct hostapd_hw_modes *own_modes;
+	u16 num_modes;
 
 	pos = os_strstr(cmd, " peer=");
 	if (!pos)
@@ -478,10 +506,21 @@ int hostapd_dpp_auth_init(struct hostapd_data *hapd, const char *cmd)
 		dpp_auth_deinit(hapd->dpp_auth);
 	}
 
+	own_modes = hapd->iface->hw_features;
+	num_modes = hapd->iface->num_hw_features;
+
+	if ((!own_modes) && hapd->driver != NULL &&
+            hapd->driver->get_hw_feature_data2 != NULL) {
+		u16 flags;
+		u8 dfs_domain;
+		own_modes = hapd->driver->get_hw_feature_data2(hapd->drv_priv, &num_modes,
+								&flags, &dfs_domain);
+	}
+		
 	hapd->dpp_auth = dpp_auth_init(hapd->msg_ctx, peer_bi, own_bi,
 				       allowed_roles, neg_freq,
-				       hapd->iface->hw_features,
-				       hapd->iface->num_hw_features);
+				       own_modes,
+				       num_modes);
 	if (!hapd->dpp_auth)
 		goto fail;
 	hostapd_dpp_set_testing_options(hapd, hapd->dpp_auth);
@@ -1468,6 +1507,7 @@ void hostapd_dpp_rx_action(struct hostapd_data *hapd, const u8 *src,
 		hostapd_dpp_rx_pkex_exchange_req(hapd, src, buf, len, freq);
 		break;
 	case DPP_PA_PKEX_EXCHANGE_RESP:
+		eloop_cancel_timeout(hostapd_dpp_pkex_req_timeout, hapd, NULL);
 		hostapd_dpp_rx_pkex_exchange_resp(hapd, src, buf, len, freq);
 		break;
 	case DPP_PA_PKEX_COMMIT_REVEAL_REQ:
@@ -1603,6 +1643,9 @@ int hostapd_dpp_pkex_add(struct hostapd_data *hapd, const char *cmd)
 {
 	struct dpp_bootstrap_info *own_bi;
 	const char *pos, *end;
+	struct hostapd_hw_modes *own_modes;
+	u16 num_modes;
+	struct dpp_pkex *dpp_pkex;
 
 	pos = os_strstr(cmd, " own=");
 	if (!pos)
@@ -1657,13 +1700,35 @@ int hostapd_dpp_pkex_add(struct hostapd_data *hapd, const char *cmd)
 		if (!hapd->dpp_pkex)
 			return -1;
 
+		dpp_pkex = hapd->dpp_pkex;
 		msg = hapd->dpp_pkex->exchange_req;
+
+		own_modes = hapd->iface->hw_features;
+		num_modes = hapd->iface->num_hw_features;
+
+		if ((!own_modes) && hapd->driver != NULL &&
+	            hapd->driver->get_hw_feature_data2 != NULL) {
+			u16 flags;
+			u8 dfs_domain;
+			own_modes = hapd->driver->get_hw_feature_data2(hapd->drv_priv, &num_modes,
+									&flags, &dfs_domain);
+		}
+
+		if (dpp_pkex_prepare_channel_list(hapd->dpp_pkex, own_modes, num_modes) == -1) {
+			wpa_printf(MSG_DEBUG, "DPP: Channel prepare failed");
+			return -1;
+		}
+		dpp_pkex->freq_idx = 0;
 		/* TODO: Which channel to use? */
 		wpa_msg(hapd->msg_ctx, MSG_INFO, DPP_EVENT_TX "dst=" MACSTR
-			" freq=%u type=%d", MAC2STR(broadcast), 2437,
+			" freq=%u type=%d", MAC2STR(broadcast), dpp_pkex->freqlist[dpp_pkex->freq_idx],
 			DPP_PA_PKEX_EXCHANGE_REQ);
-		hostapd_drv_send_action(hapd, 2437, 0, broadcast,
+		hostapd_drv_send_action(hapd, dpp_pkex->freqlist[dpp_pkex->freq_idx], 2000, broadcast,
 					wpabuf_head(msg), wpabuf_len(msg));
+		dpp_pkex->freq_idx++;
+		eloop_cancel_timeout(hostapd_dpp_pkex_req_timeout, hapd, NULL);
+		eloop_register_timeout(2, 0,
+				       hostapd_dpp_pkex_req_timeout, hapd, NULL);
 	}
 
 	/* TODO: Support multiple PKEX info entries */

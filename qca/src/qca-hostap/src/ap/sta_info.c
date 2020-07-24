@@ -1026,6 +1026,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 	struct hostapd_vlan *vlan = NULL;
 	int ret;
 	int old_vlanid = sta->vlan_id_bound;
+	u8 vlan_found= 1;
 
 	iface = hapd->conf->iface;
 	if (hapd->conf->ssid.vlan[0])
@@ -1053,8 +1054,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 			       HOSTAPD_LEVEL_DEBUG, "could not find VLAN for "
 			       "binding station to (vlan_id=%d)",
 			       sta->vlan_id);
-		ret = -1;
-		goto done;
+		vlan_found = 0;
 	} else if (vlan && vlan->dynamic_vlan > 0) {
 		vlan->dynamic_vlan++;
 		hostapd_logger(hapd, sta->addr,
@@ -1075,7 +1075,7 @@ skip_counting:
 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
 
-	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
+	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id, vlan_found);
 	if (ret < 0) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG, "could not bind the STA "
@@ -1085,7 +1085,6 @@ skip_counting:
 	/* During 1x reauth, if the vlan id changes, then remove the old id. */
 	if (old_vlanid > 0 && old_vlanid != sta->vlan_id)
 		vlan_remove_dynamic(hapd, old_vlanid);
-done:
 
 	return ret;
 #else /* CONFIG_NO_VLAN */
@@ -1111,6 +1110,9 @@ int ap_check_sa_query_timeout(struct hostapd_data *hapd, struct sta_info *sta)
 		sta->sa_query_trans_id = NULL;
 		sta->sa_query_count = 0;
 		eloop_cancel_timeout(ap_sa_query_timer, hapd, sta);
+                wpa_printf(MSG_DEBUG, "SA Query procedure timeout send disassoc");
+                hostapd_drv_sta_disassoc(hapd, sta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+                ap_free_sta(hapd, sta);
 		return 1;
 	}
 

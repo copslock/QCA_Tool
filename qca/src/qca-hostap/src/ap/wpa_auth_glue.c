@@ -66,6 +66,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
 	wconf->ocv = conf->ocv;
 #endif /* CONFIG_OCV */
 	wconf->okc = conf->okc;
+	wconf->identity_request_retry_interval = conf->identity_request_retry_interval;
 	wconf->ieee80211w = conf->ieee80211w;
 	wconf->beacon_prot = conf->beacon_prot;
 	wconf->group_mgmt_cipher = conf->group_mgmt_cipher;
@@ -394,11 +395,16 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
 {
 	struct hostapd_data *hapd = ctx;
 	const char *ifname = hapd->conf->iface;
+	u8 vlan_found = 0;
 
 	if (vlan_id > 0) {
 		ifname = hostapd_get_vlan_id_ifname(hapd->conf->vlan, vlan_id);
-		if (ifname == NULL)
-			return -1;
+		if (ifname == NULL) {
+			vlan_found = 0;
+			ifname = hapd->conf->iface;
+		} else {
+			vlan_found = 1;
+		}
 	}
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -430,7 +436,7 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
 		hapd->last_gtk_len = key_len;
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
-	return hostapd_drv_set_key(ifname, hapd, alg, addr, idx, 1, NULL, 0,
+	return hostapd_drv_set_key(ifname, hapd, alg, addr, idx, vlan_id, vlan_found, 1, NULL, 0,
 				   key, key_len);
 }
 
@@ -835,27 +841,31 @@ static int hostapd_wpa_auth_update_vlan(void *ctx, const u8 *addr, int vlan_id)
 #ifndef CONFIG_NO_VLAN
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
-	struct vlan_description vlan_desc;
+	//struct vlan_description vlan_desc;
 
 	sta = ap_get_sta(hapd, addr);
 	if (!sta)
 		return -1;
 
+#if 0
 	os_memset(&vlan_desc, 0, sizeof(vlan_desc));
 	vlan_desc.notempty = 1;
 	vlan_desc.untagged = vlan_id;
 	if (!hostapd_vlan_valid(hapd->conf->vlan, &vlan_desc)) {
 		wpa_printf(MSG_INFO, "Invalid VLAN ID %d in wpa_psk_file",
 			   vlan_id);
-		return -1;
+		//return -1;
 	}
 
 	if (ap_sta_set_vlan(hapd, sta, &vlan_desc) < 0) {
 		wpa_printf(MSG_INFO,
 			   "Failed to assign VLAN ID %d from wpa_psk_file to "
 			   MACSTR, vlan_id, MAC2STR(sta->addr));
-		return -1;
+		//return -1;
 	}
+#endif
+
+	sta->vlan_id = vlan_id;
 
 	wpa_printf(MSG_INFO,
 		   "Assigned VLAN ID %d from wpa_psk_file to " MACSTR,
@@ -1004,6 +1014,7 @@ static int hostapd_wpa_auth_set_vlan(void *ctx, const u8 *sta_addr,
 	if (!sta || !sta->wpa_sm)
 		return -1;
 
+#if 0
 	if (vlan->notempty &&
 	    !hostapd_vlan_valid(hapd->conf->vlan, vlan)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -1012,6 +1023,7 @@ static int hostapd_wpa_auth_set_vlan(void *ctx, const u8 *sta_addr,
 			       vlan->untagged, vlan->tagged[0] ? "+" : "");
 		return -1;
 	}
+#endif
 
 	if (ap_sta_set_vlan(hapd, sta, vlan) < 0)
 		return -1;

@@ -609,6 +609,20 @@ enum qca_radiotap_vendor_ids {
  *	coex chain mode from application/service.
  *	The attributes defined in enum qca_vendor_attr_btc_chain_mode are used
  *	to deliver the parameters.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_VLAN_ID: This vendor subcommand
+ *	is used by the driver to set VLAN ID to STA based on the psk,
+ *	when driver doesn't create vlan interface. VLAN ID is used to add
+ *	VLAN header for rx packet from wireless client before giving to bridge.
+ *	Attributes for this event are specified in
+ *	enum qca_wlan_set_vlan_id_attr.
+ * @QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY: This vendor subcommand
+ *	is used by the driver to set VLAN group key only,
+ *	when driver doesn't create vlan interface but uses vconfig to
+ *	create seperate netdev for each VLAN. non-VLAN group key will use
+ *	set_key as default. Attributes for this event
+ *	are specified in enum qca_wlan_vlan_setkey_attr.
+ *
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -784,6 +798,8 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_AVOID_FREQUENCY_EXT = 183,
 	QCA_NL80211_VENDOR_SUBCMD_ADD_STA_NODE = 184,
 	QCA_NL80211_VENDOR_SUBCMD_BTC_CHAIN_MODE = 185,
+	QCA_NL80211_VENDOR_SUBCMD_VLAN_ID = 297,
+	QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY = 298,
 };
 
 enum qca_wlan_vendor_attr {
@@ -8060,6 +8076,48 @@ enum qca_vendor_attr_btc_chain_mode {
 	QCA_VENDOR_ATTR_BTC_CHAIN_MODE_LAST,
 	QCA_VENDOR_ATTR_BTC_CHAIN_MODE_MAX =
 	QCA_VENDOR_ATTR_BTC_CHAIN_MODE_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vlan_attr - Parameters for setting STA VLAN ID
+ *
+ * Associated Vendor Command:
+ * QCA_NL80211_VENDOR_SUBCMD_VLAN_ID
+ */
+enum qca_wlan_set_vlan_id_attr {
+	QCA_WLAN_VENDOR_ATTR_VLAN_INVALID = 0,
+	/* 6-byte MAC address */
+	QCA_WLAN_VENDOR_ATTR_VLAN_MAC_ADDR,
+	/* Unsigned 16-bit attribute for holding the VLAN ID */
+	QCA_WLAN_VENDOR_ATTR_VLAN_ID,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_VLAN_LAST,
+	QCA_WLAN_VENDOR_ATTR_VLAN_PARAM_MAX =
+		QCA_WLAN_VENDOR_ATTR_VLAN_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vlan_setkey_attr - Parameters for VLAN group key
+ *
+ * Associated Vendor Command:
+ * QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY
+ */
+enum qca_wlan_vlan_setkey_attr {
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_INVALID = 0,
+	/* 6-byte MAC address */
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_MAC_ADDR,
+	/* Unsigned 16-bit attribute for holding the VLAN ID */
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_VLAN_ID,
+	/* Unsigned 32-bit attribute for holding the key index */
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYIX,
+	/* An array of unsigned 8-bit keydata */
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYDATA,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_LAST,
+	QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_PARAM_MAX =
+		QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_LAST - 1,
 };
 
 #endif /* QCA_VENDOR_H */

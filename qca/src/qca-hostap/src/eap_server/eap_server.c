@@ -309,9 +309,14 @@ SM_STATE(EAP, IDLE)
 {
 	SM_ENTRY(EAP, IDLE);
 
-	sm->eap_if.retransWhile = eap_sm_calculateTimeout(
-		sm, sm->retransCount, sm->eap_if.eapSRTT, sm->eap_if.eapRTTVAR,
-		sm->methodTimeout);
+	if(sm->identity_request_retry_interval) {
+		sm->eap_if.retransWhile = sm->identity_request_retry_interval ;
+	} else {
+		sm->eap_if.retransWhile = eap_sm_calculateTimeout(
+			sm, sm->retransCount, sm->eap_if.eapSRTT, sm->eap_if.eapRTTVAR,
+			sm->methodTimeout);
+	}
+	wpa_printf(MSG_DEBUG, "identity_request_retry_interval (%d) ",sm->eap_if.retransWhile);
 }
 
 
@@ -1008,9 +1013,14 @@ SM_STATE(EAP, IDLE2)
 {
 	SM_ENTRY(EAP, IDLE2);
 
-	sm->eap_if.retransWhile = eap_sm_calculateTimeout(
-		sm, sm->retransCount, sm->eap_if.eapSRTT, sm->eap_if.eapRTTVAR,
-		sm->methodTimeout);
+	if(sm->identity_request_retry_interval) {
+		sm->eap_if.retransWhile = sm->identity_request_retry_interval ;
+	} else {
+		sm->eap_if.retransWhile = eap_sm_calculateTimeout(
+			sm, sm->retransCount, sm->eap_if.eapSRTT, sm->eap_if.eapRTTVAR,
+			sm->methodTimeout);
+	}
+	wpa_printf(MSG_DEBUG, "identity_request_retry_interval (%d) ",sm->eap_if.retransWhile);
 }
 
 
@@ -1870,6 +1880,10 @@ struct eap_sm * eap_server_sm_init(void *eapol_ctx,
 		sm->assoc_p2p_ie = wpabuf_dup(sess->assoc_p2p_ie);
 	if (sess->peer_addr)
 		os_memcpy(sm->peer_addr, sess->peer_addr, ETH_ALEN);
+	if (conf->identity_request_retry_interval) {
+		sm->identity_request_retry_interval = conf->identity_request_retry_interval;
+	}
+
 #ifdef CONFIG_TESTING_OPTIONS
 	sm->tls_test_flags = sess->tls_test_flags;
 #endif /* CONFIG_TESTING_OPTIONS */

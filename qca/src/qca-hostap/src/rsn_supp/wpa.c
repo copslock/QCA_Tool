@@ -54,7 +54,7 @@ int wpa_eapol_key_send(struct wpa_sm *sm, struct wpa_ptk *ptk,
 	int ret = -1;
 	size_t mic_len = wpa_mic_len(sm->key_mgmt, sm->pmk_len);
 
-	wpa_printf(MSG_DEBUG, "WPA: Send EAPOL-Key frame to " MACSTR
+	wpa_printf(MSG_INFO, "WPA: Send EAPOL-Key frame to " MACSTR
 		   " ver=%d mic_len=%d key_mgmt=0x%x",
 		   MAC2STR(dest), ver, (int) mic_len, sm->key_mgmt);
 	if (is_zero_ether_addr(dest) && is_zero_ether_addr(sm->bssid)) {
@@ -551,7 +551,7 @@ int wpa_supplicant_send_2_of_4(struct wpa_sm *sm, const unsigned char *dst,
 
 	os_memcpy(reply->key_nonce, nonce, WPA_NONCE_LEN);
 
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: Sending EAPOL-Key 2/4");
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Sending EAPOL-Key 2/4");
 	return wpa_eapol_key_send(sm, ptk, ver, dst, ETH_P_EAPOL, rbuf, rlen,
 				  key_mic);
 }
@@ -601,7 +601,7 @@ static void wpa_supplicant_process_1_of_4(struct wpa_sm *sm,
 	}
 
 	wpa_sm_set_state(sm, WPA_4WAY_HANDSHAKE);
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: RX message 1 of 4-Way "
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: RX message 1 of 4-Way "
 		"Handshake from " MACSTR " (ver=%d)", MAC2STR(src_addr), ver);
 
 	os_memset(&ie, 0, sizeof(ie));
@@ -793,7 +793,7 @@ static int wpa_supplicant_install_ptk(struct wpa_sm *sm,
 		return 0;
 	}
 
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO,
 		"WPA: Installing PTK to the driver");
 
 	if (sm->pairwise_cipher == WPA_CIPHER_NONE) {
@@ -1495,7 +1495,7 @@ int wpa_supplicant_send_4_of_4(struct wpa_sm *sm, const unsigned char *dst,
 	key_mic = (u8 *) (reply + 1);
 	WPA_PUT_BE16(key_mic + mic_len, 0);
 
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: Sending EAPOL-Key 4/4");
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Sending EAPOL-Key 4/4");
 	return wpa_eapol_key_send(sm, ptk, ver, dst, ETH_P_EAPOL, rbuf, rlen,
 				  key_mic);
 }
@@ -1510,7 +1510,7 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 	struct wpa_eapol_ie_parse ie;
 
 	wpa_sm_set_state(sm, WPA_4WAY_HANDSHAKE);
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: RX message 3 of 4-Way "
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: RX message 3 of 4-Way "
 		"Handshake from " MACSTR " (ver=%d)", MAC2STR(sm->bssid), ver);
 
 	key_info = WPA_GET_BE16(key->key_info);
@@ -1673,7 +1673,7 @@ static int wpa_supplicant_process_1_of_2_rsn(struct wpa_sm *sm,
 	int maxkeylen;
 	struct wpa_eapol_ie_parse ie;
 
-	wpa_hexdump_key(MSG_DEBUG, "RSN: msg 1/2 key data",
+	wpa_hexdump_key(MSG_INFO, "RSN: msg 1/2 key data",
 			keydata, keydatalen);
 	if (wpa_supplicant_parse_ies(keydata, keydatalen, &ie) < 0)
 		return -1;
@@ -1883,7 +1883,7 @@ static int wpa_supplicant_send_2_of_2(struct wpa_sm *sm,
 	}
 #endif /* CONFIG_OCV */
 
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: Sending EAPOL-Key 2/2");
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Sending EAPOL-Key 2/2");
 	return wpa_eapol_key_send(sm, &sm->ptk, ver, sm->bssid, ETH_P_EAPOL,
 				  rbuf, rlen, key_mic);
 }
@@ -1909,7 +1909,7 @@ static void wpa_supplicant_process_1_of_2(struct wpa_sm *sm,
 	os_memset(&gd, 0, sizeof(gd));
 
 	rekey = wpa_sm_get_state(sm) == WPA_COMPLETED;
-	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: RX message 1 of Group Key "
+	wpa_dbg(sm->ctx->msg_ctx, MSG_INFO, "WPA: RX message 1 of Group Key "
 		"Handshake from " MACSTR " (ver=%d)", MAC2STR(src_addr), ver);
 
 	key_info = WPA_GET_BE16(key->key_info);

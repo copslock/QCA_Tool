@@ -24,6 +24,8 @@
 #include "airtime_policy.h"
 #include "ap_config.h"
 
+#define RADIUS_CLIENT_MAX_RETRIES 10
+#define RADIUS_CLIENT_MAX_WAIT 120
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
@@ -104,6 +106,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	/* Set to -1 as defaults depends on HT in setup */
 	bss->wmm_enabled = -1;
+	bss->identity_request_retry_interval = 0;
 
 #ifdef CONFIG_IEEE80211R_AP
 	bss->ft_over_ds = 1;
@@ -115,6 +118,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif /* CONFIG_IEEE80211R_AP */
 
 	bss->radius_das_time_window = 300;
+	bss->radius->radius_server_retries = RADIUS_CLIENT_MAX_RETRIES;
+	bss->radius->radius_max_retry_wait = RADIUS_CLIENT_MAX_WAIT;
 
 	bss->sae_anti_clogging_threshold = 5;
 	bss->sae_sync = 5;
@@ -155,6 +160,9 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	/* Default to strict CRL checking. */
 	bss->check_crl_strict = 1;
+
+	/* Deafult multi_ap_profile as 2*/
+	bss->multi_ap_profile = 2;
 }
 
 

@@ -16,6 +16,107 @@
 #include "ieee802_11_defs.h"
 #include "ieee802_11_common.h"
 
+struct country_op_class us_op_class[] = {
+        { 1, 115 },
+        { 2, 118 },
+        { 3, 124 },
+        { 4, 121 },
+        { 5, 125 },
+        { 6, 103 },
+        { 7, 103 },
+        { 8, 102 },
+        { 9, 102 },
+        { 10, 101},
+        { 11, 101},
+        { 12, 81 },
+        { 13, 94 },
+        { 14, 95 },
+        { 15, 96 },
+        { 22, 116 },
+        { 23, 119 },
+        { 24, 122 },
+        { 25, 126 },
+        { 26, 126 },
+        { 27, 117 },
+        { 28, 120 },
+        { 29, 123 },
+        { 30, 127 },
+        { 31, 127 },
+        { 32, 83 },
+        { 33, 84 },
+        { 34, 180 },
+        { 128, 128},
+        { 129, 129},
+        { 130, 130},
+};
+
+struct country_op_class eu_op_class[] = {
+        { 1, 115 },
+        { 2, 118 },
+        { 3, 121 },
+        { 4, 81 },
+        { 5, 116 },
+        { 6, 119 },
+        { 7, 122 },
+        { 8, 117 },
+        { 9, 120 },
+        { 10, 123 },
+        { 11, 83 },
+        { 12, 84 },
+        { 17, 125 },
+        { 18, 180 },
+        { 128, 128 },
+        { 129, 129 },
+        { 130, 130 },
+};
+
+/*Note: To be updated as per latest standard */
+struct country_op_class jp_op_class[] = {
+        { 1, 115 },
+        { 30, 81 },
+        { 31, 82 },
+        { 32, 118 },
+        { 33, 118 },
+        { 34, 121 },
+        { 35, 121 },
+        { 36, 116 },
+        { 37, 119 },
+        { 38, 119 },
+        { 39, 122 },
+        { 40, 122 },
+        { 41, 117 },
+        { 42, 120 },
+        { 43, 120 },
+        { 44, 123 },
+        { 45, 123 },
+        { 56, 83 },
+        { 57, 84 },
+        { 58, 121 },
+        { 59, 180 },
+        { 128, 128 },
+        { 129, 129 },
+        { 130, 130 },
+};
+
+struct country_op_class cn_op_class[] = {
+        { 1, 115 },
+        { 2, 118 },
+        { 3, 125 },
+        { 4, 116 },
+        { 5, 119 },
+        { 6, 126 },
+        { 7, 81 },
+        { 8, 83 },
+        { 9, 84 },
+        { 128, 128 },
+        { 129, 129 },
+        { 130, 130 },
+};
+
+size_t us_op_class_size = ARRAY_SIZE(us_op_class);
+size_t eu_op_class_size = ARRAY_SIZE(eu_op_class);
+size_t jp_op_class_size = ARRAY_SIZE(jp_op_class);
+size_t cn_op_class_size = ARRAY_SIZE(cn_op_class);
 
 static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 					    struct ieee802_11_elems *elems,
@@ -877,15 +978,8 @@ enum hostapd_hw_mode ieee80211_freq_to_channel_ext(unsigned int freq,
 	}
 
 	if (freq > 5940 && freq <= 7105) {
-		int bw;
-		u8 idx = (freq - 5940) / 5;
-
-		bw = center_idx_to_bw_6ghz(idx);
-		if (bw < 0)
-			return NUM_HOSTAPD_MODES;
-
-		*channel = idx;
-		*op_class = 131 + bw;
+		*op_class = 131 + chanwidth;
+		*channel = (freq - 5940) / 5;
 		return HOSTAPD_MODE_IEEE80211A;
 	}
 
@@ -981,28 +1075,7 @@ int ieee80211_chaninfo_to_channel(unsigned int freq, enum chan_width chanwidth,
 	return 0;
 }
 
-
-static const char *const us_op_class_cc[] = {
-	"US", "CA", NULL
-};
-
-static const char *const eu_op_class_cc[] = {
-	"AL", "AM", "AT", "AZ", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE",
-	"DK", "EE", "EL", "ES", "FI", "FR", "GE", "HR", "HU", "IE", "IS", "IT",
-	"LI", "LT", "LU", "LV", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT",
-	"RO", "RS", "RU", "SE", "SI", "SK", "TR", "UA", "UK", NULL
-};
-
-static const char *const jp_op_class_cc[] = {
-	"JP", NULL
-};
-
-static const char *const cn_op_class_cc[] = {
-	"CN", NULL
-};
-
-
-static int country_match(const char *const cc[], const char *const country)
+int country_match(const char *const cc[], const char *const country)
 {
 	int i;
 
@@ -1789,100 +1862,109 @@ size_t mbo_add_ie(u8 *buf, size_t len, const u8 *attr, size_t attr_len)
 }
 
 
-size_t add_multi_ap_ie(u8 *buf, size_t len, u8 value)
+u16 check_multi_ap_ie(const u8 *multi_ap_ie, size_t multi_ap_len,
+				struct multi_ap_params* multi_ap)
 {
+	const struct element *elem;
+	const u8 *start = multi_ap_ie;
+	const u16 len = multi_ap_len;
+
+	for_each_element(elem, start, len) {
+		u8 id = elem->id, elen = elem->datalen;
+                const u8 *pos = elem->data;
+
+                switch (id) {
+			case MULTI_AP_SUB_ELEM_TYPE:
+				if (elen == 1) {
+					multi_ap->capability = *pos;
+				} else {
+					wpa_printf(MSG_DEBUG,
+						"Multi-AP invalid Multi-AP subelement");
+					return WLAN_STATUS_INVALID_IE;
+				}
+				break;
+			case MULTI_AP_PROFILE_SUB_ELEM_ID:
+				if (elen == 1) {
+					multi_ap->profile = *pos;
+					if (multi_ap->profile > MULTI_AP_PROFILE_MAX) {
+						wpa_printf(MSG_DEBUG,
+							"Multi-AP IE with invalid profile 0x%02x",
+							multi_ap->profile);
+						return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
+					}
+				} else {
+					wpa_printf(MSG_DEBUG,
+					       "Multi-AP IE invalid Multi-AP profile element");
+					return WLAN_STATUS_INVALID_IE;
+				}
+				break;
+			case MULTI_AP_VLAN_SUB_ELEM_ID:
+				if (multi_ap->profile < MULTI_AP_PROFILE_02 ||
+					multi_ap->profile > MULTI_AP_PROFILE_MAX) {
+					wpa_printf(MSG_DEBUG,
+					       "Multi-AP IE invalid profile to read VLAN IE");
+					return WLAN_STATUS_INVALID_IE;
+				}
+				if (elen == 2) {
+					multi_ap->vlanid = WPA_GET_LE16(pos);
+				} else {
+					wpa_printf(MSG_DEBUG,
+					       "Multi-AP IE invalid Multi-AP vlan element");
+					return WLAN_STATUS_INVALID_IE;
+				}
+				break;
+			default:
+				wpa_printf(MSG_DEBUG,
+				       "Multi-AP IE unknown Multi-AP subelement");
+				return WLAN_STATUS_INVALID_IE;
+		}
+	}
+	if (!for_each_element_completed(elem, start, len)) {
+		wpa_printf(MSG_DEBUG,
+				"Multi AP IE parse failed @%d",
+				(int) (start + len - (const u8 *) elem));
+		wpa_hexdump(MSG_MSGDUMP, "IEs", start, len);
+	}
+	return WLAN_STATUS_SUCCESS;
+}
+size_t add_multi_ap_ie(u8 *buf, size_t len, struct multi_ap_params* multi_ap)
+{
+	struct multi_ie_hdr *ie_hdr;
 	u8 *pos = buf;
 
 	if (len < 9)
 		return 0;
 
-	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
-	*pos++ = 7; /* len */
-	WPA_PUT_BE24(pos, OUI_WFA);
-	pos += 3;
-	*pos++ = MULTI_AP_OUI_TYPE;
-	*pos++ = MULTI_AP_SUB_ELEM_TYPE;
-	*pos++ = 1; /* len */
-	*pos++ = value;
+	ie_hdr = (struct multi_ie_hdr *) buf;
+
+	ie_hdr->id = WLAN_EID_VENDOR_SPECIFIC;
+	ie_hdr->length = 7;
+	WPA_PUT_BE24(ie_hdr->oui, OUI_WFA);
+	ie_hdr->out_type = MULTI_AP_OUI_TYPE;
+
+	ie_hdr->multi_ap_ext_ie[0] = MULTI_AP_SUB_ELEM_TYPE;
+	ie_hdr->multi_ap_ext_ie[1] = 1;
+	ie_hdr->multi_ap_ext_ie[2] = multi_ap->capability;
+	pos += (sizeof(struct multi_ie_hdr));
+
+	/* Add Multi-AP profile element only for R2 configuraiton */
+	if (multi_ap->profile > 1) {
+		ie_hdr->length += 3;
+		*pos++ = MULTI_AP_PROFILE_SUB_ELEM_ID;
+		*pos++ = 1;
+		*pos++ = multi_ap->profile;
+
+		if (multi_ap->vlanid) {
+			ie_hdr->length += 4;
+			*pos++ = MULTI_AP_VLAN_SUB_ELEM_ID;
+			*pos++ = 2;
+			WPA_PUT_LE16(pos, multi_ap->vlanid);
+			pos += 2;
+		}
+	}
 
 	return pos - buf;
 }
-
-
-static const struct country_op_class us_op_class[] = {
-	{ 1, 115 },
-	{ 2, 118 },
-	{ 3, 124 },
-	{ 4, 121 },
-	{ 5, 125 },
-	{ 12, 81 },
-	{ 22, 116 },
-	{ 23, 119 },
-	{ 24, 122 },
-	{ 25, 126 },
-	{ 26, 126 },
-	{ 27, 117 },
-	{ 28, 120 },
-	{ 29, 123 },
-	{ 30, 127 },
-	{ 31, 127 },
-	{ 32, 83 },
-	{ 33, 84 },
-	{ 34, 180 },
-};
-
-static const struct country_op_class eu_op_class[] = {
-	{ 1, 115 },
-	{ 2, 118 },
-	{ 3, 121 },
-	{ 4, 81 },
-	{ 5, 116 },
-	{ 6, 119 },
-	{ 7, 122 },
-	{ 8, 117 },
-	{ 9, 120 },
-	{ 10, 123 },
-	{ 11, 83 },
-	{ 12, 84 },
-	{ 17, 125 },
-	{ 18, 180 },
-};
-
-static const struct country_op_class jp_op_class[] = {
-	{ 1, 115 },
-	{ 30, 81 },
-	{ 31, 82 },
-	{ 32, 118 },
-	{ 33, 118 },
-	{ 34, 121 },
-	{ 35, 121 },
-	{ 36, 116 },
-	{ 37, 119 },
-	{ 38, 119 },
-	{ 39, 122 },
-	{ 40, 122 },
-	{ 41, 117 },
-	{ 42, 120 },
-	{ 43, 120 },
-	{ 44, 123 },
-	{ 45, 123 },
-	{ 56, 83 },
-	{ 57, 84 },
-	{ 58, 121 },
-	{ 59, 180 },
-};
-
-static const struct country_op_class cn_op_class[] = {
-	{ 1, 115 },
-	{ 2, 118 },
-	{ 3, 125 },
-	{ 4, 116 },
-	{ 5, 119 },
-	{ 6, 126 },
-	{ 7, 81 },
-	{ 8, 83 },
-	{ 9, 84 },
-};
 
 static u8
 global_op_class_from_country_array(u8 op_class, size_t array_size,

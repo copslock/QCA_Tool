@@ -53,6 +53,7 @@ struct driver_atheros_data {
 	int ifindex;
 	int ifindex2;
 	int if_removed;
+    int if_disabled;
 	u8 *assoc_req_ies;
 	size_t assoc_req_ies_len;
 	u8 *assoc_resp_ies;
@@ -76,6 +77,7 @@ struct driver_atheros_data {
 	/* Last IOC_P2P_SET_CHANNEL req_ie */
 	unsigned int req_id;
 	u8  own_addr[ETH_ALEN];
+	u8 bssid[ETH_ALEN];
 
 	int drv_in_scan;
 	int drv_in_remain_on_chan;
@@ -524,6 +526,71 @@ static int athr_get_freq(struct driver_atheros_data *drv, const char *ifname)
 	return iwr.u.freq.m / 100000;
 }
 
+#ifdef CONFIG_SAE
+static int driver_atheros_send_external_auth_status(void *priv,
+						struct external_auth *params)
+{
+	struct driver_atheros_data *drv = priv;
+
+	wpa_printf(MSG_INFO, "External auth status:%u", params->status);
+	if (set80211param(drv, IEEE80211_PARAM_EXTERNAL_AUTH_STATUS, params->status, 1) < 0) {
+		wpa_printf(MSG_DEBUG, "Failed to send external auth status");
+		return -1;
+	}
+
+	return 0;
+}
+#endif
+
+static int driver_atheros_send_mgmt(void *priv, const u8 *frm, size_t data_len,
+			     int noack, unsigned int freq,
+			     const u16 *csa_offs, size_t csa_offs_len)
+{
+	struct driver_atheros_data *drv = priv;
+	u8 *buf, ret;
+	const struct ieee80211_mgmt *mgmt;
+	struct ieee80211req_mgmtbuf *mgmt_frm;
+	size_t buf_size;
+
+#ifndef MGMT_FRAME_MAX_SIZE
+#define MGMT_FRAME_MAX_SIZE 1500
+#endif
+	buf_size = MGMT_FRAME_MAX_SIZE + IEEE80211_ADDR_LEN + sizeof(uint32_t);
+	buf = os_malloc(buf_size);
+
+	if(buf == NULL) {
+		wpa_printf(MSG_DEBUG, "%s Unable to allocate memory", __func__);
+		return -1;
+	}
+
+	os_memset(buf, 0, buf_size);
+
+	mgmt = (const struct ieee80211_mgmt *) frm;
+
+	wpa_printf(MSG_DEBUG, "%s frmlen = %lu " MACSTR, __func__,
+		   (unsigned long) data_len, MAC2STR(mgmt->da));
+
+	mgmt_frm = (struct ieee80211req_mgmtbuf *) buf;
+	os_memcpy(mgmt_frm->macaddr, (u8 *)mgmt->da, IEEE80211_ADDR_LEN);
+	mgmt_frm->buflen = data_len;
+
+	if (&mgmt_frm->buf[0] + data_len > buf + buf_size) {
+		wpa_printf(MSG_INFO, "atheros: Too long frame for "
+			   "driver_atheros_send_mgmt (%u)", (unsigned int) data_len);
+		os_free(buf);
+		return -1;
+	}
+
+	os_memcpy(&mgmt_frm->buf[0], frm, data_len);
+
+	ret = set80211priv(drv, IEEE80211_IOCTL_SEND_MGMT, mgmt_frm,
+			    sizeof(struct ieee80211req_mgmtbuf) + data_len, 1);
+
+	os_free(buf);
+
+	return ret;
+}
+
 
 static int athr_get_countrycode(struct driver_atheros_data *drv)
 {
@@ -550,6 +617,41 @@ static int athr_get_countrycode(struct driver_atheros_data *drv)
 	return 0;
 }
 
+static void athr_raw_receive(struct driver_atheros_data *drv, const char *ev,
+                             size_t len)
+{
+	void *ctx = drv->ctx;
+	const struct ieee80211_mgmt *mgmt;
+	union wpa_event_data event;
+	u16 fc, stype;
+
+	if (len < IEEE80211_HDRLEN)
+		return;
+
+	mgmt = (const struct ieee80211_mgmt *) ev;
+
+	fc = le_to_host16(mgmt->frame_control);
+
+	if (WLAN_FC_GET_TYPE(fc) != WLAN_FC_TYPE_MGMT)
+		return;
+
+	stype = WLAN_FC_GET_STYPE(fc);
+
+	wpa_printf(MSG_DEBUG, "%s: subtype 0x%x len %d", __func__, stype, len);
+	if (stype == WLAN_FC_STYPE_AUTH) {
+		if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.auth))
+			return;
+		os_memset(&event, 0, sizeof(event));
+#ifdef CONFIG_SAE
+		if (le_to_host16(mgmt->u.auth.auth_alg) == WLAN_AUTH_SAE)
+#endif
+		{
+			event.rx_mgmt.frame = (const u8 *)ev;
+			event.rx_mgmt.frame_len = len;
+			wpa_supplicant_event(ctx, EVENT_RX_MGMT, &event);
+		}
+	}
+}
 
 static void
 driver_atheros_event_wireless_custom(struct driver_atheros_data *drv,
@@ -568,6 +670,7 @@ driver_atheros_event_wireless_custom(struct driver_atheros_data *drv,
 			os_strstr(custom, " unicast ") != NULL;
 		/* TODO: parse parameters(?) */
 		wpa_supplicant_event(ctx, EVENT_MICHAEL_MIC_FAILURE, &data);
+
 	} else if (os_strncmp(custom, "ASSOCINFO(ReqIEs=", 17) == 0) {
 		char *spos;
 		int bytes;
@@ -615,6 +718,34 @@ driver_atheros_event_wireless_custom(struct driver_atheros_data *drv,
 	done:
 		os_free(resp_ies);
 		os_free(req_ies);
+	} else if (os_strncmp(custom, "EXTERNAL_AUTH_INDICATION", 24) == 0) {
+		char *spos;
+		struct ev_sta_external_auth_params params;
+#define ETH_LEN 6
+#ifndef MGMT_FRAM_TAG_SIZE
+#define MGMT_FRAM_TAG_SIZE 30
+#endif
+		wpa_printf(MSG_DEBUG, "Received EXTERNAL_AUTH_INDICATION");
+
+		spos = custom + MGMT_FRAM_TAG_SIZE;
+
+		os_memcpy(&params, spos, sizeof(struct ev_sta_external_auth_params));
+
+		data.external_auth.action = params.action;
+		os_memcpy((uint8_t *)(data.external_auth.bssid), params.bssid, ETH_LEN);
+		data.external_auth.ssid_len = params.ssid_len;
+
+		if ( data.external_auth.ssid_len < SSID_MAX_LEN) {
+			os_memcpy((uint8_t *)(data.external_auth.ssid), params.ssid,
+					data.external_auth.ssid_len);
+		} else {
+			wpa_printf(MSG_DEBUG, "WEXT: Exceeding SSID "
+							"Max Length");
+			return;
+		}
+
+		data.external_auth.key_mgmt_suite = params.keymgmt_suite;
+		wpa_supplicant_event(ctx, EVENT_EXTERNAL_AUTH, &data);
 #ifdef CONFIG_PEERKEY
 	} else if (os_strncmp(custom, "STKSTART.request=", 17) == 0) {
                 if (hwaddr_aton(custom + 17, data.stkstart.peer)) {
@@ -662,7 +793,21 @@ driver_atheros_event_wireless_custom(struct driver_atheros_data *drv,
 
 		wpa_supplicant_event(ctx, EVENT_WNM, &data);
 #endif /* CONFIG_IEEE80211V */
-	}
+	} else if (os_strncmp(custom, "CAC.started", 11) ==
+           0) {
+		char *cac;
+		cac = os_strstr(custom, "freq=");
+        if (cac) {
+            data.dfs_event.freq = atoi(cac+5);                
+        }
+
+        cac = os_strstr(custom, "timeout=");
+        if (cac) {
+            data.dfs_event.timeout = atoi(cac+8);                
+        }
+
+        wpa_supplicant_event(ctx, EVENT_DFS_CAC_STARTED, &data);
+    }
 }
 
 
@@ -777,8 +922,21 @@ static int driver_atheros_event_wireless_assocreqie(
 
 		wpa_supplicant_event(drv->ctx, EVENT_TDLS, &data);
 		return 0;
-	}
+	} else
 #endif /* CONFIG_TDLS */
+	if (len >= 11 && os_strncmp(ev, "Manage.auth", 11) == 0) {
+#ifndef MGMT_FRAM_TAG_SIZE
+#define MGMT_FRAM_TAG_SIZE 30
+#endif
+		int length = atoi(ev + 11);
+		if (length < 0 || MGMT_FRAM_TAG_SIZE + length > len) {
+			wpa_printf(MSG_DEBUG,
+				   "Invalid Manage.auth event length %d", length);
+			return -1;
+		}
+		athr_raw_receive(drv, (const char*)((u8 *)ev + MGMT_FRAM_TAG_SIZE), length);
+		return 0;
+	}
 	os_free(drv->assoc_req_ies);
 	drv->assoc_req_ies = os_malloc(len);
 	if (drv->assoc_req_ies == NULL) {
@@ -1074,6 +1232,18 @@ driver_atheros_event_wireless_p2p_custom(struct driver_atheros_data *drv,
 				     &event);
 		break;
 	}
+	case IEEE80211_EV_ASSOC_REJECT: {
+		struct ieee80211_ev_assoc_reject assoc_rej;
+
+		os_memcpy(&assoc_rej, buf, sizeof(struct assoc_reject));
+		event.assoc_reject.status_code = assoc_rej.status_code;
+		event.assoc_reject.timed_out = assoc_rej.timed_out;
+
+		wpa_printf(MSG_DEBUG, "WEXT:EV_ASSOC_REJECT status code:%u",
+			   event.assoc_reject.status_code);
+		wpa_supplicant_event(drv->ctx, EVENT_ASSOC_REJECT, &event);
+		break;
+	}
 	case IEEE80211_EV_RX_MGMT:
 		wpa_printf(MSG_DEBUG, "WEXT: EV_RX_MGMT");
 		fetch_pending_big_events(drv);
@@ -1082,6 +1252,21 @@ driver_atheros_event_wireless_p2p_custom(struct driver_atheros_data *drv,
 		wpa_printf(MSG_DEBUG, "WEXT: EV_P2P_SEND_ACTION_CB");
 		fetch_pending_big_events(drv);
 		break;
+	case IEEE80211_EV_UNPROTECTED_DEAUTH_IND_STA: {
+		u8 sa[6] , da[6];
+		wpa_printf(MSG_DEBUG, "WEXT: EV_UNPROTECT_DEAUTH_IND_STA");
+		if ( len >=14) {
+		        os_memset(&event, 0, sizeof(event));
+			os_memcpy(&sa, buf, 6);
+                        event.unprot_deauth.sa =  sa;
+			os_memcpy(&da, drv->own_addr, 6);
+                        event.unprot_deauth.da =  da;
+			os_memcpy(&event.unprot_deauth.reason_code, buf + 12, 2);
+			wpa_supplicant_event(drv->ctx, EVENT_UNPROT_DEAUTH,
+					     &event);
+                }
+                break;
+        }
 	default:
 		break;
 	}
@@ -1411,6 +1596,7 @@ static void driver_atheros_event_rtm_newlink(void *ctx, struct ifinfomsg *ifi,
 	struct driver_atheros_data *drv = ctx;
 	int attrlen, rta_len;
 	struct rtattr *attr;
+    char namebuf[IFNAMSIZ];
 
 	if (drv->disabled)
 		return;
@@ -1428,6 +1614,36 @@ static void driver_atheros_event_rtm_newlink(void *ctx, struct ifinfomsg *ifi,
 		   (ifi->ifi_flags & IFF_RUNNING) ? "[RUNNING]" : "",
 		   (ifi->ifi_flags & IFF_LOWER_UP) ? "[LOWER_UP]" : "",
 		   (ifi->ifi_flags & IFF_DORMANT) ? "[DORMANT]" : "");
+
+    if (!drv->if_disabled && !(ifi->ifi_flags & IFF_UP)) {
+        wpa_printf(MSG_DEBUG, "ATHR: Interface down");
+        drv->if_disabled = 1;
+        wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_DISABLED, NULL);
+    }
+
+    if (drv->if_disabled && (ifi->ifi_flags & IFF_UP)) {
+        namebuf[0] = '\0';
+        if (if_indextoname(ifi->ifi_index, namebuf) &&
+            linux_iface_up(drv->ioctl_sock, drv->ifname) == 0) {
+            wpa_printf(MSG_DEBUG, "ATHR: Ignore interface up "
+                   "event since interface %s is down",
+                   namebuf);
+        } else if (if_nametoindex(drv->ifname) == 0) {
+            wpa_printf(MSG_DEBUG, "ATHR: Ignore interface up "
+                   "event since interface %s does not exist",
+                   drv->ifname);
+        } else if (drv->if_removed) {
+            wpa_printf(MSG_DEBUG, "ATHR: Ignore interface up "
+                   "event since interface %s is marked "
+                   "removed", drv->ifname);
+        } else {
+            wpa_printf(MSG_DEBUG, "ATHR: Interface up");
+            drv->if_disabled = 0;
+            wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_ENABLED,
+                         NULL);
+        }
+    }
+
 	/*
 	 * Some drivers send the association event before the operup event--in
 	 * this case, lifting operstate in driver_atheros_set_operstate()
@@ -1610,6 +1826,9 @@ void * driver_atheros_init(void *ctx, const char *ifname)
 			WPA_DRIVER_FLAGS_P2P_CONCURRENT;
 
 	drv->capa.flags |= WPA_DRIVER_FLAGS_TDLS_SUPPORT;
+#ifdef CONFIG_SAE
+	drv->capa.flags |= WPA_DRIVER_FLAGS_SAE;
+#endif
 
 	driver_atheros_set_auth_param(drv, IW_AUTH_WPA_ENABLED, 1);
 
@@ -2076,7 +2295,8 @@ static int driver_atheros_get_range(void *priv)
 				WPA_DRIVER_CAPA_KEY_MGMT_WPA2_PSK;
 		}
 		drv->capa.enc |= WPA_DRIVER_CAPA_ENC_WEP40 |
-			WPA_DRIVER_CAPA_ENC_WEP104;
+			WPA_DRIVER_CAPA_ENC_WEP104 |
+                        WPA_DRIVER_CAPA_ENC_WEP128;
 		if (range->enc_capa & IW_ENC_CAPA_CIPHER_TKIP)
 			drv->capa.enc |= WPA_DRIVER_CAPA_ENC_TKIP;
 		if (range->enc_capa & IW_ENC_CAPA_CIPHER_CCMP)
@@ -2091,7 +2311,7 @@ static int driver_atheros_get_range(void *priv)
 		drv->capa.max_remain_on_chan = 1000;
 
 		wpa_printf(MSG_DEBUG, "  capabilities: key_mgmt 0x%x enc 0x%x "
-			   "flags 0x%x",
+			   "flags %llx",
 			   drv->capa.key_mgmt, drv->capa.enc, drv->capa.flags);
 	} else {
 		wpa_printf(MSG_DEBUG, "SIOCGIWRANGE: too old (short) data - "
@@ -2121,7 +2341,7 @@ driver_atheros_del_key(struct driver_atheros_data *drv, int key_idx,
 
 int
 driver_atheros_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-		       const u8 *addr, int key_idx, int set_tx,
+		       const u8 *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 		       const u8 *seq, size_t seq_len,
 		       const u8 *key, size_t key_len)
 {
@@ -2186,7 +2406,7 @@ driver_atheros_set_key(const char *ifname, void *priv, enum wpa_alg alg,
 		return -1;
 	}
 
-	wpa_printf(MSG_DEBUG, "%s: ifname=%s, alg=%s key_idx=%d set_tx=%d "
+	wpa_printf(MSG_INFO, "%s: ifname=%s, alg=%s key_idx=%d set_tx=%d "
 		   "seq_len=%lu key_len=%lu",
 		   __FUNCTION__, drv->ifname, alg_name, key_idx, set_tx,
 		   (unsigned long) seq_len, (unsigned long) key_len);
@@ -2350,7 +2570,7 @@ static void athr_clear_bssid(struct driver_atheros_data *drv)
 
 
 static int driver_atheros_deauthenticate(void *priv, const u8 *addr,
-					 int reason_code)
+					 u16 reason_code)
 {
 	struct driver_atheros_data *drv = priv;
 	int ret;
@@ -2599,6 +2819,10 @@ static int driver_atheros_set_auth_alg(struct driver_atheros_data *drv,
 		authmode = IEEE80211_AUTH_AUTO;
 	else if (auth_alg & WPA_AUTH_ALG_SHARED)
 		authmode = IEEE80211_AUTH_SHARED;
+#ifdef CONFIG_SAE
+	else if (key_mgmt_suite == WPA_KEY_MGMT_SAE)
+		authmode = IEEE80211_AUTH_SAE;
+#endif
 	else
 		authmode = IEEE80211_AUTH_OPEN;
 
@@ -2666,7 +2890,7 @@ driver_atheros_associate(void *priv,
 	int ret = 0, privacy = 1;
 
 	wpa_printf(MSG_DEBUG, "athr: Associate: mode=%d p2p=%d freq=%d",
-		   params->mode, params->p2p, params->freq);
+		   params->mode, params->p2p, params->freq.freq);
 
 	drv->last_assoc_mode = params->mode;
 	drv->assoc_event_sent = 0;
@@ -2715,6 +2939,12 @@ driver_atheros_associate(void *priv,
 		      params->drop_unencrypted, 1);
 	if (privacy) {
 		if (params->key_mgmt_suite == WPA_KEY_MGMT_IEEE8021X ||
+#ifdef CONFIG_SAE
+		    params->key_mgmt_suite == WPA_KEY_MGMT_SAE ||
+#endif
+#ifdef CONFIG_OWE
+		    params->key_mgmt_suite == WPA_KEY_MGMT_OWE ||
+#endif
 		    params->key_mgmt_suite == WPA_KEY_MGMT_PSK) {
 			wpa_printf(MSG_DEBUG, " *** KEY MGMT is 2");
 		    if (params->wpa_ie_len &&
@@ -2846,6 +3076,9 @@ int driver_atheros_get_capa(void *priv, struct wpa_driver_capa *capa)
 
 	drv->capa.flags |= WPA_DRIVER_FLAGS_AP;
 	drv->capa.flags |= WPA_DRIVER_FLAGS_SET_KEYS_AFTER_ASSOC_DONE;
+#ifdef CONFIG_SAE
+	drv->capa.flags |= WPA_DRIVER_FLAGS_SAE;
+#endif
 	os_memcpy(capa, &drv->capa, sizeof(*capa));
 	return 0;
 }
@@ -2927,7 +3160,7 @@ static struct hostapd_hw_modes * athr_add_11b(struct hostapd_hw_modes *modes,
 
 static struct hostapd_hw_modes * athr_get_hw_feature_data(void *priv,
 							  u16 *num_modes,
-							  u16 *flags)
+							  u16 *flags, u8 *dfs_domain)
 {
 	struct driver_atheros_data *drv = priv;
 	struct iwreq iwr;
@@ -2978,7 +3211,7 @@ static struct hostapd_hw_modes * athr_get_hw_feature_data(void *priv,
 		bw_div = 4;
 	wpa_printf(MSG_DEBUG, "athr: Channel list");
 	for (i = 0; i < chans.ic_nchans; i++) {
-		struct ieee80211_channel *chan = &chans.ic_chans[i];
+		struct ieee80211_ath_channel *chan = &chans.ic_chans[i];
 		int active;
 		active = act.ic_channels[chan->ic_ieee / 8] &
 			(1 << (chan->ic_ieee % 8));
@@ -3307,7 +3540,7 @@ static int driver_atheros_if_remove(void *priv, enum wpa_driver_if_type type,
 
 
 static int driver_atheros_hapd_sta_deauth(void *priv, const u8 *own_addr,
-					  const u8 *addr, int reason_code)
+					  const u8 *addr, u16 reason_code)
 {
 	struct driver_atheros_data *drv = priv;
 	struct ieee80211req_mlme mlme;
@@ -3357,6 +3590,7 @@ atheros_set_wps_ie(void *priv, const u8 *ie, size_t len, u32 frametype)
 	beac_ie = (struct ieee80211req_getset_appiebuf *) buf;
 	beac_ie->app_frmtype = frametype;
 	beac_ie->app_buflen = len;
+	beac_ie->identifier = HOSTAPD_IE;
 	memcpy(&(beac_ie->app_buf[0]), ie, len);
 
 	return set80211priv(drv, IEEE80211_IOCTL_SET_APPIEBUF, beac_ie,
@@ -3400,6 +3634,44 @@ driver_atheros_set_ap_wps_ie(void *priv, const struct wpabuf *beacon,
 	return 0;
 }
 
+#ifndef CONFIG_NO_STDOUT_DEBUG
+static const char *
+ether_sprintf(const u8 *addr)
+{
+	static char buf[sizeof(MACSTR)];
+
+	if (addr != NULL)
+		os_snprintf(buf, sizeof(buf), MACSTR, MAC2STR(addr));
+	else
+		os_snprintf(buf, sizeof(buf), MACSTR, 0, 0, 0, 0, 0, 0);
+	return buf;
+}
+#endif /* CONFIG_NO_STDOUT_DEBUG */
+
+static int driver_atheros_set_supp_port(void *priv, int authorized)
+{
+	struct driver_atheros_data *drv = priv;
+	struct ieee80211req_mlme mlme;
+	int ret = 0;
+
+	driver_atheros_get_bssid(priv, drv->bssid);
+	wpa_printf(MSG_INFO, "%s: addr=%s authorized=%d",
+		   __func__, ether_sprintf(drv->bssid), authorized);
+
+	if (authorized)
+		mlme.im_op = IEEE80211_MLME_AUTHORIZE;
+	else
+		mlme.im_op = IEEE80211_MLME_UNAUTHORIZE;
+	mlme.im_reason = 0;
+	os_memcpy(mlme.im_macaddr, drv->bssid, IEEE80211_ADDR_LEN);
+	ret = set80211priv(drv, IEEE80211_IOCTL_SETMLME, &mlme, sizeof(mlme),0);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "%s: Failed to %sauthorize STA " MACSTR,
+			   __func__, authorized ? "" : "un", MAC2STR(drv->bssid));
+	}
+
+	return ret;
+}
 
 static const u8 * driver_atheros_get_mac_addr(void *priv)
 {
@@ -3669,6 +3941,7 @@ static int athr_set_intra_bss(void *priv, int enabled)
 }
 
 
+#ifdef ANDROID
 static int athr_driver_acl(struct driver_atheros_data *drv, const char *cmd,
 			   char *buf, size_t buf_len)
 {
@@ -3740,7 +4013,6 @@ static int athr_driver_acl(struct driver_atheros_data *drv, const char *cmd,
 	return ret;
 }
 
-#ifdef ANDROID
 /**
  * athr_driver_cmd - Driver escape function
  * @priv: Pointer to private wext data from driver_atheros_init()
@@ -4113,6 +4385,7 @@ static int athr_wnm_tfs(struct driver_atheros_data *drv, const u8* peer,
 		tfs_ie->app_frmtype = IEEE80211_APPIE_FRAME_WNM;
 		tfs_ie->app_buflen = IEEE80211_APPIE_MAX -
 			sizeof(struct ieee80211req_getset_appiebuf);
+		tfs_ie->identifier = HOSTAPD_IE;
 		/* Command header for driver */
 		os_memcpy(&(tfs_ie->app_buf[0]), peer, ETH_ALEN);
 		val = oper;
@@ -4144,6 +4417,7 @@ static int athr_wnm_tfs(struct driver_atheros_data *drv, const u8* peer,
 		tfs_ie = (struct ieee80211req_getset_appiebuf *) buf;
 		tfs_ie->app_frmtype = IEEE80211_APPIE_FRAME_WNM;
 		tfs_ie->app_buflen = ETH_ALEN + 2 + 2 + *len;
+		tfs_ie->identifier = HOSTAPD_IE;
 
 		/* Command header for driver */
 		os_memcpy(&(tfs_ie->app_buf[0]), peer, ETH_ALEN);
@@ -4251,11 +4525,16 @@ const struct wpa_driver_ops wpa_driver_athr_ops = {
 	.remain_on_channel = driver_atheros_remain_on_channel,
 	.cancel_remain_on_channel = driver_atheros_cancel_remain_on_channel,
 	.probe_req_report = driver_atheros_probe_req_report,
+	.send_mlme = driver_atheros_send_mgmt,
+#ifdef CONFIG_SAE
+	.send_external_auth_status = driver_atheros_send_external_auth_status,
+#endif
 	.sta_deauth = driver_atheros_hapd_sta_deauth,
 	.hapd_send_eapol = driver_atheros_hapd_send_eapol,
 	.if_add = driver_atheros_if_add,
 	.if_remove = driver_atheros_if_remove,
 	.set_ap_wps_ie = driver_atheros_set_ap_wps_ie,
+	.set_supp_port = driver_atheros_set_supp_port,
 	.get_mac_addr = driver_atheros_get_mac_addr,
 	.deinit_ap = driver_atheros_deinit_ap,
 	.get_noa = athr_get_noa,

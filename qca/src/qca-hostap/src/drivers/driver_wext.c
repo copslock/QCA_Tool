@@ -1827,7 +1827,7 @@ static int wpa_driver_wext_set_key_ext(void *priv, enum wpa_alg alg,
  * SIOCSIWENCODE if the extended ioctl fails when configuring a WEP key.
  */
 int wpa_driver_wext_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-			    const u8 *addr, int key_idx,
+			    const u8 *addr, int key_idx, int vlan_id, u8 vlan_found,
 			    int set_tx, const u8 *seq, size_t seq_len,
 			    const u8 *key, size_t key_len)
 {

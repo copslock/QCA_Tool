@@ -270,6 +270,10 @@ static void * macsec_qca_init(void *ctx, const char *ifname)
 		drv->secy_id = 1;
 	else if (os_memcmp("eth3", ifname, 4) == 0)
 		drv->secy_id = 2;
+	else if (os_memcmp("eth4", ifname, 4) == 0)
+                drv->secy_id = 0;
+        else if (os_memcmp("eth5", ifname, 4) == 0)
+                drv->secy_id = 1;
 	else
 		drv->secy_id = -1;
 
@@ -308,9 +312,11 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 		drv->secy_id = 1;
 	else if (os_memcmp("eth3", params->ifname, 4) == 0)
 		drv->secy_id = 2;
-	else if (os_memcmp("eth4", params->ifname, 4) == 0)
+	else if ((os_memcmp("eth4", params->ifname, 4) == 0) ||
+		 (os_memcmp("eth0", params->ifname, 4) == 0))
 		drv->secy_id = 0;
-	else if (os_memcmp("eth5", params->ifname, 4) == 0)
+	else if ((os_memcmp("eth5", params->ifname, 4) == 0) ||
+		 (os_memcmp("eth1", params->ifname, 4) == 0))
 		drv->secy_id = 1;
 	else
 		drv->secy_id = -1;
@@ -461,7 +467,7 @@ static fal_cipher_suite_e macsec_qca_cs_type_get(u64 cs)
 }
 
 
-static int macsec_qca_set_current_cipher_suite(void *priv, u64 cs)
+static int macsec_qca_set_current_cipher_suite(void *priv, uint64_t cs)
 {
 	struct macsec_qca_data *drv = priv;
 	fal_cipher_suite_e cs_type;

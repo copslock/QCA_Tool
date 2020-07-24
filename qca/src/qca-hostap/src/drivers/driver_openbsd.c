@@ -70,8 +70,8 @@ wpa_driver_openbsd_get_capa(void *priv, struct wpa_driver_capa *capa)
 
 static int
 wpa_driver_openbsd_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-	    const unsigned char *addr, int key_idx, int set_tx, const u8 *seq,
-	    size_t seq_len, const u8 *key, size_t key_len)
+	    const unsigned char *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx,
+	    const u8 *seq, size_t seq_len, const u8 *key, size_t key_len)
 {
 	struct openbsd_driver_data *drv = priv;
 	struct ieee80211_keyavail keyavail;

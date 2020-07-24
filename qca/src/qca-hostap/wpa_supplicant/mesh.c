@@ -294,7 +294,8 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 
 	bss->conf = *conf->bss;
 	bss->conf->start_disabled = 1;
-	bss->conf->mesh = MESH_ENABLED;
+	//bss->conf->mesh = MESH_ENABLED;
+	bss->conf->mesh = 0;
 	bss->conf->ap_max_inactivity = wpa_s->conf->mesh_max_inactivity;
 
 	if (ieee80211_is_dfs(ssid->frequency, wpa_s->hw.modes,

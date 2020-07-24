@@ -78,7 +78,9 @@ struct atheros_driver_data {
 	struct wpabuf *wpa_ie;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
+	struct wpa_driver_capa capa;
 	u8	own_addr[ETH_ALEN];
+	int has_capability;
 };
 
 static int atheros_sta_deauth(void *priv, const u8 *own_addr, const u8 *addr,
@@ -383,6 +385,45 @@ atheros_configure_wpa(struct atheros_driver_data *drv,
 	return 0;
 }
 
+/*
+   Remove all app_ie's of Beacon & Probe Response frames which contains
+   identifiers of HOSTAPD_IE & HOSTAPD_WPS_IE
+*/
+
+void atheros_remove_ie(struct atheros_driver_data *drv)
+{
+	struct ieee80211req_getset_appiebuf app_ie[512];
+
+	app_ie->app_buflen = 0;
+	app_ie->identifier = HOSTAPD_IE;
+        app_ie->app_frmtype = IEEE80211_APPIE_FRAME_BEACON;
+
+        wpa_printf(MSG_INFO, "Remove all app_ie's of Beacon & Probe Response "
+                              "frames: '%s'", __func__);
+        set80211priv(drv, IEEE80211_IOCTL_SET_APPIEBUF, app_ie,
+                     sizeof(struct ieee80211req_getset_appiebuf) +
+                     app_ie->app_buflen);
+
+	app_ie->app_frmtype = IEEE80211_APPIE_FRAME_PROBE_RESP;
+
+        set80211priv(drv, IEEE80211_IOCTL_SET_APPIEBUF, app_ie,
+                     sizeof(struct ieee80211req_getset_appiebuf) +
+                     app_ie->app_buflen);
+
+	app_ie->identifier = HOSTAPD_WPS_IE;
+
+        set80211priv(drv, IEEE80211_IOCTL_SET_APPIEBUF, app_ie,
+                     sizeof(struct ieee80211req_getset_appiebuf) +
+                     app_ie->app_buflen);
+
+	app_ie->app_frmtype = IEEE80211_APPIE_FRAME_BEACON;
+
+        set80211priv(drv, IEEE80211_IOCTL_SET_APPIEBUF, app_ie,
+                     sizeof(struct ieee80211req_getset_appiebuf) +
+                     app_ie->app_buflen);
+
+}
+
 static int
 atheros_set_ieee8021x(void *priv, struct wpa_bss_params *params)
 {
@@ -392,6 +433,8 @@ atheros_set_ieee8021x(void *priv, struct wpa_bss_params *params)
 
 	if (!params->enabled) {
 		/* XXX restore state */
+		atheros_remove_ie(drv);
+
 		if (set80211param(priv, IEEE80211_PARAM_AUTHMODE,
 				  IEEE80211_AUTH_AUTO) < 0)
 			return -1;
@@ -493,7 +536,7 @@ atheros_del_key(void *priv, const u8 *addr, int key_idx)
 
 static int
 atheros_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-		const u8 *addr, int key_idx, int set_tx, const u8 *seq,
+		const u8 *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx, const u8 *seq,
 		size_t seq_len, const u8 *key, size_t key_len)
 {
 	struct atheros_driver_data *drv = priv;
@@ -718,6 +761,7 @@ atheros_set_opt_ie(void *priv, const u8 *ie, size_t ie_len)
 		os_memcpy(&(app_ie->app_buf[0]), ie, ie_len);
 	app_ie->app_buflen = ie_len;
 
+	app_ie->identifier = HOSTAPD_IE;
 	app_ie->app_frmtype = IEEE80211_APPIE_FRAME_BEACON;
 
 	/* append WPS IE for Beacon */
@@ -850,7 +894,7 @@ static int atheros_set_qos_map(void *ctx, const u8 *qos_map_set,
 
 
 static void atheros_raw_receive(void *ctx, const u8 *src_addr, const u8 *buf,
-				size_t len)
+				size_t len, u32 freq)
 {
 	struct atheros_driver_data *drv = ctx;
 	const struct ieee80211_mgmt *mgmt;
@@ -871,8 +915,8 @@ static void atheros_raw_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 
 	stype = WLAN_FC_GET_STYPE(fc);
 
-	wpa_printf(MSG_DEBUG, "%s: subtype 0x%x len %d", __func__, stype,
-		   (int) len);
+	wpa_printf(MSG_DEBUG, "%s: subtype 0x%x len %d freq=%d",
+		   __func__, stype, (int) len, freq);
 
 	if (stype == WLAN_FC_STYPE_PROBE_REQ) {
 		if (len < IEEE80211_HDRLEN)
@@ -894,6 +938,7 @@ static void atheros_raw_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 		os_memset(&event, 0, sizeof(event));
 		event.rx_mgmt.frame = buf;
 		event.rx_mgmt.frame_len = len;
+		event.rx_mgmt.freq = freq;
 		wpa_supplicant_event(drv->hapd, EVENT_RX_MGMT, &event);
 		return;
 	}
@@ -946,6 +991,12 @@ static void atheros_raw_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 	}
 }
 
+static void atheros_raw_receive_l2_packet(void *ctx, const u8 *src_addr,
+		const u8 *buf, size_t len)
+{
+	atheros_raw_receive(ctx, src_addr, buf, len, 0);
+}
+
 
 static int atheros_receive_pkt(struct atheros_driver_data *drv)
 {
@@ -975,7 +1026,7 @@ static int atheros_receive_pkt(struct atheros_driver_data *drv)
 
 #if defined(CONFIG_WPS) || defined(CONFIG_IEEE80211R) || defined(CONFIG_FILS)
 	drv->sock_raw = l2_packet_init(drv->iface, NULL, ETH_P_80211_RAW,
-				       atheros_raw_receive, drv, 1);
+				       atheros_raw_receive_l2_packet, drv, 1);
 	if (drv->sock_raw == NULL)
 		return -1;
 #endif /* CONFIG_WPS || CONFIG_IEEE80211R || CONFIG_FILS */
@@ -1005,6 +1056,7 @@ atheros_set_wps_ie(void *priv, const u8 *ie, size_t len, u32 frametype)
 	beac_ie = (struct ieee80211req_getset_appiebuf *) buf;
 	beac_ie->app_frmtype = frametype;
 	beac_ie->app_buflen = len;
+	beac_ie->identifier = HOSTAPD_WPS_IE;
 	if (ie)
 		os_memcpy(&(beac_ie->app_buf[0]), ie, len);
 
@@ -1232,7 +1284,9 @@ static void
 atheros_wireless_event_wireless_custom(struct atheros_driver_data *drv,
 				       char *custom, char *end)
 {
+#ifndef MGMT_FRAM_TAG_SIZE
 #define MGMT_FRAM_TAG_SIZE 30 /* hardcoded in driver */
+#endif
 	wpa_printf(MSG_DEBUG, "Custom wireless event: '%s'", custom);
 
 	if (os_strncmp(custom, "MLME-MICHAELMICFAILURE.indication", 33) == 0) {
@@ -1293,21 +1347,38 @@ atheros_wireless_event_wireless_custom(struct atheros_driver_data *drv,
 		 * Atheros driver uses a hack to pass Probe Request frames as a
 		 * binary data in the custom wireless event. The old way (using
 		 * packet sniffing) didn't work when bridging.
-		 * Format: "Manage.prob_req <frame len>" | zero padding | frame
+		 * Format: "Manage.prob_req <frame len> freq=<freq>" | zero padding | frame
 		 */
 		int len = atoi(custom + 16);
+		char *pos = os_strstr(custom, "freq=");
+		u32 freq = 0;
+
+		if (pos) {
+			pos += 5;
+			freq = strtoul(pos, NULL, 10);
+			wpa_printf(MSG_DEBUG, "freq=%d", freq);
+		}
 		if (len < 0 || MGMT_FRAM_TAG_SIZE + len > end - custom) {
 			wpa_printf(MSG_DEBUG, "Invalid Manage.prob_req event "
 				   "length %d", len);
 			return;
 		}
 		atheros_raw_receive(drv, NULL,
-				    (u8 *) custom + MGMT_FRAM_TAG_SIZE, len);
+				    (u8 *) custom + MGMT_FRAM_TAG_SIZE,
+				    len, freq);
 #endif /* CONFIG_WPS */
 	} else if (os_strncmp(custom, "Manage.assoc_req ", 17) == 0) {
-		/* Format: "Manage.assoc_req <frame len>" | zero padding |
+		/* Format: "Manage.assoc_req <frame len> freq=<freq>" | zero padding |
 		 * frame */
 		int len = atoi(custom + 17);
+		char *pos = os_strstr(custom, "freq=");
+		u32 freq = 0;
+
+		if (pos) {
+			pos += 5;
+			freq = strtoul(pos, NULL, 10);
+			wpa_printf(MSG_DEBUG, "freq=%d", freq);
+		}
 		if (len < 0 || MGMT_FRAM_TAG_SIZE + len > end - custom) {
 			wpa_printf(MSG_DEBUG,
 				   "Invalid Manage.assoc_req event length %d",
@@ -1315,10 +1386,19 @@ atheros_wireless_event_wireless_custom(struct atheros_driver_data *drv,
 			return;
 		}
 		atheros_raw_receive(drv, NULL,
-				    (u8 *) custom + MGMT_FRAM_TAG_SIZE, len);
+				    (u8 *) custom + MGMT_FRAM_TAG_SIZE,
+				    len, freq);
 	} else if (os_strncmp(custom, "Manage.auth ", 12) == 0) {
 		/* Format: "Manage.auth <frame len>" | zero padding | frame */
 		int len = atoi(custom + 12);
+		char *pos = os_strstr(custom, "freq=");
+		u32 freq = 0;
+
+		if (pos) {
+			pos += 5;
+			freq = strtoul(pos, NULL, 10);
+			wpa_printf(MSG_DEBUG, "freq=%d", freq);
+		}
 		if (len < 0 ||
 		    MGMT_FRAM_TAG_SIZE + len > end - custom) {
 			wpa_printf(MSG_DEBUG,
@@ -1326,11 +1406,20 @@ atheros_wireless_event_wireless_custom(struct atheros_driver_data *drv,
 			return;
 		}
 		atheros_raw_receive(drv, NULL,
-				    (u8 *) custom + MGMT_FRAM_TAG_SIZE, len);
+				    (u8 *) custom + MGMT_FRAM_TAG_SIZE,
+				    len, freq);
 	} else if (os_strncmp(custom, "Manage.action ", 14) == 0) {
 		/* Format: "Manage.assoc_req <frame len>" | zero padding | frame
 		 */
 		int len = atoi(custom + 14);
+		char *pos = os_strstr(custom, "freq=");
+		u32 freq = 0;
+
+		if (pos) {
+			pos += 5;
+			freq = strtoul(pos, NULL, 10);
+			wpa_printf(MSG_DEBUG, "freq=%d", freq);
+		}
 		if (len < 0 || MGMT_FRAM_TAG_SIZE + len > end - custom) {
 			wpa_printf(MSG_DEBUG,
 				   "Invalid Manage.action event length %d",
@@ -1338,7 +1427,8 @@ atheros_wireless_event_wireless_custom(struct atheros_driver_data *drv,
 			return;
 		}
 		atheros_raw_receive(drv, NULL,
-				    (u8 *) custom + MGMT_FRAM_TAG_SIZE, len);
+				    (u8 *) custom + MGMT_FRAM_TAG_SIZE,
+				    len, freq);
 	}
 }
 
@@ -1466,6 +1556,37 @@ atheros_wireless_event_atheros_custom(struct atheros_driver_data *drv,
 		wpa_printf(MSG_DEBUG, "WEXT: EV_RX_MGMT");
 		fetch_pending_big_events(drv);
 		break;
+        case IEEE80211_EV_TX_MGMT:
+                {
+                union wpa_event_data event;
+                const struct ieee80211_mgmt *mgmt;
+                u16 fc, stype,data_len;
+
+                if (len < sizeof(int) + 24) {
+                        wpa_printf(MSG_DEBUG, "athr: frame too short");
+                        break;
+                }
+                mgmt = (void *) &buf[sizeof(int)];
+                data_len = len - sizeof(int);
+                fc = le_to_host16(mgmt->frame_control);
+                stype = WLAN_FC_GET_STYPE(fc);
+
+                wpa_printf(MSG_DEBUG, "athr: EV_TX_MGMT stype=%u "
+                                "len=%u", stype, (int) data_len);
+
+                if (stype == WLAN_FC_STYPE_DISASSOC) {
+                    os_memset(&event, 0, sizeof(event));
+                    event.tx_status.type = WLAN_FC_GET_TYPE(fc);
+                    event.tx_status.stype = stype;
+                    event.tx_status.dst = mgmt->da;
+                    event.tx_status.data = (const u8 *) mgmt;
+                    event.tx_status.data_len = data_len;
+                    event.tx_status.ack = *(int*)buf;
+                    wpa_supplicant_event(drv->hapd, EVENT_TX_STATUS,
+                                                     &event);
+               }
+               }
+               break;
 	default:
 		break;
 	}
@@ -1610,6 +1731,30 @@ atheros_get_we_version(struct atheros_driver_data *drv)
 			   range->we_version_source,
 			   range->enc_capa);
 		drv->we_version = range->we_version_compiled;
+		drv->has_capability = 1;
+		if (range->enc_capa & IW_ENC_CAPA_WPA) {
+			drv->capa.key_mgmt |= WPA_DRIVER_CAPA_KEY_MGMT_WPA |
+				WPA_DRIVER_CAPA_KEY_MGMT_WPA_PSK;
+		}
+		if (range->enc_capa & IW_ENC_CAPA_WPA2) {
+			drv->capa.key_mgmt |= WPA_DRIVER_CAPA_KEY_MGMT_WPA2 |
+				WPA_DRIVER_CAPA_KEY_MGMT_WPA2_PSK;
+		}
+		drv->capa.enc |= WPA_DRIVER_CAPA_ENC_WEP40 |
+			WPA_DRIVER_CAPA_ENC_WEP104;
+		if (range->enc_capa & IW_ENC_CAPA_CIPHER_TKIP)
+			drv->capa.enc |= WPA_DRIVER_CAPA_ENC_TKIP;
+		if (range->enc_capa & IW_ENC_CAPA_CIPHER_CCMP)
+			drv->capa.enc |= WPA_DRIVER_CAPA_ENC_CCMP;
+		if (range->enc_capa & IW_ENC_CAPA_4WAY_HANDSHAKE)
+			drv->capa.flags |= (WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_PSK | WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_8021X);
+		drv->capa.auth = WPA_DRIVER_AUTH_OPEN |
+			WPA_DRIVER_AUTH_SHARED |
+			WPA_DRIVER_AUTH_LEAP;
+
+		wpa_printf(MSG_DEBUG, "  capabilities: key_mgmt 0x%x enc 0x%x "
+			"flags 0x%llx",
+			drv->capa.key_mgmt, drv->capa.enc, drv->capa.flags);
 	}
 
 	os_free(range);
@@ -1674,6 +1819,8 @@ atheros_send_eapol(void *priv, const u8 *addr, const u8 *data, size_t data_len,
 
 	wpa_hexdump(MSG_MSGDUMP, "TX EAPOL", bp, len);
 
+        /* Delay added as workaround for handling 500 clients group rekeying */
+	os_sleep(0, 10000);
 	status = l2_packet_send(drv->sock_xmit, addr, ETH_P_EAPOL, bp, len);
 
 	if (bp != buf)
@@ -1890,7 +2037,21 @@ static int
 atheros_commit(void *priv)
 {
 	struct atheros_driver_data *drv = priv;
-	return linux_set_iface_flags(drv->ioctl_sock, drv->iface, 1);
+    int count = 0;
+    int connected = 0;
+
+    wpa_printf(MSG_DEBUG, "%s enter ", __FUNCTION__);
+    while (!connected){
+        if(linux_set_iface_flags(drv->ioctl_sock, drv->iface, 1)){
+            connected = 0;
+            count++;
+            os_sleep(1, 0);
+        } else {
+            connected = 1;
+        }
+    }
+    wpa_printf(MSG_DEBUG, "%s: exit count=%d", __FUNCTION__, count);
+    return 0;
 }
 
 static int atheros_set_authmode(void *priv, int auth_algs)
@@ -1934,6 +2095,16 @@ static int atheros_set_ap(void *priv, struct wpa_driver_ap_params *params)
 			params->proberesp_ies);
 	wpa_hexdump_buf(MSG_DEBUG, "atheros: assocresp_ies",
 			params->assocresp_ies);
+
+	atheros_set_wps_ie(priv, params->assocresp_ies ? wpabuf_head(params->assocresp_ies) : NULL,
+		params->assocresp_ies ? wpabuf_len(params->assocresp_ies) : 0,
+		IEEE80211_APPIE_FRAME_ASSOC_RESP);
+	atheros_set_wps_ie(priv, params->beacon_ies ? wpabuf_head(params->beacon_ies) : NULL,
+		params->beacon_ies ? wpabuf_len(params->beacon_ies) : 0,
+		IEEE80211_APPIE_FRAME_BEACON);
+	atheros_set_wps_ie(priv, params->proberesp_ies ? wpabuf_head(params->proberesp_ies) : NULL,
+		params->proberesp_ies ? wpabuf_len(params->proberesp_ies): 0,
+		IEEE80211_APPIE_FRAME_PROBE_RESP);
 
 #if defined(CONFIG_HS20) && (defined(IEEE80211_PARAM_OSEN) || defined(CONFIG_ATHEROS_OSEN))
 	if (params->osen) {
@@ -2053,6 +2224,24 @@ set80211big(struct atheros_driver_data *drv, int op, const void *data, int len)
 	return 0;
 }
 
+static void atheros_send_action_cancel_wait(void *priv)
+{
+	struct atheros_driver_data *drv = priv;
+	struct ieee80211_p2p_send_action *act;
+
+	act = os_zalloc(sizeof(*act));
+	if (act == NULL)
+		return;
+	/* reusing the send action ioctl for cancel wait */
+	act->cancel_current_wait = 1;
+	wpa_printf(MSG_DEBUG, "%s[%d]",__func__, __LINE__);
+	wpa_hexdump(MSG_MSGDUMP, "athr: act", (u8 *) act, sizeof(*act));
+
+	set80211big(drv, IEEE80211_IOC_P2P_SEND_ACTION, act, sizeof(*act));
+
+	os_free(act);
+
+}
 
 static int atheros_send_action(void *priv, unsigned int freq,
 			       unsigned int wait,
@@ -2068,6 +2257,7 @@ static int atheros_send_action(void *priv, unsigned int freq,
 	if (act == NULL)
 		return -1;
 	act->freq = freq;
+	act->scan_time = wait;
 	os_memcpy(act->dst_addr, dst, ETH_ALEN);
 	os_memcpy(act->src_addr, src, ETH_ALEN);
 	os_memcpy(act->bssid, bssid, ETH_ALEN);
@@ -2085,6 +2275,237 @@ static int atheros_send_action(void *priv, unsigned int freq,
 	return res;
 }
 
+static struct hostapd_hw_modes * athr_add_11b(struct hostapd_hw_modes *modes,
+                                              u16 *num_modes)
+{
+        u16 m;
+        struct hostapd_hw_modes *mode11g = NULL, *nmodes, *mode;
+        int i, mode11g_idx = -1;
+
+        /* If only 802.11g mode is included, use it to construct matching
+         * 802.11b mode data. */
+
+        for (m = 0; m < *num_modes; m++) {
+                if (modes[m].mode == HOSTAPD_MODE_IEEE80211B)
+                        return modes; /* 802.11b already included */
+                if (modes[m].mode == HOSTAPD_MODE_IEEE80211G)
+                        mode11g_idx = m;
+        }
+
+        if (mode11g_idx < 0)
+                return modes; /* 2.4 GHz band not supported at all */
+
+        nmodes = os_realloc(modes, (*num_modes + 1) * sizeof(*nmodes));
+        if (nmodes == NULL)
+                return modes; /* Could not add 802.11b mode */
+
+        mode = &nmodes[*num_modes];
+        os_memset(mode, 0, sizeof(*mode));
+        (*num_modes)++;
+        modes = nmodes;
+
+        mode->mode = HOSTAPD_MODE_IEEE80211B;
+
+        mode11g = &modes[mode11g_idx];
+        mode->num_channels = mode11g->num_channels;
+        mode->channels = os_malloc(mode11g->num_channels *
+                                   sizeof(struct hostapd_channel_data));
+        if (mode->channels == NULL) {
+                (*num_modes)--;
+                return modes; /* Could not add 802.11b mode */
+        }
+        os_memcpy(mode->channels, mode11g->channels,
+                  mode11g->num_channels * sizeof(struct hostapd_channel_data));
+
+        mode->num_rates = 0;
+        mode->rates = os_malloc(4 * sizeof(int));
+        if (mode->rates == NULL) {
+                os_free(mode->channels);
+                (*num_modes)--;
+                return modes; /* Could not add 802.11b mode */
+        }
+
+        for (i = 0; i < mode11g->num_rates; i++) {
+                if (mode11g->rates[i] != 10 && mode11g->rates[i] != 20 &&
+                    mode11g->rates[i] != 55 && mode11g->rates[i] != 110)
+                        continue;
+                mode->rates[mode->num_rates] = mode11g->rates[i];
+                mode->num_rates++;
+                if (mode->num_rates == 4)
+                        break;
+        }
+
+        if (mode->num_rates == 0) {
+                os_free(mode->channels);
+                os_free(mode->rates);
+                (*num_modes)--;
+                return modes; /* No 802.11b rates */
+        }
+
+        wpa_printf(MSG_DEBUG, "athr: Added 802.11b mode based on 802.11g "
+                   "information");
+
+        return modes;
+}
+
+static struct hostapd_hw_modes * athr_get_hw_feature_data(void *priv,
+							  u16 *num_modes,
+							  u16 *flags, u8 *dfs)
+{
+	struct atheros_driver_data *drv = priv;
+	struct iwreq iwr;
+	struct ieee80211req_chaninfo chans;
+	struct ieee80211req_chanlist act;
+	unsigned int i;
+	struct hostapd_hw_modes *modes = NULL, *n, *mode;
+	struct hostapd_channel_data *nc;
+	int m24 = -1, m5 = -1;
+	int chanbw = 0;
+	int bw_div = 1;
+	*num_modes = 0;
+	*flags = 0; dfs=dfs;
+
+	os_memset(&chans, 0, sizeof(chans));
+	os_memset(&iwr, 0, sizeof(iwr));
+	os_strlcpy(iwr.ifr_name, drv->iface, IFNAMSIZ);
+	iwr.u.data.pointer = &chans;
+	iwr.u.data.length = sizeof(chans);
+
+	if (ioctl(drv->ioctl_sock, IEEE80211_IOCTL_GETCHANINFO, &iwr) < 0) {
+		wpa_printf(MSG_DEBUG, "athr: Failed to get channel info: %s",
+			   strerror(errno));
+		return NULL;
+	}
+
+	os_memset(&act, 0, sizeof(act));
+	os_memset(&iwr, 0, sizeof(iwr));
+	os_strlcpy(iwr.ifr_name, drv->iface, IFNAMSIZ);
+	iwr.u.data.pointer = &act;
+	iwr.u.data.length = sizeof(act);
+
+	if (ioctl(drv->ioctl_sock, IEEE80211_IOCTL_GETCHANLIST, &iwr) < 0) {
+		wpa_printf(MSG_DEBUG, "athr: Failed to get active channel "
+			   "list: %s", strerror(errno));
+		return NULL;
+	}
+	if (get80211param(drv, IEEE80211_PARAM_CHANBW,
+			  &chanbw) < 0) {
+		wpa_printf(MSG_DEBUG, "athr: Failed to get HALF/QUARTER mode "
+			   "list: %s", strerror(errno));
+		return NULL;
+	}
+
+	if(chanbw == 1) 
+		bw_div = 2;
+	else if(chanbw == 2) 
+                bw_div = 4;
+        wpa_printf(MSG_DEBUG, "athr: Channel list");
+        for (i = 0; i < chans.ic_nchans; i++) {
+                struct ieee80211_ath_channel *chan = &chans.ic_chans[i];
+                int active;
+                active = act.ic_channels[chan->ic_ieee / 8] &
+                        (1 << (chan->ic_ieee % 8));
+                wpa_printf(MSG_DEBUG, " * %u MHz chan=%d%s%s%s%s%s%s",
+                           chan->ic_freq, chan->ic_ieee,
+                           active ? "" : " [INACTIVE]",
+                           chan->ic_flags & IEEE80211_CHAN_PASSIVE ?
+                           " [PASSIVE]" : "",
+                           chan->ic_flagext & IEEE80211_CHAN_DISALLOW_ADHOC ?
+                           " [NO-IBSS]" : "",
+                           chan->ic_flagext & IEEE80211_CHAN_DFS ?
+                           " [DFS]" : "",
+                           chan->ic_flags & IEEE80211_CHAN_HT40PLUS ?
+                           " [HT40+]" : "",
+                           chan->ic_flags & IEEE80211_CHAN_HT40MINUS ?
+                           " [HT40-]" : "");
+
+                if (chan->ic_flags & IEEE80211_CHAN_5GHZ) {
+                        if (m5 < 0) {
+                                n = os_realloc(modes, (*num_modes + 1) *
+                                               sizeof(*mode));
+                                if (n == NULL)
+                                        continue;
+                                os_memset(&n[*num_modes], 0, sizeof(*mode));
+                                m5 = *num_modes;
+                                (*num_modes)++;
+                                modes = n;
+                                mode = &modes[m5];
+                                mode->mode = HOSTAPD_MODE_IEEE80211A;
+                                mode->num_rates = 8;
+                                mode->rates = os_zalloc(mode->num_rates *
+                                                        sizeof(int));
+                                if (mode->rates) {
+                                        mode->rates[0] = 60/bw_div;
+                                        mode->rates[1] = 90/bw_div;
+                                        mode->rates[2] = 120/bw_div;
+                                        mode->rates[3] = 180/bw_div;
+                                        mode->rates[4] = 240/bw_div;
+                                        mode->rates[5] = 360/bw_div;
+                                        mode->rates[6] = 480/bw_div;
+                                        mode->rates[7] = 540/bw_div;
+                                }
+                        }
+                        mode = &modes[m5];
+                } else if (chan->ic_flags & IEEE80211_CHAN_2GHZ) {
+                        if (m24 < 0) {
+                                n = os_realloc(modes, (*num_modes + 1) *
+                                               sizeof(*mode));
+                                if (n == NULL)
+                                        continue;
+                                os_memset(&n[*num_modes], 0, sizeof(*mode));
+                                m24 = *num_modes;
+                                (*num_modes)++;
+                                modes = n;
+                                mode = &modes[m24];
+                                mode->mode = HOSTAPD_MODE_IEEE80211G;
+                                mode->num_rates = 12;
+                                mode->rates = os_zalloc(mode->num_rates *
+                                                        sizeof(int));
+                                if (mode->rates) {
+                                        mode->rates[0] = 10;
+                                        mode->rates[1] = 20;
+                                        mode->rates[2] = 55;
+                                        mode->rates[3] = 110;
+                                        mode->rates[4] = 60;
+                                        mode->rates[5] = 90;
+                                        mode->rates[6] = 120;
+                                        mode->rates[7] = 180;
+                                        mode->rates[8] = 240;
+                                        mode->rates[9] = 360;
+                                        mode->rates[10] = 480;
+                                        mode->rates[11] = 540;
+                                }
+                        }
+                        mode = &modes[m24];
+                } else
+                        continue;
+
+                nc = os_realloc(mode->channels, (mode->num_channels + 1) *
+                                sizeof(*nc));
+                if (nc == NULL)
+                        continue;
+                mode->channels = nc;
+                nc = &mode->channels[mode->num_channels];
+                os_memset(nc, 0, sizeof(*nc));
+                mode->num_channels++;
+                nc->chan = chan->ic_ieee;
+                nc->freq = chan->ic_freq;
+                if (!active)
+                        nc->flag |= HOSTAPD_CHAN_DISABLED;
+                if (chan->ic_flags & IEEE80211_CHAN_PASSIVE)
+                        nc->flag |= HOSTAPD_CHAN_NO_IR;
+                if (chan->ic_flags & IEEE80211_CHAN_HT40PLUS)
+                        nc->flag |= HOSTAPD_CHAN_HT40 | HOSTAPD_CHAN_HT40PLUS;
+                if (chan->ic_flags & IEEE80211_CHAN_HT40MINUS)
+                        nc->flag |= HOSTAPD_CHAN_HT40 | HOSTAPD_CHAN_HT40MINUS;
+                if (chan->ic_flagext & IEEE80211_CHAN_DISALLOW_ADHOC)
+                        nc->flag |= HOSTAPD_CHAN_NO_IR;
+                if (chan->ic_flagext & IEEE80211_CHAN_DFS)
+                        nc->flag |= HOSTAPD_CHAN_RADAR;
+        }
+
+        return athr_add_11b(modes, num_modes);
+}
 
 #if defined(CONFIG_WNM) && defined(IEEE80211_APPIE_FRAME_WNM)
 static int athr_wnm_tfs(struct atheros_driver_data *drv, const u8* peer,
@@ -2108,6 +2529,7 @@ static int athr_wnm_tfs(struct atheros_driver_data *drv, const u8* peer,
 		tfs_ie = (struct ieee80211req_getset_appiebuf *) buf;
 		tfs_ie->app_frmtype = IEEE80211_APPIE_FRAME_WNM;
 		tfs_ie->app_buflen = ETH_ALEN + 2 + 2 + *len;
+		tfs_ie->identifier = HOSTAPD_IE;
 
 		/* Command header for driver */
 		os_memcpy(&(tfs_ie->app_buf[0]), peer, ETH_ALEN);
@@ -2132,6 +2554,7 @@ static int athr_wnm_tfs(struct atheros_driver_data *drv, const u8* peer,
 		tfs_ie->app_buflen = IEEE80211_APPIE_MAX -
 			sizeof(struct ieee80211req_getset_appiebuf);
 		/* Command header for driver */
+		tfs_ie->identifier = HOSTAPD_IE;
 		os_memcpy(&(tfs_ie->app_buf[0]), peer, ETH_ALEN);
 		val = oper;
 		os_memcpy(&(tfs_ie->app_buf[0]) + ETH_ALEN, &val, 2);
@@ -2159,6 +2582,7 @@ static int athr_wnm_tfs(struct atheros_driver_data *drv, const u8* peer,
 		tfs_ie->app_buflen = IEEE80211_APPIE_MAX -
 			sizeof(struct ieee80211req_getset_appiebuf);
 		/* Command header for driver */
+		tfs_ie->identifier = HOSTAPD_IE;
 		os_memcpy(&(tfs_ie->app_buf[0]), peer, ETH_ALEN);
 		val = oper;
 		os_memcpy(&(tfs_ie->app_buf[0]) + ETH_ALEN, &val, 2);
@@ -2180,6 +2604,26 @@ static int athr_wnm_tfs(struct atheros_driver_data *drv, const u8* peer,
 	return 0;
 }
 
+static int athr_get_freq(void *priv, int *freq)
+{
+	struct atheros_driver_data *drv = priv;
+	struct iwreq iwr;
+	*freq = 0;
+
+	memset(&iwr, 0, sizeof(iwr));
+	os_strlcpy(iwr.ifr_name, drv->iface, IFNAMSIZ);
+
+	if (ioctl(drv->ioctl_sock, SIOCGIWFREQ, &iwr) < 0) {
+		wpa_printf(MSG_ERROR, "athr: ioctl[SIOCGIWFREQ] failed: %s",
+			   strerror(errno));
+		return -1;
+	}
+
+	if (iwr.u.freq.e != 1)
+		return -1;
+	*freq = (iwr.u.freq.m / 100000);
+	return 0;
+}
 
 static int atheros_wnm_sleep(struct atheros_driver_data *drv,
 			     const u8 *peer, enum wnm_oper oper)
@@ -2241,6 +2685,17 @@ static int atheros_wnm_oper(void *priv, enum wnm_oper oper, const u8 *peer,
 }
 #endif /* CONFIG_WNM && IEEE80211_APPIE_FRAME_WNM */
 
+int atheros_get_capa(void *priv, struct wpa_driver_capa *capa)
+{
+        struct atheros_driver_data *drv = priv;
+
+        if (!(drv && drv->has_capability))
+                return -1;
+
+        drv->capa.flags |= WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS;
+        os_memcpy(capa, &drv->capa, sizeof(*capa));
+        return 0;
+}
 
 const struct wpa_driver_ops wpa_driver_atheros_ops = {
 	.name			= "atheros",
@@ -2250,6 +2705,7 @@ const struct wpa_driver_ops wpa_driver_atheros_ops = {
 	.set_privacy		= atheros_set_privacy,
 	.set_key		= atheros_set_key,
 	.get_seqnum		= atheros_get_seqnum,
+	.get_freq		= athr_get_freq,
 	.flush			= atheros_flush,
 	.set_generic_elem	= atheros_set_opt_ie,
 	.sta_set_flags		= atheros_sta_set_flags,
@@ -2263,6 +2719,7 @@ const struct wpa_driver_ops wpa_driver_atheros_ops = {
 	.sta_clear_stats	= atheros_sta_clear_stats,
 	.commit			= atheros_commit,
 	.set_ap_wps_ie		= atheros_set_ap_wps_ie,
+	.get_hw_feature_data2 = athr_get_hw_feature_data,
 	.set_authmode		= atheros_set_authmode,
 	.set_ap			= atheros_set_ap,
 	.sta_assoc              = atheros_sta_assoc,
@@ -2273,8 +2730,10 @@ const struct wpa_driver_ops wpa_driver_atheros_ops = {
 	.add_sta_node    	= atheros_add_sta_node,
 #endif /* CONFIG_IEEE80211R */
 	.send_action		= atheros_send_action,
+	.send_action_cancel_wait = atheros_send_action_cancel_wait,
 #if defined(CONFIG_WNM) && defined(IEEE80211_APPIE_FRAME_WNM)
 	.wnm_oper		= atheros_wnm_oper,
 #endif /* CONFIG_WNM && IEEE80211_APPIE_FRAME_WNM */
 	.set_qos_map		= atheros_set_qos_map,
+	.get_capa               = atheros_get_capa,
 };

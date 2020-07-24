@@ -2909,6 +2909,52 @@ static u32 wpa_cipher_to_cipher_suite(unsigned int cipher)
 	return 0;
 }
 
+static int wpa_cipher_to_keymgmt_suites(unsigned int keymgmt_suites, u32 suites[],
+				       int max_suites)
+{
+	int num_suites = 0;
+
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_UNSPEC_802_1X;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_PSK)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_IEEE8021X)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_802_1X;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_PSK)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_PSK;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SHA256)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SHA256;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_PSK_SHA256)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_SHA256;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_SAE)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_SAE;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_SAE)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_SAE;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SUITE_B)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FILS_SHA256)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FILS_SHA256;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FILS_SHA384)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FILS_SHA384;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_FILS_SHA256)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_FILS_SHA256;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_FILS_SHA384)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_FILS_SHA384;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_OWE)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_OWE;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_DPP)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_DPP;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_FT_IEEE8021X_SHA384)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_FT_802_1X_SHA384;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_CCKM)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_CCKM;
+	if (num_suites < max_suites && keymgmt_suites & WPA_KEY_MGMT_OSEN)
+		suites[num_suites++] = RSN_AUTH_KEY_MGMT_OSEN;
+
+	return num_suites;
+}
 
 static int wpa_cipher_to_cipher_suites(unsigned int ciphers, u32 suites[],
 				       int max_suites)
@@ -3005,7 +3051,7 @@ static int nl80211_set_pmk(struct wpa_driver_nl80211_data *drv,
 
 static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
 				      enum wpa_alg alg, const u8 *addr,
-				      int key_idx, int set_tx,
+				      int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 				      const u8 *seq, size_t seq_len,
 				      const u8 *key, size_t key_len)
 {
@@ -3013,6 +3059,7 @@ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
 	int ifindex;
 	struct nl_msg *msg;
 	struct nl_msg *key_msg;
+	struct nlattr *attr;
 	int ret;
 	int tdls = 0;
 
@@ -3021,7 +3068,7 @@ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
 		return 0;
 
 	ifindex = if_nametoindex(ifname);
-	wpa_printf(MSG_DEBUG, "%s: ifindex=%d (%s) alg=%d addr=%p key_idx=%d "
+	wpa_printf(MSG_INFO, "%s: ifindex=%d (%s) alg=%d addr=%p key_idx=%d "
 		   "set_tx=%d seq_len=%lu key_len=%lu",
 		   __func__, ifindex, ifname, alg, addr, key_idx, set_tx,
 		   (unsigned long) seq_len, (unsigned long) key_len);
@@ -3121,47 +3168,69 @@ static int wpa_driver_nl80211_set_key(const char *ifname, struct i802_bss *bss,
 	    !is_broadcast_ether_addr(addr))
 		return ret;
 
-	key_msg = nlmsg_alloc();
-	if (!key_msg)
-		return -ENOBUFS;
+	if (vlan_id && !vlan_found) {
+		if (!drv->vendor_vlan_setkey) {
+			return -1;
+		}
+		if (!(msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR)) ||
+				nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+				nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+					QCA_NL80211_VENDOR_SUBCMD_VLAN_SET_KEY) ||
+				!(attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA)) ||
+				nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYIX, key_idx) ||
+				nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_VLAN_ID, vlan_id) ||
+				nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_MAC_ADDR, ETH_ALEN, addr) ||
+				nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_SETKEY_KEYDATA, key_len, key)) {
+			nl80211_nlmsg_clear(msg);
+			nlmsg_free(msg);
+			return -1;
+		}
+		nla_nest_end(msg, attr);
+	} else {
+		key_msg = nlmsg_alloc();
+		if (!key_msg)
+			return -ENOBUFS;
+		msg = nl80211_ifindex_msg(drv, ifindex, 0, NL80211_CMD_SET_KEY);
 
-	msg = nl80211_ifindex_msg(drv, ifindex, 0, NL80211_CMD_SET_KEY);
-	if (!msg)
-		goto fail2;
-	if (!key_msg ||
-	    nla_put_u8(key_msg, NL80211_KEY_IDX, key_idx) ||
-	    nla_put_flag(key_msg, (alg == WPA_ALG_IGTK ||
+		if (!msg)
+			goto fail2;
+		if (!key_msg ||
+	    	    nla_put_u8(key_msg, NL80211_KEY_IDX, key_idx) ||
+	    	    nla_put_flag(key_msg, (alg == WPA_ALG_IGTK ||
 				   alg == WPA_ALG_BIP_GMAC_128 ||
 				   alg == WPA_ALG_BIP_GMAC_256 ||
 				   alg == WPA_ALG_BIP_CMAC_256) ?
-			 (key_idx == 6 || key_idx == 7 ?
-			  NL80211_KEY_DEFAULT_BEACON :
-			  NL80211_KEY_DEFAULT_MGMT) :
-			 NL80211_KEY_DEFAULT))
-		goto fail;
-	if (addr && is_broadcast_ether_addr(addr)) {
-		struct nlattr *types;
-
-		types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
-		if (!types ||
-		    nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_MULTICAST))
+			 	(key_idx == 6 || key_idx == 7 ?
+			  	NL80211_KEY_DEFAULT_BEACON :
+			 	NL80211_KEY_DEFAULT_MGMT) :
+			 	NL80211_KEY_DEFAULT))
 			goto fail;
-		nla_nest_end(key_msg, types);
-	} else if (addr) {
-		struct nlattr *types;
 
-		types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
-		if (!types ||
-		    nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_UNICAST))
+		if (addr && is_broadcast_ether_addr(addr)) {
+			struct nlattr *types;
+
+			types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
+			if (!types ||
+		    		nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_MULTICAST))
+
+				goto fail;
+			nla_nest_end(key_msg, types);
+		} else if (addr) {
+			struct nlattr *types;
+
+			types = nla_nest_start(key_msg, NL80211_KEY_DEFAULT_TYPES);
+			if (!types ||
+		    		nla_put_flag(key_msg, NL80211_KEY_DEFAULT_TYPE_UNICAST))
+				goto fail;
+			nla_nest_end(key_msg, types);
+		}
+
+		if (nla_put_nested(msg, NL80211_ATTR_KEY, key_msg))
 			goto fail;
-		nla_nest_end(key_msg, types);
+		nl80211_nlmsg_clear(key_msg);
+		nlmsg_free(key_msg);
+		key_msg = NULL;
 	}
-
-	if (nla_put_nested(msg, NL80211_ATTR_KEY, key_msg))
-		goto fail;
-	nl80211_nlmsg_clear(key_msg);
-	nlmsg_free(key_msg);
-	key_msg = NULL;
 
 	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
 	if (ret == -ENOENT)
@@ -3484,7 +3553,7 @@ retry:
 		if (!params->wep_key[i])
 			continue;
 		wpa_driver_nl80211_set_key(bss->ifname, bss, WPA_ALG_WEP,
-					   NULL, i,
+					   NULL, i, 0, 0,
 					   i == params->wep_tx_keyidx, NULL, 0,
 					   params->wep_key[i],
 					   params->wep_key_len[i]);
@@ -4080,6 +4149,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	int num_suites;
 	int smps_mode;
 	u32 suites[10], suite;
+	u32 akm_suites[NL80211_MAX_NR_AKM_SUITES];
 	u32 ver;
 #ifdef CONFIG_MESH
 	struct wpa_driver_mesh_bss_params mesh_params;
@@ -4173,14 +4243,12 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 
 	wpa_printf(MSG_DEBUG, "nl80211: key_mgmt_suites=0x%x",
 		   params->key_mgmt_suites);
-	num_suites = 0;
-	if (params->key_mgmt_suites & WPA_KEY_MGMT_IEEE8021X)
-		suites[num_suites++] = RSN_AUTH_KEY_MGMT_UNSPEC_802_1X;
-	if (params->key_mgmt_suites & WPA_KEY_MGMT_PSK)
-		suites[num_suites++] = RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X;
+	num_suites = wpa_cipher_to_keymgmt_suites(params->key_mgmt_suites,
+					akm_suites, ARRAY_SIZE(akm_suites));
+
 	if (num_suites &&
 	    nla_put(msg, NL80211_ATTR_AKM_SUITES, num_suites * sizeof(u32),
-		    suites))
+		    akm_suites))
 		goto fail;
 
 	if (params->key_mgmt_suites & WPA_KEY_MGMT_IEEE8021X_NO_WPA &&
@@ -6636,22 +6704,43 @@ fail:
 
 
 static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
-			     const char *ifname, int vlan_id)
+			     const char *ifname, int vlan_id, u8 vlan_found)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
+	struct nlattr *attr;
 	int ret;
 
 	wpa_printf(MSG_DEBUG, "nl80211: %s[%d]: set_sta_vlan(" MACSTR
 		   ", ifname=%s[%d], vlan_id=%d)",
 		   bss->ifname, if_nametoindex(bss->ifname),
 		   MAC2STR(addr), ifname, if_nametoindex(ifname), vlan_id);
-	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_STATION)) ||
-	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
-	    nla_put_u32(msg, NL80211_ATTR_STA_VLAN, if_nametoindex(ifname))) {
-		nlmsg_free(msg);
-		return -ENOBUFS;
+
+	if (vlan_found || !vlan_id) 
+	{
+		if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_STATION)) ||
+		    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
+		    nla_put_u32(msg, NL80211_ATTR_STA_VLAN, if_nametoindex(ifname))) {
+			nlmsg_free(msg);
+			return -ENOBUFS;
+		}
 	}
+        else if(drv->vendor_vlan_id) {
+		if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+			nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+			nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_VLAN_ID) ||
+			!(attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA)) ||
+			nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_VLAN_ID, vlan_id) ||
+			nla_put(msg, QCA_WLAN_VENDOR_ATTR_VLAN_MAC_ADDR, ETH_ALEN, addr)) {
+			        nlmsg_free(msg);
+			        return -ENOBUFS;
+		}
+	       nla_nest_end(msg, attr);
+
+	 } else {
+		return -1;
+	 }
 
 	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
 	if (ret < 0) {
@@ -6905,7 +6994,7 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
 			wpa_printf(MSG_ERROR, "nl80211: Failed to set WDS STA "
 				   "interface %s up", name);
 		}
-		return i802_set_sta_vlan(priv, addr, name, 0);
+		return i802_set_sta_vlan(priv, addr, name, 0, 0);
 	} else {
 		if (bridge_ifname &&
 		    linux_br_del_if(drv->global->ioctl_sock, bridge_ifname,
@@ -6914,7 +7003,7 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
 				   "nl80211: Failed to remove interface %s from bridge %s: %s",
 				   name, bridge_ifname, strerror(errno));
 
-		i802_set_sta_vlan(priv, addr, bss->ifname, 0);
+		i802_set_sta_vlan(priv, addr, bss->ifname, 0, 0);
 		nl80211_remove_iface(drv, if_nametoindex(name));
 		os_memset(&event, 0, sizeof(event));
 		event.wds_sta_interface.sta_addr = addr;
@@ -8675,12 +8764,12 @@ nl80211_tdls_disable_channel_switch(void *priv, const u8 *addr)
 
 static int driver_nl80211_set_key(const char *ifname, void *priv,
 				  enum wpa_alg alg, const u8 *addr,
-				  int key_idx, int set_tx,
+				  int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 				  const u8 *seq, size_t seq_len,
 				  const u8 *key, size_t key_len)
 {
 	struct i802_bss *bss = priv;
-	return wpa_driver_nl80211_set_key(ifname, bss, alg, addr, key_idx,
+	return wpa_driver_nl80211_set_key(ifname, bss, alg, addr, key_idx, vlan_id, vlan_found,
 					  set_tx, seq, seq_len, key, key_len);
 }
 
@@ -8689,7 +8778,12 @@ static int driver_nl80211_scan2(void *priv,
 				struct wpa_driver_scan_params *params)
 {
 	struct i802_bss *bss = priv;
-#ifdef CONFIG_DRIVER_NL80211_QCA
+	/* Renamed this macro to CONFIG_DRIVER_NL80211_VENDOR_QCA since
+	 * normal scan path needs to be used rather than using the
+	 * vendor scan path. Many scan fixes are missing in vendor scan
+	 * path and that path should not be used.
+	 */
+#ifdef CONFIG_DRIVER_NL80211_VENDOR_QCA
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 
 	/*
@@ -8757,10 +8851,10 @@ static int driver_nl80211_sta_remove(void *priv, const u8 *addr)
 
 
 static int driver_nl80211_set_sta_vlan(void *priv, const u8 *addr,
-				       const char *ifname, int vlan_id)
+				       const char *ifname, int vlan_id, u8 vlan_found)
 {
 	struct i802_bss *bss = priv;
-	return i802_set_sta_vlan(bss, addr, ifname, vlan_id);
+	return i802_set_sta_vlan(bss, addr, ifname, vlan_id, vlan_found);
 }
 
 
@@ -11172,6 +11266,55 @@ fail:
 	return ret;
 }
 
+#ifdef CONFIG_FILS
+static int nl80211_set_fils_aad(void *priv,
+				struct wpa_driver_sta_auth_params *param)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -1;
+	char fils_nonces[2 * FILS_NONCE_LEN] = {};
+
+	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_SET_FILS_AAD);
+	if (!msg)
+		goto fail;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Set FILS AAD (ifindex=%d)",
+		   drv->ifindex);
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, param->addr))
+		goto fail;
+	if (nla_put(msg, NL80211_ATTR_FILS_KEK, param->fils_kek_len,
+		    param->fils_kek))
+		goto fail;
+	memcpy(&fils_nonces[0], param->fils_snonce, FILS_NONCE_LEN);
+	memcpy(&fils_nonces[FILS_NONCE_LEN], param->fils_anonce, FILS_NONCE_LEN);
+	if (nla_put(msg, NL80211_ATTR_FILS_NONCES, (2 * FILS_NONCE_LEN),
+		    fils_nonces))
+		goto fail;
+
+	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
+	msg = NULL;
+	if (ret)
+		wpa_dbg(drv->ctx, MSG_DEBUG,
+			"nl80211: Set FILS AAD command failed: ret=%d (%s)",
+			ret, strerror(-ret));
+
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return ret;
+}
+
+static int nl80211_is_drv_fils_crypto_capable(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	return (drv->capa.flags & WPA_DRIVER_FLAGS_FILS_CRYPTO_OFFLOAD) ? 1 : 0;
+}
+#endif /* CONFIG_FILS */
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
@@ -11307,4 +11450,8 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.update_connect_params = nl80211_update_connection_params,
 	.send_external_auth_status = nl80211_send_external_auth_status,
 	.set_4addr_mode = nl80211_set_4addr_mode,
+#ifdef CONFIG_FILS
+	.is_drv_fils_crypto_capable = nl80211_is_drv_fils_crypto_capable,
+	.set_fils_aad = nl80211_set_fils_aad,
+#endif /* CONFIG_FILS */
 };

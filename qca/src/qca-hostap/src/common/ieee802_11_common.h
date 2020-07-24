@@ -30,6 +30,20 @@ struct mb_ies_info {
 	u8 nof_ies;
 };
 
+struct multi_ap_params {
+	u8 capability;
+	u8 profile;
+	u16 vlanid;
+};
+
+struct multi_ie_hdr {
+	u8 id;
+	u8 length;
+	u8 oui[3];
+	u8 out_type;
+	u8 multi_ap_ext_ie[3];
+};
+
 /* Parsed Information Elements */
 struct ieee802_11_elems {
 	const u8 *ssid;
@@ -153,6 +167,44 @@ struct ieee802_11_elems {
 
 typedef enum { ParseOK = 0, ParseUnknown = 1, ParseFailed = -1 } ParseRes;
 
+struct country_op_class {
+	u8 country_op_class;
+	u8 global_op_class;
+};
+
+static const char *const us_op_class_cc[] = {
+	"US", "CA", NULL
+};
+
+static const char *const eu_op_class_cc[] = {
+	"AL", "AM", "AT", "AZ", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE",
+	"DK", "EE", "EL", "ES", "FI", "FR", "GE", "HR", "HU", "IE", "IS", "IT",
+	"LI", "LT", "LU", "LV", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT",
+	"RO", "RS", "RU", "SE", "SI", "SK", "TR", "UA", "UK", NULL
+};
+
+static const char *const jp_op_class_cc[] = {
+	"JP", NULL
+};
+
+static const char *const cn_op_class_cc[] = {
+	"CN", NULL
+};
+
+extern struct country_op_class us_op_class[];
+
+extern struct country_op_class eu_op_class[];
+
+/*Note: To be updated as per latest standard */
+extern struct country_op_class jp_op_class[];
+
+extern struct country_op_class cn_op_class[];
+
+extern size_t us_op_class_size;
+extern size_t eu_op_class_size;
+extern size_t jp_op_class_size;
+extern size_t cn_op_class_size;
+
 ParseRes ieee802_11_parse_elems(const u8 *start, size_t len,
 				struct ieee802_11_elems *elems,
 				int show_errors);
@@ -174,6 +226,7 @@ int hostapd_config_wmm_ac(struct hostapd_wmm_ac_params wmm_ac_params[],
 			  const char *name, const char *val);
 enum hostapd_hw_mode ieee80211_freq_to_chan(int freq, u8 *channel);
 int ieee80211_chan_to_freq(const char *country, u8 op_class, u8 chan);
+int country_match(const char *const cc[], const char *const country);
 enum hostapd_hw_mode ieee80211_freq_to_channel_ext(unsigned int freq,
 						   int sec_channel, int vht,
 						   u8 *op_class, u8 *channel);
@@ -211,12 +264,9 @@ const u8 * get_vendor_ie(const u8 *ies, size_t len, u32 vendor_type);
 
 size_t mbo_add_ie(u8 *buf, size_t len, const u8 *attr, size_t attr_len);
 
-size_t add_multi_ap_ie(u8 *buf, size_t len, u8 value);
-
-struct country_op_class {
-	u8 country_op_class;
-	u8 global_op_class;
-};
+u16 check_multi_ap_ie(const u8 *multi_ap_ie, size_t multi_ap_len,
+				struct multi_ap_params* multi_ap);
+size_t add_multi_ap_ie(u8 *buf, size_t len, struct multi_ap_params* multi_ap);
 
 u8 country_to_global_op_class(const char *country, u8 op_class);
 

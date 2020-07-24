@@ -952,6 +952,9 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 	}
 	os_memcpy(sm->wpa_ie, wpa_ie, wpa_ie_len);
 	sm->wpa_ie_len = wpa_ie_len;
+	if(wpa_auth->conf.identity_request_retry_interval){
+		sm->identity_request_retry_interval = wpa_auth->conf.identity_request_retry_interval;
+	}
 
 	if (rsnxe && rsnxe_len) {
 		if (!sm->rsnxe || sm->rsnxe_len < rsnxe_len) {

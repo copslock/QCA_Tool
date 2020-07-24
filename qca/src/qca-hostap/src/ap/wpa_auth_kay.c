@@ -325,11 +325,12 @@ int ieee802_1x_alloc_kay_sm_hapd(struct hostapd_data *hapd,
 	kay_ctx->enable_transmit_sa = hapd_enable_transmit_sa;
 	kay_ctx->disable_transmit_sa = hapd_disable_transmit_sa;
 
-	res = ieee802_1x_kay_init(kay_ctx, policy,
+	res = ieee802_1x_kay_init(kay_ctx, policy, FALSE,
 				  hapd->conf->macsec_replay_protect,
 				  hapd->conf->macsec_replay_window,
 				  hapd->conf->macsec_port,
-				  hapd->conf->mka_priority, hapd->conf->iface,
+				  hapd->conf->mka_priority,
+				  hapd->conf->macsec_csindex, hapd->conf->iface,
 				  hapd->own_addr);
 	/* ieee802_1x_kay_init() frees kay_ctx on failure */
 	if (!res)

@@ -1800,12 +1800,16 @@ pfs_fail:
 
 	if (wpa_s->current_ssid && wpa_s->current_ssid->multi_ap_backhaul_sta) {
 		size_t multi_ap_ie_len;
+		struct multi_ap_params multi_ap = {0};
+
+		multi_ap.capability = MULTI_AP_BACKHAUL_STA;
+		multi_ap.profile = wpa_s->current_ssid->multi_ap_profile;
+		multi_ap.vlanid = 0;
 
 		multi_ap_ie_len = add_multi_ap_ie(
 			wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
 			sizeof(wpa_s->sme.assoc_req_ie) -
-			wpa_s->sme.assoc_req_ie_len,
-			MULTI_AP_BACKHAUL_STA);
+			wpa_s->sme.assoc_req_ie_len, &multi_ap);
 		if (multi_ap_ie_len == 0) {
 			wpa_printf(MSG_ERROR,
 				   "Multi-AP: Failed to build Multi-AP IE");

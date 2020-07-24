@@ -1661,6 +1661,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_VHT_IBSS		0x0000002000000000ULL
 /** Driver supports automatic band selection */
 #define WPA_DRIVER_FLAGS_SUPPORT_HW_MODE_ANY	0x0000004000000000ULL
+/** disable OBSS scan */
+#define WPA_DRIVER_FLAGS_DISABLE_OBSS_SCAN    0x0000008000000000ULL
 /** Driver supports simultaneous off-channel operations */
 #define WPA_DRIVER_FLAGS_OFFCHANNEL_SIMULTANEOUS	0x0000008000000000ULL
 /** Driver supports full AP client state */
@@ -1704,6 +1706,14 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_FTM_RESPONDER		0x0100000000000000ULL
 /** Driver support 4-way handshake offload for WPA-Personal */
 #define WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_PSK	0x0200000000000000ULL
+/**
+ * Driver support FILS Encryption/Decryption of (Re)Association frames.
+ * This flag is to indicate hostapd to share the FILS AAD details with
+ * the Driver just before sending Auth response so that driver
+ * can perform encryption/decryption of (Re)Association frames.
+ * And hostapd has to skip this encap/decap if this bit is set.
+ */
+#define WPA_DRIVER_FLAGS_FILS_CRYPTO_OFFLOAD   0x0400000000000000ULL
 /** Driver supports Beacon protection */
 #define WPA_DRIVER_FLAGS_BEACON_PROTECTION	0x4000000000000000ULL
 	u64 flags;
@@ -2326,6 +2336,7 @@ struct wpa_driver_ops {
 	 *	specified key index is to be cleared
 	 * @key_idx: key index (0..3), usually 0 for unicast keys;
 	 *      4..5 for IGTK; 6..7 for BIGTK
+	 * @vlan_id: vlan index is 12-bit,range can be 0..4095
 	 * @set_tx: configure this key as the default Tx key (only used when
 	 *	driver does not support separate unicast/individual key
 	 * @seq: sequence number/packet number, seq_len octets, the next
@@ -2360,7 +2371,7 @@ struct wpa_driver_ops {
 	 * example on how this can be done.
 	 */
 	int (*set_key)(const char *ifname, void *priv, enum wpa_alg alg,
-		       const u8 *addr, int key_idx, int set_tx,
+		       const u8 *addr, int key_idx, int vlan_id, u8 vlan_found, int set_tx,
 		       const u8 *seq, size_t seq_len,
 		       const u8 *key, size_t key_len);
 
@@ -2603,6 +2614,19 @@ struct wpa_driver_ops {
 	struct hostapd_hw_modes * (*get_hw_feature_data)(void *priv,
 							 u16 *num_modes,
 							 u16 *flags, u8 *dfs);
+
+        /**
+         * get_hw_feature_data - Get hardware support data (channels and rates)
+         * @priv: Private driver interface data
+         * @num_modes: Variable for returning the number of returned modes
+         * flags: Variable for returning hardware feature flags
+         * @dfs: Variable for returning DFS region (HOSTAPD_DFS_REGION_*)
+         * Returns: Pointer to allocated hardware data on success or %NULL on
+         * failure. Caller is responsible for freeing this.
+         */
+        struct hostapd_hw_modes * (*get_hw_feature_data2)(void *priv,
+                                                         u16 *num_modes,
+                                                         u16 *flags, u8 *dfs);
 
 	/**
 	 * send_mlme - Send management frame from MLME
@@ -3003,6 +3027,14 @@ struct wpa_driver_ops {
 	int (*set_freq)(void *priv, struct hostapd_freq_params *freq);
 
 	/**
+	 * get_freq - Get frequency (AP only - Atheros driver only)
+	 * @priv: Private driver interface data
+	 * @freq: frequency
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*get_freq)(void *priv, int *freq);
+
+	/**
 	 * set_rts - Set RTS threshold
 	 * @priv: Private driver interface data
 	 * @rts: RTS threshold in octets
@@ -3103,7 +3135,7 @@ struct wpa_driver_ops {
 	 * domains to be used with a single BSS.
 	 */
 	int (*set_sta_vlan)(void *priv, const u8 *addr, const char *ifname,
-			    int vlan_id);
+			    int vlan_id, u8 vlan_found);
 
 	/**
 	 * commit - Optional commit changes handler (AP only)
@@ -4283,6 +4315,29 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, < 0 on failure
 	 */
 	int (*set_4addr_mode)(void *priv, const char *bridge_ifname, int val);
+
+	/**
+	 * is_drv_fils_crypto_capable - Check driver is fils crypto capable
+	 * @priv: Private driver interface data
+	 * Returns: 1 if capable, 0 if not capable
+	 *
+	 * Check the underlying driver is capable to perform (Re-)Association
+	 * Encrypt/Decrypt operation for FILS connection.
+	 */
+	int (*is_drv_fils_crypto_capable)(void *priv);
+
+	/**
+	 * set_fils_aad - Set FILS AAD data to driver
+	 * @priv: Private driver interface data
+	 * @param: Auth params
+	 * Return: 0 on success, -1 on failure
+	 *
+	 * Set FILS AAD (FILS KEK, KEK length, SNonce and ANonce) and STA MAC to
+	 * driver just before sending FILS SK AUTH response.
+	 */
+	int (*set_fils_aad)(void *priv,
+			struct wpa_driver_sta_auth_params *param);
+
 
 	/**
 	 * update_dh_ie - Update DH IE
@@ -5563,6 +5618,7 @@ union wpa_event_data {
 		enum chan_width chan_width;
 		int cf1;
 		int cf2;
+        int timeout;
 	} dfs_event;
 
 	/**
@@ -5829,6 +5885,9 @@ extern const struct wpa_driver_ops wpa_driver_roboswitch_ops;
 /* driver_atheros.c */
 extern const struct wpa_driver_ops wpa_driver_atheros_ops;
 #endif /* CONFIG_DRIVER_ATHEROS */
+#ifdef CONFIG_DRIVER_ATHR
+extern const struct wpa_driver_ops wpa_driver_athr_ops; /* driver_athr.c */
+#endif /* CONFIG_DRIVER_ATHR */
 #ifdef CONFIG_DRIVER_NONE
 extern const struct wpa_driver_ops wpa_driver_none_ops; /* driver_none.c */
 #endif /* CONFIG_DRIVER_NONE */

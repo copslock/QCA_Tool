@@ -141,7 +141,7 @@ int wpa_set_wep_keys(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 
 		set = 1;
 		wpa_drv_set_key(wpa_s, WPA_ALG_WEP, NULL,
-				i, i == ssid->wep_tx_keyidx, NULL, 0,
+				i, 0, 0, i == ssid->wep_tx_keyidx, NULL, 0,
 				ssid->wep_key[i], ssid->wep_key_len[i]);
 	}
 
@@ -197,10 +197,10 @@ int wpa_supplicant_set_wpa_none_key(struct wpa_supplicant *wpa_s,
 		return -1;
 	}
 
-	/* TODO: should actually remember the previously used seq#, both for TX
+	/* should actually remember the previously used seq#, both for TX
 	 * and RX from each STA.. */
 
-	ret = wpa_drv_set_key(wpa_s, alg, NULL, 0, 1, seq, 6, key, keylen);
+	ret = wpa_drv_set_key(wpa_s, alg, NULL, 0, 0, 0, 1, seq, 6, key, keylen);
 	os_memset(key, 0, sizeof(key));
 	return ret;
 }
@@ -708,12 +708,12 @@ void wpa_clear_keys(struct wpa_supplicant *wpa_s, const u8 *addr)
 	for (i = 0; i < max; i++) {
 		if (wpa_s->keys_cleared & BIT(i))
 			continue;
-		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, NULL, i, 0, NULL, 0,
+		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, NULL, i, 0, 0, 0, NULL, 0,
 				NULL, 0);
 	}
 	if (!(wpa_s->keys_cleared & BIT(0)) && addr &&
 	    !is_zero_ether_addr(addr)) {
-		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, addr, 0, 0, NULL, 0, NULL,
+		wpa_drv_set_key(wpa_s, WPA_ALG_NONE, addr, 0, 0, 0, 0, NULL, 0, NULL,
 				0);
 		/* MLME-SETPROTECTION.request(None) */
 		wpa_drv_mlme_setprotection(
@@ -2791,12 +2791,37 @@ static u8 * wpas_populate_assoc_ies(
 		algs = WPA_AUTH_ALG_SAE;
 #endif /* CONFIG_SAE */
 
-	wpa_dbg(wpa_s, MSG_DEBUG, "Automatic auth_alg selection: 0x%x", algs);
+	wpa_dbg(wpa_s, MSG_DEBUG, "Automatic auth_alg selection: 0x%x, ssid_alg 0x%x ", algs, ssid->auth_alg);
 	if (ssid->auth_alg) {
 		algs = ssid->auth_alg;
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Overriding auth_alg selection: 0x%x", algs);
 	}
+
+#ifdef CONFIG_SAE
+        if (wpa_key_mgmt_sae(ssid->key_mgmt)) {
+                struct wpa_ie_data ied;
+		const u8* rsn;
+		rsn = get_ie(wpa_ie, wpa_ie_len, WLAN_EID_RSN);
+                if (!rsn) {
+                        wpa_dbg(wpa_s, MSG_DEBUG,
+                                "SAE enabled, but target BSS does not advertise RSN");
+#ifdef CONFIG_DPP
+                } else if (wpa_parse_wpa_ie(rsn, 2 + rsn[1], &ied) == 0 &&
+                           (ssid->key_mgmt & WPA_KEY_MGMT_DPP) &&
+                           (ied.key_mgmt & WPA_KEY_MGMT_DPP)) {
+                        wpa_dbg(wpa_s, MSG_DEBUG, "Prefer DPP over SAE when both are enabled");
+#endif /* CONFIG_DPP */
+                } else if (wpa_parse_wpa_ie(rsn, 2 + rsn[1], &ied) == 0 &&
+                           wpa_key_mgmt_sae(ied.key_mgmt)) {
+                        wpa_dbg(wpa_s, MSG_DEBUG, "Using SAE auth_alg");
+                        algs = WPA_AUTH_ALG_SAE;
+                } else {
+                        wpa_dbg(wpa_s, MSG_DEBUG,
+                                "SAE enabled, but target BSS does not advertise SAE AKM for RSN");
+                }
+        }
+#endif /* CONFIG_SAE */
 
 #ifdef CONFIG_SAE
 	if (sae_pmksa_cached && algs == WPA_AUTH_ALG_SAE) {
@@ -3059,10 +3084,15 @@ pfs_fail:
 
 	if (ssid->multi_ap_backhaul_sta) {
 		size_t multi_ap_ie_len;
+		struct multi_ap_params multi_ap = {0};
+
+		multi_ap.capability = MULTI_AP_BACKHAUL_STA;
+		multi_ap.profile = ssid->multi_ap_profile;
+		multi_ap.vlanid = 0;
 
 		multi_ap_ie_len = add_multi_ap_ie(wpa_ie + wpa_ie_len,
 						  max_wpa_ie_len - wpa_ie_len,
-						  MULTI_AP_BACKHAUL_STA);
+						  &multi_ap);
 		if (multi_ap_ie_len == 0) {
 			wpa_printf(MSG_ERROR,
 				   "Multi-AP: Failed to build Multi-AP IE");

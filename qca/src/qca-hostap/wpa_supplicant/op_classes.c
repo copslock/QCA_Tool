@@ -377,8 +377,13 @@ size_t wpas_supp_op_class_ie(struct wpa_supplicant *wpa_s,
 {
 	struct wpabuf *buf;
 	u8 op, current, chan;
+	char country[2];
+	struct country_op_class *country_array = NULL;
 	u8 *ie_len;
+	const u8 *country_ie;
 	size_t res;
+	size_t size = 0;
+	const struct oper_class_map *g_op_idx = NULL;
 
 	/*
 	 * Determine correct mode, bandwidth and secondary channel
@@ -399,12 +404,52 @@ size_t wpas_supp_op_class_ie(struct wpa_supplicant *wpa_s,
 	/* Will set the length later, putting a placeholder */
 	ie_len = wpabuf_put(buf, 1);
 	wpabuf_put_u8(buf, current);
+	country_ie = wpa_bss_get_ie(bss, WLAN_EID_COUNTRY);
+	if (!country_ie) {
+		wpabuf_free(buf);
+		return 0;
+	}
+	memcpy(country, country_ie + 2, 2);
 
-	for (op = 0; global_op_class[op].op_class; op++) {
-		if (wpas_op_class_supported(wpa_s, ssid, &global_op_class[op]))
-			wpabuf_put_u8(buf, global_op_class[op].op_class);
+	if (country_match(us_op_class_cc, country)) {
+		country_array = us_op_class;
+		size = us_op_class_size;
+	} else if (country_match(eu_op_class_cc, country)) {
+		country_array = eu_op_class;
+		size = eu_op_class_size;
+	} else if (country_match(jp_op_class_cc, country)) {
+		country_array = jp_op_class;
+		size = jp_op_class_size;
+	} else if (country_match(cn_op_class_cc, country)) {
+		country_array = cn_op_class;
+		size = cn_op_class_size;
 	}
 
+	/*
+	 * For 6G channels use global operating class table.
+	 * For non-6G use country specific operating class table.
+	 * For countries not in the list of countries, use global
+	 * operating class table.
+	 */
+#define SIXG_FIRST_CFREQ 5945
+	if (country_array && bss->freq < SIXG_FIRST_CFREQ) {
+		for (op = 0; op < size; op++) {
+			g_op_idx = get_oper_class(country,
+					country_array[op].country_op_class);
+			if (g_op_idx &&  wpas_op_class_supported(wpa_s, ssid,
+						    g_op_idx)) {
+				wpabuf_put_u8(buf,
+					      country_array[op].global_op_class);
+			}
+		}
+	} else {
+		for (op = 0; global_op_class[op].op_class; op++) {
+		     if (wpas_op_class_supported(wpa_s, ssid,
+					      &global_op_class[op])) {
+			  wpabuf_put_u8(buf, global_op_class[op].op_class);
+		     }
+		}
+	}
 	*ie_len = wpabuf_len(buf) - 2;
 	if (*ie_len < 2 || wpabuf_len(buf) > len) {
 		wpa_printf(MSG_ERROR,

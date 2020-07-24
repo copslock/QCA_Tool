@@ -395,7 +395,6 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		if (!data->he_enabled) {
 			wpa_printf(MSG_ERROR,
 				   "Can't set 6 GHz mode - HE isn't enabled");
-			return -1;
 		}
 
 		if (center_idx_to_bw_6ghz(channel) != 0) {

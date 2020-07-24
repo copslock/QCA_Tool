@@ -2547,8 +2547,10 @@ static const struct parse_data ssid_fields[] = {
 	{ INT(macsec_replay_window) },
 	{ INT_RANGE(macsec_port, 1, 65534) },
 	{ INT_RANGE(mka_priority, 0, 255) },
+	{ INT_RANGE(macsec_csindex, 0, 1) },
 	{ FUNC_KEY(mka_cak) },
 	{ FUNC_KEY(mka_ckn) },
+	{ INT_RANGE(mka_icv_indicator, 0, 1) },
 #endif /* CONFIG_MACSEC */
 #ifdef CONFIG_HS20
 	{ INT(update_identifier) },
@@ -2568,6 +2570,7 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(owe_only, 0, 1) },
 	{ INT_RANGE(multi_ap_backhaul_sta, 0, 1) },
 	{ INT_RANGE(ft_eap_pmksa_caching, 0, 1) },
+	{ INT_RANGE(multi_ap_profile, 1, 2) },
 	{ INT_RANGE(beacon_prot, 0, 1) },
 	{ INT_RANGE(transition_disable, 0, 255) },
 };

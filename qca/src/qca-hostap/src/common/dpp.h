@@ -87,6 +87,8 @@ enum dpp_status_error {
 #define DPP_CAPAB_CONFIGURATOR BIT(1)
 #define DPP_CAPAB_ROLE_MASK (BIT(0) | BIT(1))
 
+
+#define DPP_PKEX_MAX_FREQ 4
 #define DPP_BOOTSTRAP_MAX_FREQ 30
 #define DPP_MAX_NONCE_LEN 32
 #define DPP_MAX_HASH_LEN 64
@@ -149,7 +151,9 @@ struct dpp_pkex {
 	unsigned int t; /* number of failures on code use */
 	unsigned int exch_req_wait_time;
 	unsigned int exch_req_tries;
-	unsigned int freq;
+	unsigned int freq; /* curr_freq */
+	unsigned int freqlist[DPP_BOOTSTRAP_MAX_FREQ];
+	unsigned int num_freq, freq_idx;
 };
 
 enum dpp_akm {

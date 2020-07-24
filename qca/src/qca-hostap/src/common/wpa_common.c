@@ -2436,12 +2436,13 @@ int wpa_parse_cipher(const char *value)
 	start = buf;
 
 	while (*start != '\0') {
-		while (*start == ' ' || *start == '\t')
+		while (*start == ' ' || *start == '\t' || *start == '"')
 			start++;
 		if (*start == '\0')
 			break;
 		end = start;
-		while (*end != ' ' && *end != '\t' && *end != '\0')
+		while (*end != ' ' && *end != '\t' && *end != '\0'
+			&& *end != '"')
 			end++;
 		last = *end == '\0';
 		*end = '\0';

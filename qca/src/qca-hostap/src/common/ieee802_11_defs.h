@@ -10,7 +10,7 @@
 #ifndef IEEE802_11_DEFS_H
 #define IEEE802_11_DEFS_H
 
-#include <utils/common.h>
+#include <common.h>
 
 /* IEEE 802.11 defines */
 
@@ -918,6 +918,10 @@ struct ieee80211_mgmt {
 			 * FH Params, DS Params, CF Params, IBSS Params, TIM */
 			u8 variable[];
 		} STRUCT_PACKED beacon;
+		struct {
+			/* only variable items: SSID, Supported rates */
+			u8 variable[0];
+		} STRUCT_PACKED probe_req;
 		/* probe_req: only variable items: SSID, Supported rates */
 		struct {
 			u8 timestamp[8];
@@ -1104,6 +1108,16 @@ struct ieee80211_vht_operation {
 	le16 vht_basic_mcs_set;
 } STRUCT_PACKED;
 
+struct ieee80211_heop_6g_param {
+	u8 primary_channel;       /* HE 6GHz Primary channel number */
+	u8 channel_width:2,       /* HE 6GHz BSS Channel Width */
+	   duplicate_beacon:1,    /* HE 6GHz Duplicate beacon field */
+	   control_reserved:5;    /* Reserved bits */
+	u8 chan_cent_freq_seg0;   /* HE 6GHz Channel Centre Frequency Segmen     t 0 */
+	u8 chan_cent_freq_seg1;   /* HE 6GHz Channel Centre Frequency Segmen     t 1 */
+	u8 minimum_rate;          /* HE 6GHz Minimum Rate */
+} STRUCT_PACKED;
+
 struct ieee80211_ampe_ie {
 	u8 selected_pairwise_suite[4];
 	u8 local_nonce[32];
@@ -1203,6 +1217,11 @@ struct ieee80211_ampe_ie {
 #define HT_INFO_HT_PARAM_STA_CHNL_WIDTH			((u8) BIT(2))
 #define HT_INFO_HT_PARAM_RIFS_MODE			((u8) BIT(3))
 /* B4..B7 - Reserved */
+
+/* HE Operation parameters of the HE Operation element */
+#define HE_INFO_HE_OPERATION_PARAM_VHT_OP		(1 << 9)
+#define HE_INFO_HE_OPERATION_PARAM_CO_HOSTED_BSS	(1 << 8)
+#define HE_INFO_HE_OPERATION_PARAM_6G_INFO		(1 << 6)
 
 /* HT Protection (B8..B9 of HT Operation Information) */
 #define HT_PROT_NO_PROTECTION           0
@@ -1317,10 +1336,20 @@ struct ieee80211_ampe_ie {
 #define MULTI_AP_OUI_TYPE 0x1B
 
 #define MULTI_AP_SUB_ELEM_TYPE 0x06
-#define MULTI_AP_TEAR_DOWN BIT(4)
-#define MULTI_AP_FRONTHAUL_BSS BIT(5)
-#define MULTI_AP_BACKHAUL_BSS BIT(6)
-#define MULTI_AP_BACKHAUL_STA BIT(7)
+#define MULTI_AP_PROFILE_SUB_ELEM_ID 0x07
+#define MULTI_AP_VLAN_SUB_ELEM_ID    0x08
+
+#define MULTI_AP_PROFILE2_BACKHAUL_STA_DISALLOWED BIT(2)
+#define MULTI_AP_PROFILE1_BACKHAUL_STA_DISALLOWED BIT(3)
+#define MULTI_AP_TEAR_DOWN                        BIT(4)
+#define MULTI_AP_FRONTHAUL_BSS                    BIT(5)
+#define MULTI_AP_BACKHAUL_BSS                     BIT(6)
+#define MULTI_AP_BACKHAUL_STA                     BIT(7)
+
+#define MULTI_AP_PROFILE_01          0x01
+#define MULTI_AP_PROFILE_02          0x02
+/* Add the last profile */
+#define MULTI_AP_PROFILE_MAX	(MULTI_AP_PROFILE_02)
 
 #define WMM_OUI_TYPE 2
 #define WMM_OUI_SUBTYPE_INFORMATION_ELEMENT 0
@@ -2202,6 +2231,12 @@ struct ieee80211_spatial_reuse {
 #define HE_OPERATION_PARTIAL_BSS_COLOR		((u32) BIT(30))
 #define HE_OPERATION_BSS_COLOR_DISABLED		((u32) BIT(31))
 #define HE_OPERATION_BSS_COLOR_OFFSET		24
+
+
+#define IEEE80211_6GOP_CHWIDTH_20           0 /* 20MHz Operating Channel width */
+#define IEEE80211_6GOP_CHWIDTH_40           1 /* 40MHz Operating Channel width */
+#define IEEE80211_6GOP_CHWIDTH_80           2 /* 80MHz Operating Channel width */
+#define IEEE80211_6GOP_CHWIDTH_160_80_80    3 /* 160/80+80 MHz Operating Channel width */
 
 /* Spatial Reuse defines */
 #define SPATIAL_REUSE_SRP_DISALLOWED		BIT(0)

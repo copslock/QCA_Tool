@@ -688,12 +688,12 @@ static int hostapd_config_parse_key_mgmt(int line, const char *value)
 	start = buf;
 
 	while (*start != '\0') {
-		while (*start == ' ' || *start == '\t')
+		while (*start == ' ' || *start == '\t' || *start == '"')
 			start++;
 		if (*start == '\0')
 			break;
 		end = start;
-		while (*end != ' ' && *end != '\t' && *end != '\0')
+		while (*end != ' ' && *end != '\t' && *end != '\0' && *end != '"')
 			end++;
 		last = *end == '\0';
 		*end = '\0';
@@ -2803,6 +2803,20 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->radius->acct_server->shared_secret_len = len;
 	} else if (os_strcmp(buf, "radius_retry_primary_interval") == 0) {
 		bss->radius->retry_primary_interval = atoi(pos);
+	} else if (os_strcmp(buf, "radius_server_retries") == 0) {
+		bss->radius->radius_server_retries = atoi(pos);
+		if((bss->radius->radius_server_retries < 0 ) || (bss->radius->radius_server_retries > 10 )){
+			wpa_printf(MSG_ERROR, "Line %d: radius->radius_server_retries '%d'",
+				line,bss->radius->radius_server_retries);
+			return 1;
+		}
+	}else if (os_strcmp(buf, "radius_max_retry_wait") == 0) {
+		bss->radius->radius_max_retry_wait = atoi(pos);
+		if((bss->radius->radius_max_retry_wait < 1 ) || (bss->radius->radius_max_retry_wait > 120 )){
+			wpa_printf(MSG_ERROR, "Line %d: radius->radius_max_retry_wait '%d'",
+				line,bss->radius->radius_max_retry_wait);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "radius_acct_interim_interval") == 0) {
 		bss->acct_interim_interval = atoi(pos);
 	} else if (os_strcmp(buf, "radius_request_cui") == 0) {
@@ -3003,6 +3017,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "peerkey") == 0) {
 		wpa_printf(MSG_INFO,
 			   "Line %d: Obsolete peerkey parameter ignored", line);
+        } else if (os_strcmp(buf, "identity_request_retry_interval") == 0) {
+                bss->identity_request_retry_interval = atoi(pos);
+                if((bss->identity_request_retry_interval < 0 ) || (bss->identity_request_retry_interval > 200 )){
+                        wpa_printf(MSG_ERROR, "Line %d: Invalid identity_request_retry_interval '%d'",
+                                line,bss->identity_request_retry_interval);
+                        return 1;
+                }
 #ifdef CONFIG_IEEE80211R_AP
 	} else if (os_strcmp(buf, "mobility_domain") == 0) {
 		if (os_strlen(pos) != 2 * MOBILITY_DOMAIN_ID_LEN ||
@@ -4431,6 +4452,33 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 
 		bss->multi_ap = val;
+	} else if (os_strcmp(buf, "multi_ap_profile") == 0) {
+		int val = atoi(pos);
+
+		if (val < 1 || val > 2) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid multi_ap_profile '%s'",
+				   line, buf);
+			return -1;
+		}
+		bss->multi_ap_profile = val;
+	} else if (os_strcmp(buf, "multi_ap_client_disallow") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val >= 3) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid multi_ap_client_allow '%s'",
+				   line, buf);
+			return -1;
+		}
+		bss->multi_ap_client_disallow = val;
+	} else if (os_strcmp(buf, "multi_ap_vlanid") == 0) {
+		int val = atoi(pos);
+
+		if (val < -1 || val >= MAX_VLAN_ID) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid multi_ap_vlan_id '%s'",
+				   line, buf);
+			return -1;
+		}
+		bss->multi_ap_vlanid = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_rssi") == 0) {
 		conf->rssi_reject_assoc_rssi = atoi(pos);
 	} else if (os_strcmp(buf, "rssi_reject_assoc_timeout") == 0) {
@@ -4524,6 +4572,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->mka_priority = mka_priority;
+	} else if (os_strcmp(buf, "macsec_csindex") == 0) {
+		int macsec_csindex = atoi(pos);
+
+		if (macsec_csindex < 0 || macsec_csindex > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid macsec_csindex (%d): '%s'.",
+				   line, macsec_csindex, pos);
+			return 1;
+		}
+		bss->macsec_csindex = macsec_csindex;
 	} else if (os_strcmp(buf, "mka_cak") == 0) {
 		size_t len = os_strlen(pos);
 

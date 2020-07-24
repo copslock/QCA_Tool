@@ -281,10 +281,10 @@ static void ieee802_1x_tx_key(struct hostapd_data *hapd, struct sta_info *sta)
 		ieee802_1x_tx_key_one(hapd, sta, 0, 0, ikey,
 				      hapd->conf->individual_wep_key_len);
 
-		/* TODO: set encryption in TX callback, i.e., only after STA
+		/*  set encryption in TX callback, i.e., only after STA
 		 * has ACKed EAPOL-Key frame */
 		if (hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
-					sta->addr, 0, 1, NULL, 0, ikey,
+					sta->addr, 0, 0, 0, 1, NULL, 0, ikey,
 					hapd->conf->individual_wep_key_len)) {
 			wpa_printf(MSG_ERROR,
 				   "Could not set individual WEP encryption");
@@ -2154,6 +2154,7 @@ static void ieee802_1x_rekey(void *eloop_ctx, void *timeout_ctx)
 {
 	struct hostapd_data *hapd = eloop_ctx;
 	struct eapol_authenticator *eapol = hapd->eapol_auth;
+	int ret;
 
 	if (eapol->default_wep_key_idx >= 3)
 		eapol->default_wep_key_idx =
@@ -2175,11 +2176,12 @@ static void ieee802_1x_rekey(void *eloop_ctx, void *timeout_ctx)
 
 	/* TODO: Could setup key for RX here, but change default TX keyid only
 	 * after new broadcast key has been sent to all stations. */
-	if (hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
+	ret = hostapd_drv_set_key(hapd->conf->iface, hapd, WPA_ALG_WEP,
 				broadcast_ether_addr,
-				eapol->default_wep_key_idx, 1, NULL, 0,
+				eapol->default_wep_key_idx, 0, 0, 1, NULL, 0,
 				eapol->default_wep_key,
-				hapd->conf->default_wep_key_len)) {
+				hapd->conf->default_wep_key_len);
+	if (ret && (ret != -ENETDOWN)) {
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE8021X,
 			       HOSTAPD_LEVEL_WARNING,
 			       "failed to configure a new broadcast key");
@@ -2436,6 +2438,9 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	conf.eap_req_id_text_len = hapd->conf->eap_req_id_text_len;
 	conf.erp_send_reauth_start = hapd->conf->erp_send_reauth_start;
 	conf.erp_domain = hapd->conf->erp_domain;
+	if (hapd->conf->identity_request_retry_interval) {
+		conf.identity_request_retry_interval = hapd->conf->identity_request_retry_interval;
+	}
 
 	os_memset(&cb, 0, sizeof(cb));
 	cb.eapol_send = ieee802_1x_eapol_send;
@@ -2470,7 +2475,7 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	if (hapd->conf->default_wep_key_len) {
 		for (i = 0; i < 4; i++)
 			hostapd_drv_set_key(hapd->conf->iface, hapd,
-					    WPA_ALG_NONE, NULL, i, 0, NULL, 0,
+					    WPA_ALG_NONE, NULL, i, 0, 0, 0, NULL, 0,
 					    NULL, 0);
 
 		ieee802_1x_rekey(hapd, NULL);

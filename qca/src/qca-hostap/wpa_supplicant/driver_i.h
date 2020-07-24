@@ -150,7 +150,7 @@ static inline int wpa_drv_get_ssid(struct wpa_supplicant *wpa_s, u8 *ssid)
 
 static inline int wpa_drv_set_key(struct wpa_supplicant *wpa_s,
 				  enum wpa_alg alg, const u8 *addr,
-				  int key_idx, int set_tx,
+				  int key_idx, u8 vlan_id, u8 vlan_found, int set_tx,
 				  const u8 *seq, size_t seq_len,
 				  const u8 *key, size_t key_len)
 {
@@ -162,7 +162,7 @@ static inline int wpa_drv_set_key(struct wpa_supplicant *wpa_s,
 	}
 	if (wpa_s->driver->set_key) {
 		return wpa_s->driver->set_key(wpa_s->ifname, wpa_s->drv_priv,
-					      alg, addr, key_idx, set_tx,
+					      alg, addr, key_idx, vlan_id, vlan_found, set_tx,
 					      seq, seq_len, key, key_len);
 	}
 	return -1;

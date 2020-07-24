@@ -1379,7 +1379,7 @@ static void nl80211_del_station_event(struct wpa_driver_nl80211_data *drv,
 	wpa_printf(MSG_DEBUG, "nl80211: Delete station " MACSTR,
 		   MAC2STR(addr));
 
-	if (is_ap_interface(drv->nlmode) && drv->device_ap_sme) {
+	if (is_ap_interface(drv->nlmode) ) {
 		drv_event_disassoc(bss->ctx, addr);
 		return;
 	}
@@ -1961,6 +1961,9 @@ static void qca_nl80211_dfs_offload_radar_event(
 		data.dfs_event.cf1 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ1]);
 	if (tb[NL80211_ATTR_CENTER_FREQ2])
 		data.dfs_event.cf2 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA])
+		data.dfs_event.timeout = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA]);
 
 	wpa_printf(MSG_DEBUG, "nl80211: DFS event on freq %d MHz, ht: %d, "
 		    "offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz",

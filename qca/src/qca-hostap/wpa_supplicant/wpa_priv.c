@@ -404,7 +404,7 @@ static void wpa_priv_cmd_set_key(struct wpa_priv_interface *iface,
 
 	res = iface->driver->set_key(iface->ifname, iface->drv_priv,
 				     params->alg,
-				     params->addr, params->key_idx,
+				     params->addr, params->key_idx, 0, 0,
 				     params->set_tx,
 				     params->seq_len ? params->seq : NULL,
 				     params->seq_len,

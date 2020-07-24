@@ -701,7 +701,9 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	int sec_chan = 0, vht = 0;
 	struct ieee80211_ht_operation *ht_oper = NULL;
 	struct ieee80211_vht_operation *vht_oper = NULL;
-	u8 seg0, seg1;
+	struct ieee80211_heop_6g_param *he_oper_6g = NULL;
+	struct ieee80211_he_operation  *heop = NULL;
+	u8 seg0, seg1, pos=0;
 
 	ie = get_ie(ies, ies_len, WLAN_EID_HT_OPERATION);
 	if (ie && ie[1] >= sizeof(struct ieee80211_ht_operation)) {
@@ -741,6 +743,46 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 		default:
 			vht = CHANWIDTH_USE_HT;
 			break;
+		}
+	}
+
+	ie= get_ie_ext(ies, ies_len, WLAN_EID_EXT_HE_OPERATION);
+	if (ie && ies_len >=6) {
+		heop = (struct ieee80211_he_operation *)(ie);
+		/* Note:: Correctly overwrite the 5G chanwidth if VHT Op
+		 * is present otherwise leave it as filled previously */
+		if(heop->he_oper_params & HE_INFO_HE_OPERATION_PARAM_VHT_OP)
+			pos = pos+3;
+
+		if(heop->he_oper_params &
+		   HE_INFO_HE_OPERATION_PARAM_CO_HOSTED_BSS)
+			pos = pos+1;
+
+		/*Overwite the chanwidth as below only for 6G */
+		if((heop->he_oper_params & HE_INFO_HE_OPERATION_PARAM_6G_INFO)
+		   && (freq >= 5945)) {
+			pos = pos+9;
+			he_oper_6g = (struct ieee80211_heop_6g_param *)
+				      (ie +pos);
+			/* Note: In driver chanwidth =3 and opclass=134 is
+			* for both 160 MHz and 80+80 MHz currently. Adding
+			* the same here.*/
+			switch (he_oper_6g->channel_width) {
+			case IEEE80211_6GOP_CHWIDTH_20:
+				vht = 0;
+				break;
+			case IEEE80211_6GOP_CHWIDTH_40:
+				vht = 1;
+				break;
+			case IEEE80211_6GOP_CHWIDTH_80:
+				vht = 2;
+				break;
+			case IEEE80211_6GOP_CHWIDTH_160_80_80:
+				vht = 3;
+				break;
+			default:
+				vht = CHANWIDTH_USE_HT;
+			}
 		}
 	}
 
@@ -1579,6 +1621,7 @@ void wpas_clear_beacon_rep_data(struct wpa_supplicant *wpa_s)
 
 	eloop_cancel_timeout(wpas_rrm_scan_timeout, wpa_s, NULL);
 	bitfield_free(data->eids);
-	os_free(data->scan_params.freqs);
+	if (data->scan_params.freqs)
+		os_free(data->scan_params.freqs);
 	os_memset(data, 0, sizeof(*data));
 }

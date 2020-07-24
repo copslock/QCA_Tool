@@ -332,7 +332,8 @@ bsd_ctrl_iface(void *priv, int enable)
 
 static int
 bsd_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-	    const unsigned char *addr, int key_idx, int set_tx, const u8 *seq,
+	    const unsigned char *addr, int key_idx, int vlan_id, int vlan_found,
+	     int set_tx, const u8 *seq,
 	    size_t seq_len, const u8 *key, size_t key_len)
 {
 	struct ieee80211req_key wk;

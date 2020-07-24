@@ -530,6 +530,9 @@ static int wpa_supplicant_wps_cred(void *ctx,
 	case WPS_AUTH_WPA2PSK:
 		ssid->auth_alg = WPA_AUTH_ALG_OPEN;
 		ssid->key_mgmt = WPA_KEY_MGMT_PSK;
+		if (wpa_s->conf->pmf == MGMT_FRAME_PROTECTION_REQUIRED) {
+			ssid->key_mgmt |= WPA_KEY_MGMT_PSK_SHA256;
+		}
 		if (wpa_s->conf->wps_cred_add_sae &&
 		    cred->key_len != 2 * PMK_LEN) {
 			ssid->key_mgmt |= WPA_KEY_MGMT_SAE;
@@ -539,7 +542,7 @@ static int wpa_supplicant_wps_cred(void *ctx,
 		break;
 	}
 
-	if (ssid->key_mgmt & WPA_KEY_MGMT_PSK) {
+	if (ssid->key_mgmt & (WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_PSK_SHA256)) {
 		if (cred->key_len == 2 * PMK_LEN) {
 			if (hexstr2bin((const char *) cred->key, ssid->psk,
 				       PMK_LEN)) {
@@ -1183,14 +1186,18 @@ int wpas_wps_start_pbc(struct wpa_supplicant *wpa_s, const u8 *bssid,
 		}
 	}
 #endif /* CONFIG_P2P */
-	os_snprintf(phase1, sizeof(phase1), "pbc=1%s",
-		    multi_ap_backhaul_sta ? " multi_ap=1" : "");
+	os_snprintf(phase1, sizeof(phase1), "pbc=1");
+	if (multi_ap_backhaul_sta)
+		os_snprintf(phase1+5, sizeof(phase1)-5, " multi_ap=%d",multi_ap_backhaul_sta);
+
 	if (wpa_config_set_quoted(ssid, "phase1", phase1) < 0)
 		return -1;
 	if (wpa_s->wps_fragment_size)
 		ssid->eap.fragment_size = wpa_s->wps_fragment_size;
-	if (multi_ap_backhaul_sta)
+	if (multi_ap_backhaul_sta) {
 		ssid->multi_ap_backhaul_sta = 1;
+		ssid->multi_ap_profile = multi_ap_backhaul_sta;
+	}
 	wpa_supplicant_wps_event(wpa_s, WPS_EV_PBC_ACTIVE, NULL);
 	eloop_register_timeout(WPS_PBC_WALK_TIME, 0, wpas_wps_timeout,
 			       wpa_s, NULL);

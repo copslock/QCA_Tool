@@ -1019,7 +1019,12 @@ void nl80211_dump_scan(struct wpa_driver_nl80211_data *drv)
 int wpa_driver_nl80211_abort_scan(void *priv, u64 scan_cookie)
 {
 	struct i802_bss *bss = priv;
-#ifdef CONFIG_DRIVER_NL80211_QCA
+	/* Renamed this macro to CONFIG_DRIVER_NL80211_VENDOR_QCA since
+	 * normal scan path needs to be used rather than using the
+	 * vendor scan path. Many scan fixes are missing in vendor scan
+	 * path and that path should not be used.
+	 */
+#ifdef CONFIG_DRIVER_NL80211_VENDOR_QCA
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 
 	/*

@@ -222,7 +222,14 @@ ieee802_1x_mka_dump_dist_sak_body(struct ieee802_1x_mka_dist_sak_body *body)
 	wpa_printf(MSG_DEBUG, "\tKey Number............: %d",
 		   be_to_host32(body->kn));
 	/* TODO: Other than GCM-AES-128 case: MACsec Cipher Suite */
-	wpa_hexdump(MSG_DEBUG, "\tAES Key Wrap of SAK...:", body->sak, 24);
+	if(body_len == 28){
+		wpa_hexdump(MSG_INFO, "\tAES Key Wrap of SAK...:", body->sak, 24);
+	}
+	else{
+		wpa_hexdump(MSG_INFO, "\tMacsec Cipher Suite...:", body->sak, CS_ID_LEN);
+		wpa_hexdump(MSG_INFO, "\tAES Key Wrap of SAK...:", body->sak + CS_ID_LEN,
+							body_len - CS_ID_LEN - sizeof(body->kn));
+	}
 }
 
 
@@ -1851,7 +1858,7 @@ ieee802_1x_mka_get_icv_length(struct ieee802_1x_mka_participant *participant)
 
 	/* Determine if we need space for the ICV Indicator */
 	if (mka_alg_tbl[participant->kay->mka_algindex].icv_len !=
-	    DEFAULT_ICV_LEN)
+	    DEFAULT_ICV_LEN || participant->kay->mka_icv_indicator)
 		length = sizeof(struct ieee802_1x_mka_icv_body);
 	else
 		length = 0;
@@ -1874,7 +1881,7 @@ ieee802_1x_mka_encode_icv_body(struct ieee802_1x_mka_participant *participant,
 
 	length = ieee802_1x_mka_get_icv_length(participant);
 	if (mka_alg_tbl[participant->kay->mka_algindex].icv_len !=
-	    DEFAULT_ICV_LEN)  {
+	    DEFAULT_ICV_LEN || participant->kay->mka_icv_indicator)  {
 		wpa_printf(MSG_DEBUG, "KaY: ICV Indicator");
 		body = wpabuf_put(buf, MKA_HDR_LEN);
 		body->type = MKA_ICV_INDICATOR;
@@ -2597,8 +2604,10 @@ static void ieee802_1x_participant_timer(void *eloop_ctx, void *timeout_ctx)
 			participant->lrx = FALSE;
 			participant->otx = FALSE;
 			participant->orx = FALSE;
-			participant->is_key_server = FALSE;
-			participant->is_elected = FALSE;
+			if(participant->mode == PSK) {
+				participant->is_key_server = FALSE;
+				participant->is_elected = FALSE;
+			}
 			kay->authenticated = FALSE;
 			kay->secured = FALSE;
 			kay->failed = FALSE;
@@ -2644,7 +2653,7 @@ static void ieee802_1x_participant_timer(void *eloop_ctx, void *timeout_ctx)
 	}
 
 	if (participant->retry_count < MAX_RETRY_CNT ||
-	    participant->mode == PSK) {
+	    participant->mode == PSK || participant->mode == EAP_EXCHANGE) {
 		ieee802_1x_participant_send_mkpdu(participant);
 		participant->retry_count++;
 	}
@@ -3455,8 +3464,8 @@ static void kay_l2_receive(void *ctx, const u8 *src_addr, const u8 *buf,
  */
 struct ieee802_1x_kay *
 ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
-		    Boolean macsec_replay_protect, u32 macsec_replay_window,
-		    u16 port, u8 priority, const char *ifname, const u8 *addr)
+		    Boolean icv_indicator, Boolean macsec_replay_protect, u32 macsec_replay_window,
+		    u16 port, u8 priority, u32 macsec_csindex, const char *ifname, const u8 *addr)
 {
 	struct ieee802_1x_kay *kay;
 
@@ -3493,9 +3502,10 @@ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
 	kay->dist_time = 0;
 
 	kay->pn_exhaustion = PENDING_PN_EXHAUSTION;
-	kay->macsec_csindex = DEFAULT_CS_INDEX;
+	kay->macsec_csindex = macsec_csindex;
 	kay->mka_algindex = DEFAULT_MKA_ALG_INDEX;
 	kay->mka_version = MKA_VERSION_ID;
+	kay->mka_icv_indicator = icv_indicator;
 
 	os_memcpy(kay->algo_agility, mka_algo_agility,
 		  sizeof(kay->algo_agility));

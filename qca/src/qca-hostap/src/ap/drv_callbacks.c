@@ -273,6 +273,31 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	ap_copy_sta_supp_op_classes(sta, elems.supp_op_classes,
 				    elems.supp_op_classes_len);
 
+#ifdef CONFIG_HS20
+    if (hapd->conf->osen) {
+        if (elems.osen == NULL) {
+            hostapd_logger(
+                    hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+                    HOSTAPD_LEVEL_INFO,
+                    "No HS 2.0 OSEN element in association request");
+            return WLAN_STATUS_INVALID_IE;
+        }
+
+        wpa_printf(MSG_DEBUG, "HS 2.0: OSEN association");
+        if (sta->wpa_sm == NULL)
+            sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
+                    sta->addr, NULL);
+        if (sta->wpa_sm == NULL) {
+            wpa_printf(MSG_WARNING, "Failed to initialize WPA "
+                    "state machine");
+            return WLAN_STATUS_UNSPECIFIED_FAILURE;
+        }
+        if (wpa_validate_osen(hapd->wpa_auth, sta->wpa_sm,
+                    elems.osen - 2, elems.osen_len + 2) < 0)
+            return WLAN_STATUS_INVALID_IE;
+
+    } else
+#endif /* CONFIG_HS20 */
 	if (hapd->conf->wpa) {
 		if (ie == NULL || ielen == 0) {
 #ifdef CONFIG_WPS
@@ -358,8 +383,10 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 		if ((sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP)) ==
 		    (WLAN_STA_ASSOC | WLAN_STA_MFP) &&
 		    !sta->sa_query_timed_out &&
-		    sta->sa_query_count > 0)
-			ap_check_sa_query_timeout(hapd, sta);
+		    sta->sa_query_count > 0) {
+			if(ap_check_sa_query_timeout(hapd, sta))
+				return -1;
+		}
 		if ((sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP)) ==
 		    (WLAN_STA_ASSOC | WLAN_STA_MFP) &&
 		    !sta->sa_query_timed_out &&
@@ -445,29 +472,6 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 			sta->flags |= WLAN_STA_MAYBE_WPS;
 		wpabuf_free(wps);
 #endif /* CONFIG_WPS */
-#ifdef CONFIG_HS20
-	} else if (hapd->conf->osen) {
-		if (elems.osen == NULL) {
-			hostapd_logger(
-				hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-				HOSTAPD_LEVEL_INFO,
-				"No HS 2.0 OSEN element in association request");
-			return WLAN_STATUS_INVALID_IE;
-		}
-
-		wpa_printf(MSG_DEBUG, "HS 2.0: OSEN association");
-		if (sta->wpa_sm == NULL)
-			sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
-							sta->addr, NULL);
-		if (sta->wpa_sm == NULL) {
-			wpa_printf(MSG_WARNING,
-				   "Failed to initialize WPA state machine");
-			return WLAN_STATUS_UNSPECIFIED_FAILURE;
-		}
-		if (wpa_validate_osen(hapd->wpa_auth, sta->wpa_sm,
-				      elems.osen - 2, elems.osen_len + 2) < 0)
-			return WLAN_STATUS_INVALID_IE;
-#endif /* CONFIG_HS20 */
 	}
 
 #ifdef CONFIG_MBO

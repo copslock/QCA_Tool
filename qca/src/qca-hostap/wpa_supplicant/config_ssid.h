@@ -23,8 +23,12 @@
 #define DEFAULT_PAIRWISE (WPA_CIPHER_CCMP)
 #define DEFAULT_GROUP (WPA_CIPHER_CCMP)
 #else /* CONFIG_NO_TKIP */
-#define DEFAULT_PAIRWISE (WPA_CIPHER_CCMP | WPA_CIPHER_TKIP)
-#define DEFAULT_GROUP (WPA_CIPHER_CCMP | WPA_CIPHER_TKIP)
+#define DEFAULT_PAIRWISE (WPA_CIPHER_CCMP | WPA_CIPHER_TKIP | \
+                          WPA_CIPHER_CCMP_256 | WPA_CIPHER_GCMP |\
+                          WPA_CIPHER_GCMP_256)
+#define DEFAULT_GROUP (WPA_CIPHER_CCMP | WPA_CIPHER_TKIP | \
+                       WPA_CIPHER_CCMP_256 | WPA_CIPHER_GCMP |\
+                       WPA_CIPHER_GCMP_256)
 #endif /* CONFIG_NO_TKIP */
 #define DEFAULT_FRAGMENT_SIZE 1398
 
@@ -873,6 +877,13 @@ struct wpa_ssid {
 	int mka_priority;
 
 	/**
+	 * macsec_csindex - chipher suite index of macsec
+	 *
+	 * Range: 0-1 (default: 0)
+	 */
+	int macsec_csindex;
+
+	/**
 	 * mka_ckn - MKA pre-shared CKN
 	 */
 #define MACSEC_CKN_MAX_LEN 32
@@ -893,6 +904,12 @@ struct wpa_ssid {
 	 * mka_psk_set - Whether mka_ckn and mka_cak are set
 	 */
 	u8 mka_psk_set;
+	/**
+	 * mka_icv_indicator - Include or not include icv indicatoer in MKPDU
+	 * FALSE: Not include
+	 * TRUE: Include
+	 */
+	Boolean mka_icv_indicator;
 #endif /* CONFIG_MACSEC */
 
 #ifdef CONFIG_HS20
@@ -1039,6 +1056,11 @@ struct wpa_ssid {
 	 * FT initial mobility domain association.
 	 */
 	int ft_eap_pmksa_caching;
+
+	/**
+	 * multi_ap_profile
+	 */
+	int multi_ap_profile;
 
 	/**
 	 * beacon_prot - Whether Beacon protection is enabled

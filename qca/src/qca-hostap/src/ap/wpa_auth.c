@@ -1225,7 +1225,7 @@ continue_processing:
 		break;
 	}
 
-	wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,
+	wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_INFO,
 			 "received EAPOL-Key frame (%s)", msgtxt);
 
 	if (key_info & WPA_KEY_INFO_ACK) {
@@ -2112,7 +2112,7 @@ SM_STATE(WPA_PTK, PTKSTART)
 		return;
 	}
 
-	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_DEBUG,
+	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_INFO,
 			"sending 1/4 msg of 4-Way Handshake");
 	/*
 	 * For infrastructure BSS cases, it is better for the AP not to include
@@ -3242,7 +3242,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 			    wpa_ie, wpa_ie_len);
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
-	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_DEBUG,
+	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_INFO,
 			"sending 3/4 msg of 4-Way Handshake");
 	if (sm->wpa == WPA_VERSION_WPA2) {
 		/* WPA2 send GTK in the 4-way handshake */
@@ -3627,7 +3627,7 @@ SM_STATE(WPA_PTK_GROUP, REKEYNEGOTIATING)
 	os_memset(rsc, 0, WPA_KEY_RSC_LEN);
 	if (gsm->wpa_group_state == WPA_GROUP_SETKEYSDONE)
 		wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN, rsc);
-	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_DEBUG,
+	wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_INFO,
 			"sending 1/2 msg of Group Key Handshake");
 
 	gtk = gsm->GTK[gsm->GN - 1];

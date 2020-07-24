@@ -174,6 +174,9 @@ struct hostapd_radius_servers {
 	 * force_client_addr - Whether to force client (local) address
 	 */
 	int force_client_addr;
+
+	int radius_server_retries;
+	int radius_max_retry_wait;
 };
 
 

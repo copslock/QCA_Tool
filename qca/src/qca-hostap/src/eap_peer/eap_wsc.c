@@ -255,8 +255,19 @@ static void * eap_wsc_init(struct eap_sm *sm)
 		cfg.new_ap_settings = &new_ap_settings;
 	}
 
-	if (os_strstr(phase1, "multi_ap=1"))
-		cfg.multi_ap_backhaul_sta = 1;
+	pos = os_strstr(phase1, "multi_ap=");
+	if (pos) {
+		u16 id = atoi(pos + 9);
+		if (id ==1 ) {
+			cfg.multi_ap_backhaul_sta = 1;
+			cfg.multi_ap_profile = 1;
+		} else if (id == 2) {
+			cfg.multi_ap_backhaul_sta = 1;
+			cfg.multi_ap_profile = 2;
+		} else {
+			wpa_printf(MSG_DEBUG, "EAP-WSC: invalid multi ap setting");
+		}
+	}
 
 	data->wps = wps_init(&cfg);
 	if (data->wps == NULL) {

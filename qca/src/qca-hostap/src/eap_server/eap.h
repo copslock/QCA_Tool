@@ -255,6 +255,7 @@ struct eap_config {
 	int erp;
 	unsigned int tls_session_lifetime;
 	unsigned int tls_flags;
+	int identity_request_retry_interval;
 
 	unsigned int max_auth_rounds;
 	unsigned int max_auth_rounds_short;

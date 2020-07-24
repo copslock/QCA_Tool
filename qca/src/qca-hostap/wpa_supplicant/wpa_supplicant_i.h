@@ -1441,6 +1441,9 @@ size_t wpas_supp_op_class_ie(struct wpa_supplicant *wpa_s,
 			     struct wpa_ssid *ssid,
 			     struct wpa_bss *bss, u8 *pos, size_t len);
 
+int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
+			u8 *op_class, u8 *chan, u8 *phy_type);
+
 int wpas_sta_secondary_channel_offset(struct wpa_bss *bss,
 				      u8 *current, u8 *chan);
 

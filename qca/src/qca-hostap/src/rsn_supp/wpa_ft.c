@@ -428,7 +428,7 @@ static int wpa_ft_install_ptk(struct wpa_sm *sm, const u8 *bssid)
 	enum wpa_alg alg;
 	u8 null_rsc[6] = { 0, 0, 0, 0, 0, 0 };
 
-	wpa_printf(MSG_DEBUG, "FT: Installing PTK to the driver.");
+	wpa_printf(MSG_INFO, "FT: Installing PTK to the driver.");
 
 	if (!wpa_cipher_valid_pairwise(sm->pairwise_cipher)) {
 		wpa_printf(MSG_WARNING, "FT: Unsupported pairwise cipher %d",
