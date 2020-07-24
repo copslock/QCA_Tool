@@ -373,6 +373,54 @@ static int wpa_config_parse_bssid(const struct parse_data *data,
 	return 0;
 }
 
+#ifdef SPIRENT_PORT
+static int wpa_config_parse_fbt_target(const struct parse_data *data,
+					struct wpa_ssid *ssid, int line,
+					const char *value)
+{
+	/* check fbt target is set */
+	if (value[0] == '\0' || os_strcmp(value, "\"\"") == 0) {
+		ssid->fbt_target_set = 0;
+		wpa_printf(MSG_MSGDUMP, "FBT target not set");
+		return 0;
+	}
+	/* check fbt target value is set */
+	if (hwaddr_aton(value, ssid->fbt_target)) {
+		wpa_printf(MSG_ERROR, "Line %d: Invalid BSSID '%s'.",
+			line, value);
+		return -1;
+	}
+	ssid->fbt_target_set = 1;
+	wpa_hexdump(MSG_MSGDUMP, "FBT BSSID", ssid->fbt_target, ETH_ALEN);
+	return 0;
+}
+
+#ifndef NO_CONFIG_WRITE
+#define MAC_STR_BUFLEN 20
+static char * wpa_config_write_fbt_target(const struct parse_data *data,
+					struct wpa_ssid *ssid)
+{
+	char *value;
+	int res;
+
+	if (!ssid->fbt_target_set)
+		return NULL;
+
+	value = os_malloc(MAC_STR_BUFLEN);
+	if (value == NULL)
+		return NULL;
+
+	res = os_snprintf(value, MAC_STR_BUFLEN, MACSTR, MAC2STR(ssid->fbt_target));
+	if (os_snprintf_error(MAC_STR_BUFLEN, res)) {
+		os_free(value);
+		return NULL;
+	}
+	value[MAC_STR_BUFLEN - 1] = '\0';
+	return value;
+}
+#endif /* NO_CONFIG_WRITE */
+
+#endif
 
 #ifndef NO_CONFIG_WRITE
 static char * wpa_config_write_bssid(const struct parse_data *data,
@@ -2573,6 +2621,10 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(multi_ap_profile, 1, 2) },
 	{ INT_RANGE(beacon_prot, 0, 1) },
 	{ INT_RANGE(transition_disable, 0, 255) },
+#ifdef SPIRENT_PORT
+	{ FUNC(fbt_target) },
+	{ INT(fbt_target_set) },
+#endif	
 };
 
 #undef OFFSET

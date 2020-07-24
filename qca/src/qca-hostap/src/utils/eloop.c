@@ -24,7 +24,11 @@
 
 #if !defined(CONFIG_ELOOP_POLL) && !defined(CONFIG_ELOOP_EPOLL) && \
     !defined(CONFIG_ELOOP_KQUEUE)
+#ifdef SPIRENT_PORT
+#define CONFIG_ELOOP_EPOLL
+#else
 #define CONFIG_ELOOP_SELECT
+#endif
 #endif
 
 #ifdef CONFIG_ELOOP_POLL

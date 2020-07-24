@@ -18,6 +18,11 @@
 #include "config_ssid.h"
 #include "wmm_ac.h"
 
+#ifdef SPIRENT_PORT
+#define IS_5GHZ(n) (n > 4000)
+#define DEFAULT_NOISE_FLOOR_2GHZ (-89) //in dBm
+#define DEFAULT_NOISE_FLOOR_5GHZ (-92) //in dBm
+#endif
 extern const char *const wpa_supplicant_version;
 extern const char *const wpa_supplicant_license;
 #ifndef CONFIG_NO_STDOUT_DEBUG
@@ -36,6 +41,9 @@ struct wpa_bss;
 struct wpa_scan_results;
 struct hostapd_hw_modes;
 struct wpa_driver_associate_params;
+#ifdef SPIRENT_PORT
+struct scan_result_cache;
+#endif
 
 /*
  * Forward declarations of private structures used within the ctrl_iface
@@ -301,6 +309,10 @@ struct wpa_global {
 #endif /* CONFIG_WIFI_DISPLAY */
 
 	struct psk_list_entry *add_psk; /* From group formation */
+#ifdef SPIRENT_PORT
+       unsigned int scan_cache_age; /* age of scan cache */
+       struct scan_result_cache* scan_cache; /* pointer to cache entry */
+#endif
 };
 
 
@@ -477,6 +489,18 @@ struct fils_hlp_req {
 	struct wpabuf *pkt;
 };
 
+#ifdef SPIRENT_PORT
+struct dot11k_neighbor_report {
+	u8 bssid[ETH_ALEN];
+	u8 channel_number;
+	u8 is_valid; //set to 1, if the entry is valid
+	int rssi; //in dBm
+	int level; //in dB
+	int freq;
+	u8 *ssid;
+	u8 ssid_len;
+};
+#endif /* SPIRENT_PORT */
 /**
  * struct wpa_supplicant - Internal data for wpa_supplicant interface
  *
@@ -1094,6 +1118,39 @@ struct wpa_supplicant {
 	u8 wnm_mbo_transition_reason;
 #endif /* CONFIG_MBO */
 #endif /* CONFIG_WNM */
+#ifdef SPIRENT_PORT
+	enum{
+		FT_ROAM_OVER_AIR,
+		FT_ROAM_OVER_DS,
+		FT_ROAM_NONE,
+	}ft_roam_type;
+	u8 btm_reassoc;
+	//This is referenced from WNM_MAX_NEIGHBOR_REPORT "wpa_supplicant/wnm_sta.c"
+	#define WNM_MAX_NEIGHBOR_REPORT 10
+	enum{
+		ENABLED_11V_11K,
+		ENABLED_11V,
+		ENABLED_11K,
+	}en_11vk;
+
+	int roam_thold;
+	int roam_decision_thold;
+	struct __btm_counter{
+		u32 query;
+		u32 request;
+		u32 accept;
+		u32 deny;
+		u64 v_delay;
+	}btm_counter;
+	struct os_reltime btm_st_time;
+
+	u8 wnm_num_neighbor_report_sel;
+	struct __neigh_rep{
+		u8 ssid[SSID_MAX_LEN];
+		u8 bssid[ETH_ALEN];
+		int rssi;
+	} neigh_rep[WNM_MAX_NEIGHBOR_REPORT];
+#endif  /* SPIRENT_PORT */
 
 #ifdef CONFIG_TESTING_GET_GTK
 	u8 last_gtk[32];
@@ -1268,6 +1325,15 @@ struct wpa_supplicant {
 #ifdef CONFIG_FILS
 	unsigned int disable_fils:1;
 #endif /* CONFIG_FILS */
+#ifdef SPIRENT_PORT
+        int scan_try_cache;
+        unsigned int assoc_fail_reason;     /*Association fail reason code */
+
+	struct dot11k_neighbor_report *dot11k_neigh_report; /* stores 11K NeighborReport Array */
+	u8 num_dot11k_neigh_report; /* Indicates count of initially received Neighbor reports */
+	u8 num_valid_dot11k_neigh_report; /* Count after client side processing */
+
+#endif
 	unsigned int ieee80211ac:1;
 	unsigned int enabled_4addr_mode:1;
 	unsigned int multi_bss_support:1;

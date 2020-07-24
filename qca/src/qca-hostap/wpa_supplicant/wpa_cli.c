@@ -279,6 +279,12 @@ static int wpa_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd, int min_args,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+#ifdef SPIRENT_PORT
+static int wpa_cli_cmd_scan_cache(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+       return wpa_cli_cmd(ctrl, "SCAN_CACHE", 1, argc, argv);
+}
+#endif
 
 static int wpa_cli_cmd_ifname(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -1400,6 +1406,13 @@ static int wpa_cli_cmd_get_network(struct wpa_ctrl *ctrl, int argc,
 	return wpa_cli_cmd(ctrl, "GET_NETWORK", 2, argc, argv);
 }
 
+#ifdef SPIRENT_PORT
+static int wpa_cli_cmd_get_neighbor_report_stats(struct wpa_ctrl *ctrl, int argc,
+	char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_NEIGH_REPORT_STATS");
+}
+#endif
 
 static const char *network_fields[] = {
 	"ssid", "scan_ssid", "bssid", "bssid_blacklist",
@@ -2839,7 +2852,12 @@ static int wpa_cli_cmd_wnm_bss_query(struct wpa_ctrl *ctrl, int argc, char *argv
 {
 	return wpa_cli_cmd(ctrl, "WNM_BSS_QUERY", 1, argc, argv);
 }
-
+#ifdef SPIRENT_PORT
+static int wpa_cli_cmd_enable_kv_roam(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "ENABLE_KV_ROAM", 1, argc, argv);
+}
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_WNM */
 
 
@@ -2889,6 +2907,17 @@ static int wpa_cli_cmd_erp_flush(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return wpa_ctrl_command(ctrl, "ERP_FLUSH");
 }
 
+#ifdef SPIRENT_PORT
+static int wpa_cli_cmd_hold_bssid(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "HOLD_BSS", 1, argc, argv);
+}
+
+static int wpa_cli_cmd_unhold_bssid(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "UNHOLD_BSS", 1, argc, argv);
+}
+#endif
 
 static int wpa_cli_cmd_mac_rand_scan(struct wpa_ctrl *ctrl, int argc,
 				     char *argv[])
@@ -3604,6 +3633,11 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  "<query reason> [list]"
 	  " [neighbor=<BSSID>,<BSSID information>,<operating class>,<channel number>,<PHY type>[,<hexdump of optional subelements>]"
 	  " = Send BSS Transition Management Query" },
+#ifdef SPIRENT_PORT
+	{ "enable_kv_roam", wpa_cli_cmd_enable_kv_roam, NULL, cli_cmd_flag_none,
+	  "[params] = <Roaming Threshold>, <Roaming Decision Threshold>, <0..2> optional enable 11v & 11k Flag{0:Both |1:11v |2:11k},"
+	  "<0..2> FT_Roam{0:over-the-air | 1:over-the-ds | 2:NONE}" },
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_WNM */
 	{ "raw", wpa_cli_cmd_raw, NULL, cli_cmd_flag_sensitive,
 	  "<params..> = Sent unprocessed command" },
@@ -3622,6 +3656,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  wpa_cli_cmd_neighbor_rep_request, NULL, cli_cmd_flag_none,
 	  "[ssid=<SSID>] [lci] [civic] = Trigger request to AP for neighboring AP report (with optional given SSID in hex or enclosed in double quotes, default: current SSID; with optional LCI and location civic request)"
 	},
+#ifdef SPIRENT_PORT
+	{ "get_neigh_report_stats",
+	  wpa_cli_cmd_get_neighbor_report_stats, NULL, cli_cmd_flag_none,
+          " "
+	},
+#endif
 	{ "erp_flush", wpa_cli_cmd_erp_flush, NULL, cli_cmd_flag_none,
 	  "= flush ERP keys" },
 	{ "mac_rand_scan",
@@ -3632,6 +3672,18 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "get_pref_freq_list", wpa_cli_cmd_get_pref_freq_list, NULL,
 	  cli_cmd_flag_none,
 	  "<interface type> = retrieve preferred freq list for the specified interface type" },
+#ifdef SPIRENT_PORT
+       { "scan_cache", wpa_cli_cmd_scan_cache, NULL,
+         cli_cmd_flag_none,
+         "<command[flush/age]><argument[seconds for age]> flush or set scan cache age"
+       },
+	{ "hold_bss", wpa_cli_cmd_hold_bssid, NULL,
+	  cli_cmd_flag_none,
+	  "<command[bssid]><argument[bssid to hold]> hold bssid and dont letgo BSS" },
+	{ "unhold_bss", wpa_cli_cmd_unhold_bssid, NULL,
+	  cli_cmd_flag_none,
+	  "<command[bssid]><argument[bssid to unhold]> unhold bsssid." },
+#endif
 	{ "p2p_lo_start", wpa_cli_cmd_p2p_lo_start, NULL,
 	  cli_cmd_flag_none,
 	  "<freq> <period> <interval> <count> = start P2P listen offload" },

@@ -616,12 +616,16 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		}
 
 		if (!(ie.key_mgmt & ssid->key_mgmt)) {
+#ifdef SPIRENT_PORT
+			wpa_s->assoc_fail_reason = WPA_WPA2_MISMATCH;  /* wpa2/wap3 Encryption type mismatch */
+#endif
 			if (debug_print)
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"   skip RSN IE - key mgmt mismatch");
 			break;
 		}
 
+#ifdef CONFIG_IEEE80211W
 		if (!(ie.capabilities & WPA_CAPABILITY_MFPC) &&
 		    wpas_get_ssid_pmf(wpa_s, ssid) ==
 		    MGMT_FRAME_PROTECTION_REQUIRED) {
@@ -630,6 +634,7 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 					"   skip RSN IE - no mgmt frame protection");
 			break;
 		}
+#endif /* CONFIG_IEEE80211W */
 		if ((ie.capabilities & WPA_CAPABILITY_MFPR) &&
 		    wpas_get_ssid_pmf(wpa_s, ssid) ==
 		    NO_MGMT_FRAME_PROTECTION) {
@@ -695,6 +700,9 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		}
 
 		if (!(ie.key_mgmt & ssid->key_mgmt)) {
+#ifdef SPIRENT_PORT
+			wpa_s->assoc_fail_reason = WPA_WPA2_MISMATCH;/*wpa2/wpa3enterprise Encryption type mismatch */
+#endif
 			if (debug_print)
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"   skip WPA IE - key mgmt mismatch");
@@ -740,6 +748,9 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 
 	if ((ssid->proto & (WPA_PROTO_WPA | WPA_PROTO_RSN)) &&
 	    wpa_key_mgmt_wpa(ssid->key_mgmt) && proto_match == 0) {
+#ifdef SPIRENT_PORT
+		wpa_s->assoc_fail_reason = WPA_RSN_PROTO_NOT_MATCH;  /*AP - Open Mode ,AP Profile in GUI  - Encryption mode */
+#endif
 		if (debug_print)
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"   skip - no WPA/RSN proto match");
@@ -759,6 +770,9 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		return 1;
 	}
 
+#ifdef SPIRENT_PORT
+	wpa_s->assoc_fail_reason = WPA_WPA2_MISMATCH;  /*Encryption type mismatch */
+#endif
 	if (debug_print)
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"   reject due to mismatch with WPA/WPA2");
@@ -1234,6 +1248,9 @@ struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 		}
 
 		if (!wpa_supplicant_match_privacy(bss, ssid)) {
+#ifdef SPIRENT_PORT
+			wpa_s->assoc_fail_reason = PRIVACY_MISMATCH; /*AP - Encryption Mode ,AP Profile in GUI  - Open Mode */
+#endif
 			if (debug_print)
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"   skip - privacy mismatch");
@@ -1961,6 +1978,9 @@ static int _wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 	    wpa_s->wpa_state < WPA_COMPLETED)
 		goto scan_work_done;
 
+#ifdef SPIRENT_PORT
+       if (!wpa_s->scan_try_cache)
+#endif
 	wpa_scan_results_free(scan_res);
 
 	if (own_request && wpa_s->scan_work) {
@@ -1987,6 +2007,9 @@ static int _wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 	return wpas_select_network_from_last_scan(wpa_s, 1, own_request);
 
 scan_work_done:
+#ifdef SPIRENT_PORT
+       if (!wpa_s->scan_try_cache)
+#endif
 	wpa_scan_results_free(scan_res);
 	if (own_request && wpa_s->scan_work) {
 		struct wpa_radio_work *work = wpa_s->scan_work;
@@ -2170,6 +2193,11 @@ static int wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 		 */
 		return 0;
 	}
+#ifdef SPIRENT_PORT
+       /* if this is cache dont need to update other interfaces on the same radio */
+       if (wpa_s->scan_try_cache)
+               return 0;
+#endif
 
 	/*
 	 * Check other interfaces to see if they share the same radio. If
@@ -2730,7 +2758,9 @@ no_pfs:
 		wpa_printf(MSG_DEBUG, "Operating frequency changed from "
 			   "%u to %u MHz",
 			   wpa_s->assoc_freq, data->assoc_info.freq);
+#ifndef SPIRENT_PORT
 		wpa_supplicant_update_scan_results(wpa_s);
+#endif
 	}
 
 	wpa_s->assoc_freq = data->assoc_info.freq;
@@ -3181,6 +3211,13 @@ static void wpa_supplicant_event_disassoc_finish(struct wpa_supplicant *wpa_s,
 		curr = wpa_s->current_bss;
 
 	if (could_be_psk_mismatch(wpa_s, reason_code, locally_generated)) {
+	/* driver is not  sending same reason code to suppilcant for all ap.
+	   EVM AP - EVM AP is sending deuth frame with reason code 2.
+	   ASUS AP - ASUS AP is not sending deauth frame.reason code is updating with 3.
+	   to avoid this scenario we are handling reason code in wpa supplicant*/
+#ifdef SPIRENT_PORT
+		wpa_s->assoc_fail_reason = INCORRECT_PASSWORD;
+#endif
 		wpa_msg(wpa_s, MSG_INFO, "WPA: 4-Way Handshake failed - "
 			"pre-shared key may be incorrect");
 		if (wpas_p2p_4way_hs_failed(wpa_s) > 0)
@@ -3582,6 +3619,31 @@ static void wpa_supplicant_event_ibss_auth(struct wpa_supplicant *wpa_s,
 
 
 #ifdef CONFIG_IEEE80211R
+#ifdef SPIRENT_PORT
+/* call associate function to trigger assoc request from supplicant.
+   Reference function: wpas_ctrl_resend_assoc.*/
+static int wpa_drv_ftds_assoc(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
+{
+	struct wpa_driver_associate_params params;
+	int ret;
+
+	os_memset(&params, 0, sizeof(params));
+	params.bssid = bss->bssid;
+	params.ssid = bss->ssid;
+	params.ssid_len = bss->ssid_len;
+	params.freq.freq = bss->freq;
+	params.pairwise_suite = wpa_s->pairwise_cipher;
+	params.group_suite = wpa_s->group_cipher;
+	params.mgmt_group_suite = wpa_s->mgmt_group_cipher;
+	params.key_mgmt_suite = wpa_s->key_mgmt;
+	params.wpa_proto = wpa_s->wpa_proto;
+	params.rrm_used = wpa_s->rrm.rrm_used;
+	params.prev_bssid = wpa_s->bssid;
+
+	ret = wpa_drv_associate(wpa_s, &params);
+	return ret;
+}
+#endif
 static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *data,
 			 size_t len)
 {
@@ -3589,8 +3651,12 @@ static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *data,
 	u16 status;
 
 	wpa_hexdump(MSG_MSGDUMP, "FT: RX Action", data, len);
+#ifndef SPIRENT_PORT
+        /* atheros driver does not enable SME flag. Due to this, association
+           request is not triggered from supplicant.  */
 	if (!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME))
 		return; /* only SME case supported for now */
+#endif
 	if (len < 1 + 2 * ETH_ALEN + 2)
 		return;
 	if (data[0] != 2)
@@ -3620,6 +3686,19 @@ static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *data,
 				    target_ap_addr, NULL, 0) < 0)
 		return;
 
+#ifdef SPIRENT_PORT
+	/* SME is not supported in atheros driver, implemented user defined assoc
+           function for fast roaming over the ds */
+	{
+		struct wpa_bss *bss;
+
+		bss = wpa_bss_get_bssid(wpa_s, target_ap_addr);
+		if (bss) {
+			wpa_supplicant_set_state(wpa_s, WPA_ASSOCIATING);
+			wpa_drv_ftds_assoc(wpa_s, bss);
+		}
+	}
+#else
 #ifdef CONFIG_SME
 	{
 		struct wpa_bss *bss;
@@ -3631,6 +3710,7 @@ static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *data,
 			      WLAN_AUTH_FT);
 	}
 #endif /* CONFIG_SME */
+#endif /* SPIRENT_PORT */
 }
 #endif /* CONFIG_IEEE80211R */
 
@@ -3774,6 +3854,9 @@ static void wpas_event_deauth(struct wpa_supplicant *wpa_s,
 		ie = info->ie;
 		ie_len = info->ie_len;
 		reason_code = info->reason_code;
+#ifdef SPIRENT_PORT
+		wpa_s->assoc_fail_reason = reason_code; /* AP Down */
+#endif
 		locally_generated = info->locally_generated;
 		wpa_dbg(wpa_s, MSG_DEBUG, " * reason %u (%s)%s",
 			reason_code, reason2str(reason_code),

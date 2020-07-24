@@ -73,6 +73,10 @@ void wnm_set_coloc_intf_elems(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_WNM
 
+#ifdef SPIRENT_PORT
+void wnm_btm_init(struct wpa_supplicant *wpa_s);
+u64 btm_get_delay(struct wpa_supplicant *wpa_s);
+#endif /* SPIRENT_PORT */
 int wnm_scan_process(struct wpa_supplicant *wpa_s, int reply_on_fail);
 void wnm_clear_coloc_intf_reporting(struct wpa_supplicant *wpa_s);
 

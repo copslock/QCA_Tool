@@ -29,6 +29,14 @@
 
 #define WNM_SCAN_RESULT_AGE 2 /* 2 seconds */
 
+#ifdef SPIRENT_PORT
+//The Noise floor numbers are taken from scan module in "wpa_supplicant/scan.c"
+//These numbers are used to find rssi in dbm during scan process
+//Hence the same NF is being used to calculate rssi in dbm
+#define DEFAULT_NOISE_FLOOR_2GHZ (-89)
+#define DEFAULT_NOISE_FLOOR_5GHZ (-92)
+#define IS_5GHZ(n) (n > 4000)
+#endif
 /* get the TFS IE from driver */
 static int ieee80211_11_get_tfs_ie(struct wpa_supplicant *wpa_s, u8 *buf,
 				   u16 *buf_len, enum wnm_oper oper)
@@ -407,6 +415,48 @@ static void ieee802_11_rx_wnmsleep_resp(struct wpa_supplicant *wpa_s,
 	}
 }
 
+#ifdef SPIRENT_PORT
+void wnm_btm_init(struct wpa_supplicant *wpa_s){
+	wpa_s->ft_roam_type = FT_ROAM_OVER_AIR;
+	wpa_s->btm_reassoc = FALSE;
+	wpa_s->en_11vk = 0;
+	wpa_s->roam_thold = 0;
+	wpa_s->roam_decision_thold = 0;
+	wpa_s->btm_counter.query = 0;
+	wpa_s->btm_counter.request = 0;
+	wpa_s->btm_counter.accept = 0;
+	wpa_s->btm_counter.deny = 0;
+
+	wpa_s->wnm_num_neighbor_report_sel = 0;
+	memset(wpa_s->neigh_rep, 0, sizeof(wpa_s->neigh_rep));
+	wpa_s->btm_st_time.sec = 0;
+	wpa_s->btm_st_time.usec = 0;
+}
+
+u64 btm_get_delay(struct wpa_supplicant *wpa_s){
+	struct os_reltime now, diff;
+	u32 tu = 0;
+	unsigned long v_delay = 0;
+
+	if(wpa_s->btm_st_time.sec == 0)
+		return 0;
+
+	if(os_get_reltime(&now)){
+		wpa_msg(wpa_s, MSG_ERROR, "%s, get_time failed", __func__);
+		return 0;
+	}
+	os_reltime_sub(&now, &wpa_s->btm_st_time, &diff);
+
+	if (diff.sec > 0 ||  diff.usec > 0 )
+		v_delay = diff.sec*1000000 + diff.usec;
+	wpa_s->btm_counter.v_delay = v_delay;
+	//reset start timer
+	wpa_s->btm_st_time.sec = 0;
+	wpa_s->btm_st_time.usec = 0;
+
+	return v_delay;
+}
+#endif
 
 void wnm_deallocate_memory(struct wpa_supplicant *wpa_s)
 {
@@ -724,7 +774,10 @@ compare_scan_neighbor_results(struct wpa_supplicant *wpa_s, os_time_t age_secs,
 		   MAC2STR(wpa_s->bssid), bss->level);
 
 	wnm_clear_acceptable(wpa_s);
-
+#ifdef SPIRENT_PORT
+	wpa_s->wnm_num_neighbor_report_sel = 0;
+	memset(wpa_s->neigh_rep, 0, sizeof(wpa_s->neigh_rep));
+#endif
 	for (i = 0; i < wpa_s->wnm_num_neighbor_report; i++) {
 		struct neighbor_report *nei;
 
@@ -744,6 +797,14 @@ compare_scan_neighbor_results(struct wpa_supplicant *wpa_s, os_time_t age_secs,
 				   -1);
 			continue;
 		}
+#ifdef SPIRENT_PORT
+		int tgt_level = IS_5GHZ(nei->freq)? target->level + DEFAULT_NOISE_FLOOR_5GHZ: target->level + DEFAULT_NOISE_FLOOR_2GHZ;
+		os_memcpy(wpa_s->neigh_rep[wpa_s->wnm_num_neighbor_report_sel].bssid, nei->bssid, ETH_ALEN);
+		os_memcpy(wpa_s->neigh_rep[wpa_s->wnm_num_neighbor_report_sel].ssid, target->ssid, target->ssid_len );
+		wpa_s->neigh_rep[wpa_s->wnm_num_neighbor_report_sel].rssi = tgt_level;
+
+		++wpa_s->wnm_num_neighbor_report_sel;
+#endif /* SPIRENT_PORT */
 
 		if (age_secs) {
 			struct os_reltime now;
@@ -790,7 +851,21 @@ compare_scan_neighbor_results(struct wpa_supplicant *wpa_s, os_time_t age_secs,
 				   MAC2STR(nei->bssid));
 			continue;
 		}
-
+#ifdef SPIRENT_PORT
+		if( !wpa_s->en_11vk || wpa_s->en_11vk == 1 ){
+			int roam_level = IS_5GHZ(nei->freq)? wpa_s->roam_thold - DEFAULT_NOISE_FLOOR_5GHZ: wpa_s->roam_thold - DEFAULT_NOISE_FLOOR_2GHZ;
+			if( target->level < roam_level || (target->level - bss->level)< wpa_s->roam_decision_thold ){
+				wpa_printf(MSG_DEBUG, "Candidate BSS " MACSTR
+				   " (pref %d) does not have sufficient signal level (%d), bss(%d), roam_thold(%d), roam_decisionthold(%d)",
+				   MAC2STR(nei->bssid),
+				   nei->preference_present ? nei->preference :
+				   -1,
+				   target->level, bss->level, wpa_s->roam_thold, wpa_s->roam_decision_thold);
+			continue;
+			}
+		}
+		else
+#endif /* SPIRENT_PORT */
 		if (target->level < bss->level && target->level < -80) {
 			wpa_printf(MSG_DEBUG, "Candidate BSS " MACSTR
 				   " (pref %d) does not have sufficient signal level (%d)",
@@ -1015,6 +1090,16 @@ static void wnm_send_bss_transition_mgmt_resp(
 		   "WNM: Send BSS Transition Management Response to " MACSTR
 		   " dialog_token=%u status=%u reason=%u delay=%d",
 		   MAC2STR(wpa_s->bssid), dialog_token, status, reason, delay);
+#ifdef SPIRENT_PORT
+	if( WNM_BSS_TM_ACCEPT == status )
+		wpa_s->btm_counter.accept++;
+	else{
+		wpa_s->btm_counter.deny++;
+		wpa_s->btm_st_time.sec = 0;
+		wpa_s->btm_st_time.usec = 0;
+	}
+	wpa_drv_update_btm_stats(wpa_s, (int *)&wpa_s->btm_counter);
+#endif
 	if (!wpa_s->current_bss) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Current BSS not known - drop response");
@@ -1087,6 +1172,34 @@ static void wnm_bss_tm_connect(struct wpa_supplicant *wpa_s,
 			       struct wpa_bss *bss, struct wpa_ssid *ssid,
 			       int after_new_scan)
 {
+#ifdef SPIRENT_PORT
+	if(wpa_s->ft_roam_type != FT_ROAM_NONE){
+		const u8 *ie, *md = NULL;
+		u8 mdie_ft_capab = 0;
+		#define CAPB_OVER_DS 0x01
+		ie = wpa_bss_get_ie(bss, WLAN_EID_MOBILITY_DOMAIN);
+		if (ie && ie[1] >= MOBILITY_DOMAIN_ID_LEN)
+			md = ie + 2;
+		if(md)
+			mdie_ft_capab = ie[MOBILITY_DOMAIN_ID_LEN+2];
+
+		if( md && ((wpa_s->ft_roam_type == FT_ROAM_OVER_DS && (mdie_ft_capab & CAPB_OVER_DS)) ||
+			(wpa_s->ft_roam_type == FT_ROAM_OVER_AIR && !(mdie_ft_capab & CAPB_OVER_DS))) ){
+			wpa_msg(wpa_s, MSG_INFO, "WNM-BTM: ie=0x%02x:0x%02x:0x%02x:0x%02x:0x%02x", ie[0],ie[1],ie[2],ie[3],ie[4]);
+			wpa_s->btm_reassoc = TRUE;
+		} else{
+			/* Send reject response for all the failures */
+			if (wpa_s->wnm_reply) {
+				wpa_s->wnm_reply = 0;
+				wnm_send_bss_transition_mgmt_resp(wpa_s, wpa_s->wnm_dialog_token,
+					WNM_BSS_TM_REJECT_UNSPECIFIED, MBO_TRANSITION_REJECT_REASON_UNSPECIFIED, 0, NULL);
+			}
+			wpa_dbg(wpa_s, MSG_ERROR, "WNM-BTM: Denied ReAssoc, AP doesn't support");
+			wnm_deallocate_memory(wpa_s);
+			return;
+		}
+	}
+#endif
 	wpa_dbg(wpa_s, MSG_DEBUG,
 		"WNM: Transition to BSS " MACSTR
 		" based on BSS Transition Management Request (old BSSID "
@@ -1222,6 +1335,9 @@ static void wnm_dump_cand_list(struct wpa_supplicant *wpa_s)
 			   nei->channel_number, nei->phy_type,
 			   nei->preference_present ? nei->preference : -1,
 			   nei->freq);
+#ifdef SPIRENT_PORT
+		wpa_msg(wpa_s, MSG_INFO, "bssid=" MACSTR " ,ch=%d", MAC2STR(nei->bssid), nei->channel_number);
+#endif
 	}
 }
 
@@ -1393,6 +1509,13 @@ static void ieee802_11_rx_bss_trans_mgmt_req(struct wpa_supplicant *wpa_s,
 		beacon_int = wpa_s->current_bss->beacon_int;
 	else
 		beacon_int = 100; /* best guess */
+#ifdef SPIRENT_PORT
+	wpa_s->wnm_num_neighbor_report_sel = 0;
+	memset(wpa_s->neigh_rep, 0, sizeof(wpa_s->neigh_rep));
+
+	wpa_s->btm_counter.request++;
+	wpa_drv_update_btm_stats(wpa_s, (int *)&wpa_s->btm_counter);
+#endif
 
 	wpa_s->wnm_dialog_token = pos[0];
 	wpa_s->wnm_mode = pos[1];
@@ -1598,7 +1721,17 @@ int wnm_send_bss_transition_mgmt_query(struct wpa_supplicant *wpa_s,
 		   MACSTR " query_reason=%u%s",
 		   MAC2STR(wpa_s->bssid), query_reason,
 		   cand_list ? " candidate list" : "");
+#ifdef SPIRENT_PORT
+	wpa_s->wnm_num_neighbor_report_sel = 0;
+	memset(wpa_s->neigh_rep, 0, sizeof(wpa_s->neigh_rep));
 
+	os_get_reltime(&wpa_s->btm_st_time);
+	wpa_s->btm_counter.v_delay = 0;
+	wpa_s->btm_reassoc = FALSE;
+
+	wpa_s->btm_counter.query++;
+	wpa_drv_update_btm_stats(wpa_s, (int *)&wpa_s->btm_counter);
+#endif
 	buf = wpabuf_alloc(BTM_QUERY_MIN_SIZE);
 	if (!buf)
 		return -1;

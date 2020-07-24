@@ -1057,6 +1057,19 @@ struct wpa_ssid {
 	 */
 	int ft_eap_pmksa_caching;
 
+#ifdef SPIRENT_PORT
+	/**
+	 * fbt_target - fbt bssid
+	 */
+	u8 fbt_target[ETH_ALEN];
+
+	/**
+	 * fbt_target_set - set fbt target value
+	 * 0 = disable fbt target
+	 * 1 = enable fbt target
+	 */
+	int fbt_target_set;
+#endif
 	/**
 	 * multi_ap_profile
 	 */

@@ -621,6 +621,9 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	wnm_bss_keep_alive_deinit(wpa_s);
 #ifdef CONFIG_WNM
 	wnm_deallocate_memory(wpa_s);
+#ifdef SPIRENT_PORT
+	wnm_btm_init(wpa_s);
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_WNM */
 
 	ext_password_deinit(wpa_s->ext_pw);
@@ -3321,6 +3324,11 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
        struct ieee80211_vht_capabilities vhtcaps_mask;
 #endif /* CONFIG_VHT_OVERRIDES */
 
+#if defined(CONFIG_IEEE80211R) && defined(CONFIG_WNM) && defined(SPIRENT_PORT)
+	const u8 *md_ie = NULL;
+	u8 temp_bssid[ETH_ALEN] ={0};
+	os_memcpy(temp_bssid, wpa_s->bssid, ETH_ALEN);
+#endif
 	if (deinit) {
 		if (work->started) {
 			wpa_s->connect_work = NULL;
@@ -3367,6 +3375,10 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 		if (md) {
 			/* Prepare for the next transition */
 			wpa_ft_prepare_auth_request(wpa_s->wpa, ie);
+#if defined(CONFIG_WNM) && defined(SPIRENT_PORT)
+			if(wpa_s->btm_reassoc == TRUE)
+				md_ie = ie;
+#endif
 		}
 #endif /* CONFIG_IEEE80211R */
 #ifdef CONFIG_WPS
@@ -3672,6 +3684,21 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 	if (wpa_s->reassoc_same_ess && !is_zero_ether_addr(prev_bssid) &&
 	    wpa_s->current_ssid)
 		params.prev_bssid = prev_bssid;
+#if defined(CONFIG_IEEE80211R) && defined(CONFIG_WNM) && defined(SPIRENT_PORT)
+	if(md_ie && btm_get_delay(wpa_s)){
+		wpa_dbg(wpa_s, MSG_DEBUG, "WNM-BTM: update delay, %lu", wpa_s->btm_counter.v_delay);
+		wpa_drv_update_btm_stats(wpa_s, (int *)&wpa_s->btm_counter);
+		wpa_s->btm_counter.v_delay = 0;
+		wpa_s->btm_reassoc = FALSE;
+	}
+
+	if(md_ie && wpa_s->ft_roam_type == FT_ROAM_OVER_DS ){
+		os_memcpy( wpa_s->bssid, temp_bssid, ETH_ALEN);
+		wpa_msg(wpa_s, MSG_INFO, "WNM-BTM: ft_over_ds, " MACSTR "->" MACSTR "", MAC2STR(wpa_s->bssid), MAC2STR(bss->bssid));
+		ret = wpa_ft_start_over_ds(wpa_s->wpa, bss->bssid, md_ie);
+	}
+	else
+#endif
 
 	ret = wpa_drv_associate(wpa_s, &params);
 	os_free(wpa_ie);
@@ -6327,7 +6354,11 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_MBO */
 
 	wpa_supplicant_set_default_scan_ies(wpa_s);
-
+#ifdef CONFIG_WNM
+#ifdef SPIRENT_PORT
+	wnm_btm_init(wpa_s);
+#endif /* SPIRENT_PORT */
+#endif /* CONFIG_WNM */
 	return 0;
 }
 
@@ -6409,6 +6440,11 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 		wpa_s->conf = NULL;
 	}
 
+#ifdef SPIRENT_PORT
+	if (wpa_s->dot11k_neigh_report) {
+		os_free(wpa_s->dot11k_neigh_report);
+	}
+#endif /* SPIRENT_PORT */
 	os_free(wpa_s->ssids_from_scan_req);
 	os_free(wpa_s->last_scan_freqs);
 
@@ -6852,6 +6888,12 @@ struct wpa_global * wpa_supplicant_init(struct wpa_params *params)
 	}
 #endif /* CONFIG_WIFI_DISPLAY */
 
+#ifdef SPIRENT_PORT
+       /* by default we dont expire cache, scan_cache_flush is used to control
+       * cache instead. -- this is required by roaming */
+       global->scan_cache_age = 0;
+       global->scan_cache = NULL;
+#endif
 	eloop_register_timeout(WPA_SUPPLICANT_CLEANUP_INTERVAL, 0,
 			       wpas_periodic, global, NULL);
 
@@ -6961,6 +7003,12 @@ void wpa_supplicant_deinit(struct wpa_global *global)
 	os_free(global->p2p_go_avoid_freq.range);
 	os_free(global->add_psk);
 
+#ifdef SPIRENT_PORT
+       if (global->scan_cache) {
+               wpa_supplicant_scan_cache_free(global->scan_cache);
+               global->scan_cache = NULL;
+       }
+#endif
 	os_free(global);
 	wpa_debug_close_syslog();
 	wpa_debug_close_file();
@@ -7130,6 +7178,7 @@ void wpas_connection_failed(struct wpa_supplicant *wpa_s, const u8 *bssid)
 		wpas_auth_failed(wpa_s, "CONN_FAILED");
 	}
 
+#ifndef SPIRENT_PORT
 	switch (count) {
 	case 1:
 		timeout = 100;
@@ -7147,6 +7196,10 @@ void wpas_connection_failed(struct wpa_supplicant *wpa_s, const u8 *bssid)
 		timeout = 10000;
 		break;
 	}
+#else
+       /* the scan result is in cache, don't need to wait long time to schedule it. */
+       timeout = 100;
+#endif
 
 	wpa_dbg(wpa_s, MSG_DEBUG, "Blacklist count %d --> request scan in %d "
 		"ms", count, timeout);

@@ -25,6 +25,227 @@
 #include "mesh.h"
 
 
+#ifdef SPIRENT_PORT
+
+#define SET_BIT 1
+
+struct scan_result_cache {
+	struct wpa_scan_results result;
+	struct os_reltime last_updatetime;
+	u8 invalid; //If set, it skips scancache and goes for driver scan during next active scan
+};
+
+/* return 1 if cache is aviable, else return 0 */
+static int wpa_supplicant_scan_cache_try(struct wpa_supplicant *wpa_s, struct wpa_radio_work *work)
+{
+	struct os_reltime now, delta;
+	struct scan_result_cache* scan_cache = NULL;
+	struct wpa_scan_results *scan_cache_results = NULL;
+
+	u8 *conf_ssid = NULL;
+	const u8 *cache_ssid = NULL;
+	u8 conf_ssid_len = 0;
+	u8 cache_ssid_len = 0;
+	int match_found = 0;
+	int i = 0;
+
+	if (!wpa_s || !wpa_s->global || !wpa_s->global->scan_cache || !work)
+		return 0;
+
+	wpa_s->scan_try_cache = 0;
+
+	scan_cache = wpa_s->global->scan_cache;
+	if (scan_cache->invalid) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "%s:scan cache invalidated in owe transition mode\n", wpa_s->ifname);
+		return 0;
+	}
+	os_get_reltime(&now);
+	os_reltime_sub(&now, &scan_cache->last_updatetime, &delta);
+
+	/* if scan cache expired then, trigger new scan */
+	if (wpa_s->global->scan_cache_age && delta.sec >= wpa_s->global->scan_cache_age)
+		return 0;
+
+	if (!wpa_s->conf) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "\n%s: ***wpa_s->conf is NULL\n", wpa_s->ifname);
+		goto SCAN_CACHE;
+	}
+	if (!wpa_s->conf->ssid) {
+		wpa_dbg(wpa_s, MSG_DEBUG,"\n%s: ***wpa_s->conf->ssid is NULL\n", wpa_s->ifname);
+		goto SCAN_CACHE;
+	}
+	if (!wpa_s->conf->ssid->ssid) {
+		wpa_dbg(wpa_s, MSG_DEBUG,"\n%s: ***wpa_s->conf->ssid->ssid is NULL\n", wpa_s->ifname);
+		goto SCAN_CACHE;
+	}
+	if (!wpa_s->conf->ssid->ssid_len) {
+		wpa_dbg(wpa_s, MSG_DEBUG,"\n%s: ***zero ssid len; go to scan CACHE \n", wpa_s->ifname);
+		goto SCAN_CACHE;
+	}
+	conf_ssid = wpa_s->conf->ssid->ssid;
+	conf_ssid_len = wpa_s->conf->ssid->ssid_len;
+
+	scan_cache_results = wpa_supplicant_scan_cache_get(wpa_s);
+
+	if (!scan_cache_results) {
+		return 0;
+	}
+	for (i=0; i<scan_cache_results->num;i++) {
+		cache_ssid = wpa_scan_get_ie(scan_cache_results->res[i], WLAN_EID_SSID);
+		if (cache_ssid == NULL) {
+			return 0;
+		}
+	        if (cache_ssid[1] == 0) {
+			wpa_dbg(wpa_s, MSG_DEBUG,"\n skipping entries with ssidlen = 0 \n");
+		}
+		else {
+			if ((conf_ssid_len == cache_ssid[1]) && (os_memcmp(conf_ssid,cache_ssid+2,cache_ssid[1]) == 0)) {
+				match_found = 1;
+				wpa_dbg(wpa_s, MSG_DEBUG,"%s: Match FOUND!, continue with cache scan results\n", wpa_s->ifname);
+				goto SCAN_CACHE;
+			}
+		}
+	}
+	if (!match_found) {
+#ifdef SPIRENT_PORT
+		wpa_s->assoc_fail_reason = AP_MATCH_NOT_FOUND; /* AP is not present */
+#endif
+		wpa_dbg(wpa_s, MSG_DEBUG,"Match NOT found!, returning to DRV SCAN\n");
+		return 0;
+	}
+
+SCAN_CACHE:
+	work->ctx = NULL;
+	os_get_reltime(&wpa_s->scan_trigger_time);
+	wpa_s->scan_runs++;
+	wpa_s->normal_scans++;
+	wpa_s->own_scan_requested = 1;
+	wpa_s->clear_driver_scan_cache = 0;
+	wpa_s->scan_work = work;
+	wpa_s->scan_try_cache = 1;
+	wpa_printf(MSG_DEBUG, "%s using cache result instead of request new scan.", wpa_s->ifname);
+	wpa_supplicant_event(wpa_s, EVENT_SCAN_STARTED, NULL);
+	wpa_supplicant_event(wpa_s, EVENT_SCAN_RESULTS, NULL);
+
+	return 1;
+}
+
+void wpa_supplicant_scan_cache_free(struct scan_result_cache *scan_cache)
+{
+	size_t i = 0;
+
+	if (!scan_cache)
+		return;
+
+	for (i = 0; i < scan_cache->result.num; i++)
+		os_free(scan_cache->result.res[i]);
+
+	os_free(scan_cache->result.res);
+	os_free(scan_cache);
+}
+
+void wpa_supplicant_scan_cache_set(struct wpa_supplicant *wpa_s, struct wpa_scan_results *res)
+{
+	struct scan_result_cache* scan_cache = NULL;
+	size_t i, len;
+
+	if (!res)
+		return;
+
+	if (wpa_s->global->scan_cache) {
+		wpa_supplicant_scan_cache_free(wpa_s->global->scan_cache);
+		wpa_s->global->scan_cache = NULL;
+	}
+
+	if (!res->num)
+		return;
+
+	scan_cache = wpa_s->global->scan_cache = os_zalloc(sizeof(struct scan_result_cache));
+
+	scan_cache->result.num = res->num;
+	scan_cache->result.is_cache = 1;
+	os_memcpy(&scan_cache->result.fetch_time, &res->fetch_time, sizeof(scan_cache->result.fetch_time));
+	scan_cache->result.res = os_calloc(res->num, sizeof(struct wpa_scan_res *));
+
+	for (i = 0; i < res->num; ++i) {
+		len = sizeof(struct wpa_scan_res) + res->res[i]->ie_len + res->res[i]->beacon_ie_len;
+		scan_cache->result.res[i] = (struct wpa_scan_res *)os_malloc(len);
+		os_memcpy(scan_cache->result.res[i], res->res[i], len);
+	}
+
+	os_get_reltime(&scan_cache->last_updatetime);
+}
+
+struct wpa_scan_results *wpa_supplicant_scan_cache_get(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s->global->scan_cache) {
+		return NULL;
+	}
+	return  &wpa_s->global->scan_cache->result;
+}
+
+/* Function: wpa_supplicant_scan_cache_mark_invalid
+ * This function sets scan cache invalidation variable,
+ * which in turn triggers driver scan in the next active scan.
+ * Currently used for OWE transition mode to get hidden SSID
+ *in scan results.
+ */
+void  wpa_supplicant_scan_cache_mark_invalid(struct wpa_supplicant *wpa_s)
+{
+	struct scan_result_cache* scan_cache = NULL;
+
+	if(!wpa_s || !wpa_s->global)
+		return;
+
+	scan_cache = wpa_s->global->scan_cache;
+
+	if(scan_cache)
+		scan_cache->invalid = SET_BIT;
+}
+
+int wpa_scan_cache_ctl(struct wpa_global *global, char *cmd)
+{
+    /*
+     * <command>TAB<value>
+     * command: FLUSH/SET_AGE
+     * value: age of vlaue
+     */
+	char *age_str;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE GLOBAL SCAN_CACHE'%s'", cmd);
+
+	do {
+		if (cmd[0] == '\0')
+			return -1;
+
+		if (os_strncmp(cmd, "flush", 5) == 0) {
+			if (global->scan_cache) {
+				wpa_supplicant_scan_cache_free(global->scan_cache);
+				global->scan_cache = NULL;
+				wpa_printf(MSG_DEBUG, "scan_cache flushed.");
+			}
+			break;
+		} else if (os_strncmp(cmd, "age", 3) == 0) {
+			age_str = os_strchr(cmd, ' ');
+
+			if (!age_str)
+				return -1;
+
+			++age_str;
+
+			if (age_str[0] == '\0')
+				return -1;
+
+			wpa_printf(MSG_DEBUG, "scan_cache_age changed from %d to %s", global->scan_cache_age, age_str);
+			global->scan_cache_age = atoi(age_str);
+		} else {
+			return -1;
+		}
+	} while (0);
+
+	return 0;
+}
+#endif
 static void wpa_supplicant_gen_assoc_event(struct wpa_supplicant *wpa_s)
 {
 	struct wpa_ssid *ssid;
@@ -185,6 +406,9 @@ static void wpas_trigger_scan_cb(struct wpa_radio_work *work, int deinit)
 	struct wpa_driver_scan_params *params = work->ctx;
 	int ret;
 
+#ifdef SPIRENT_PORT
+       wpa_s->scan_try_cache = 0;
+#endif
 	if (deinit) {
 		if (!work->started) {
 			wpa_scan_free_params(params);
@@ -216,6 +440,14 @@ static void wpas_trigger_scan_cb(struct wpa_radio_work *work, int deinit)
 			   "Request driver to clear scan cache due to local BSS flush");
 		params->only_new_results = 1;
 	}
+#ifdef SPIRENT_PORT
+       else {
+               if (wpa_supplicant_scan_cache_try(wpa_s, work)) {
+                       wpa_scan_free_params(params);
+                       return;
+               }
+       }
+#endif
 	ret = wpa_drv_scan(wpa_s, params);
 	/*
 	 * Store the obtained vendor scan cookie (if any) in wpa_s context.
@@ -2379,8 +2611,12 @@ wpa_supplicant_get_scan_results(struct wpa_supplicant *wpa_s,
 	struct wpa_scan_results *scan_res;
 	size_t i;
 	int (*compar)(const void *, const void *) = wpa_scan_result_compar;
-
+#ifdef SPIRENT_PORT
+       scan_res = wpa_s->scan_try_cache ? wpa_supplicant_scan_cache_get(wpa_s) :
+                  wpa_drv_get_scan_results2(wpa_s);
+#else
 	scan_res = wpa_drv_get_scan_results2(wpa_s);
+#endif
 	if (scan_res == NULL) {
 		wpa_dbg(wpa_s, MSG_DEBUG, "Failed to get scan results");
 		return NULL;
@@ -2392,6 +2628,11 @@ wpa_supplicant_get_scan_results(struct wpa_supplicant *wpa_s,
 		 */
 		os_get_reltime(&scan_res->fetch_time);
 	}
+#ifdef SPIRENT_PORT
+       if (!wpa_s->scan_try_cache) {
+               wpa_supplicant_scan_cache_set(wpa_s, scan_res);
+       }
+#endif
 	filter_scan_res(wpa_s, scan_res);
 
 	for (i = 0; i < scan_res->num; i++) {
