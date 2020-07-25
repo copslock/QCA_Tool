@@ -62,6 +62,10 @@ unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+char norbufdump[2048];
+char norbuf_temp[1024];
+#endif
 /*
  * Function pointers to optional machine specific functions
  */
@@ -184,7 +188,16 @@ void __show_regs(struct pt_regs *regs)
 
 	show_regs_print_info(KERN_DEFAULT);
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* update PC crash info to global crash var, 100 is fixed to avoid symbols */
+	snprintf(&norbufdump[0], 100, "PC is at %s \n", norbuf_temp);
+	memset(&norbuf_temp[0], 0xff, 1024);
+#endif
 	print_symbol("LR is at %s\n", lr);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* update LR crash info to global crash var, 100 is fixed to avoid symbols */
+	snprintf(&norbufdump[100], 100, "LR is at %s \n", norbuf_temp);
+#endif
 	printk("pc : [<%016llx>] lr : [<%016llx>] pstate: %08llx\n",
 	       regs->pc, lr, regs->pstate);
 	printk("sp : %016llx\n", sp);

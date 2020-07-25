@@ -10,6 +10,10 @@
 #define SYS_HALT	0x0002	/* Notify of system halt */
 #define SYS_POWER_OFF	0x0003	/* Notify of system power off */
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+extern char norbufdump[2048]; /*global dump var*/
+extern char norbuf_temp[1024]; /*temp dump var*/
+#endif
 enum reboot_mode {
 	REBOOT_COLD = 0,
 	REBOOT_WARM,
@@ -78,6 +82,9 @@ extern void orderly_reboot(void);
  */
 
 extern void emergency_restart(void);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+extern void save_crashdump(char *, int);
+#endif
 #include <asm/emergency-restart.h>
 
 #endif /* _LINUX_REBOOT_H */

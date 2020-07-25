@@ -305,6 +305,14 @@ static const struct iw_ioctl_description standard_event[] = {
 		.token_size	= 1,
 		.max_tokens	= sizeof(struct iw_pmkid_cand),
 	},
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+	/* Added Event Description for Fast Transition Roaming */
+	[IW_EVENT_IDX(IWEVFTEVENT)] = {
+		.header_type	= IW_HEADER_TYPE_POINT,
+		.token_size	= 1,
+		.max_tokens	= IW_GENERIC_IE_MAX,
+	},
+#endif
 };
 static const unsigned int standard_event_num = ARRAY_SIZE(standard_event);
 
@@ -580,6 +588,13 @@ void wireless_send_event(struct net_device *	dev,
 
 	nlmsg_end(skb, nlh);
 #ifdef CONFIG_COMPAT
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+           /* Usually wireless events are used for message transaction. For IWEVFTEVENT,
+           user defined structure is needed to send to supplicant.
+           Observed unaligned data in receiving side when sending user defined structure. so skipped adding
+           compat header for IWEVFTEVENT */
+	if (event->cmd != IWEVFTEVENT) {
+#endif
 	hdr_len = compat_event_type_size[descr->header_type];
 	event_len = hdr_len + extra_len;
 
@@ -626,6 +641,9 @@ void wireless_send_event(struct net_device *	dev,
 	nlmsg_end(compskb, nlh);
 
 	skb_shinfo(skb)->frag_list = compskb;
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    }
+#endif
 #endif
 	skb_queue_tail(&dev_net(dev)->wext_nlevents, skb);
 	schedule_work(&wireless_nlevent_work);

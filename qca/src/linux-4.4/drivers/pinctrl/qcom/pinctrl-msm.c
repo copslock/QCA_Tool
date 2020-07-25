@@ -40,6 +40,9 @@
 #define MAX_NR_GPIO 300
 #define PS_HOLD_OFFSET 0x820
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+#define IPQ_LINUX_RESET_GPIO_PIN 64
+#endif
 /**
  * struct msm_pinctrl - state for a pinctrl-msm device
  * @dev:            device handle.
@@ -969,6 +972,14 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 		return ret;
 	}
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* setting output direction for ipq_linux_reset gpio */
+	ret = gpio_direction_output(IPQ_LINUX_RESET_GPIO_PIN, 0);
+	if (ret) {
+		dev_err(&pdev->dev, "Couldn't set output direction for"
+		" ipq_linux_reset gpio pin %d\n", IPQ_LINUX_RESET_GPIO_PIN);
+	}
+#endif
 	platform_set_drvdata(pdev, pctrl);
 
 	dev_dbg(&pdev->dev, "Probed Qualcomm pinctrl driver\n");

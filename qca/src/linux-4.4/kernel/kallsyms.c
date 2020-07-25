@@ -26,6 +26,9 @@
 #include <linux/compiler.h>
 
 #include <asm/sections.h>
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+#include <linux/reboot.h>
+#endif
 
 #ifdef CONFIG_KALLSYMS_ALL
 #define all_var 1
@@ -449,6 +452,10 @@ void __print_symbol(const char *fmt, unsigned long address)
 	sprint_symbol(buffer, address);
 
 	printk(fmt, buffer);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* update temp norbuf variable for crash storing */
+	memcpy(&norbuf_temp[0], buffer, KSYM_SYMBOL_LEN);
+#endif
 }
 EXPORT_SYMBOL(__print_symbol);
 

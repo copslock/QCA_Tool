@@ -141,6 +141,17 @@
 #include "net-sysfs.h"
 #include "skbuff_debug.h"
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+/* Added to handle packet handling */
+#include "packet-handle.h"
+#define MAX_PROC_SIZE 1
+
+int pkt_frwd_flag = 0;
+struct proc_dir_entry *proc_dir;
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+
 /* Instead of increasing this, you should create a hash table. */
 #define MAX_GRO_SKBS 8
 
@@ -3619,8 +3630,19 @@ static int netif_rx_internal(struct sk_buff *skb)
 
 int netif_rx(struct sk_buff *skb)
 {
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	struct ethhdr *mh = eth_hdr(skb);
+#endif
 	trace_netif_rx_entry(skb);
-
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	if (pkt_frwd_flag == 1) {
+		if (mh->h_proto != 0x8e88) {
+			if (sendto_packet_handling_flow(skb)) {
+				return NET_RX_SUCCESS;
+			}
+		}
+	}
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 	return netif_rx_internal(skb);
 }
 EXPORT_SYMBOL(netif_rx);
@@ -4055,12 +4077,25 @@ static int __netif_receive_skb(struct sk_buff *skb)
 static int netif_receive_skb_internal(struct sk_buff *skb)
 {
 	int ret;
-
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+    struct ethhdr *mh = eth_hdr(skb);
+#endif
 	net_timestamp_check(netdev_tstamp_prequeue, skb);
 
 	if (skb_defer_rx_timestamp(skb))
 		return NET_RX_SUCCESS;
-
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	if (pkt_frwd_flag == 1) {
+		/* During Association EA-POL messages are received from AP. This packets will be
+		forwarded to FPGA device when the packet fwd logic is enabled. Because of this, association will not be success.
+		So masking the EA-POL packets by validating the type value */
+		if (mh->h_proto != 0x8e88) {
+			if (sendto_packet_handling_flow(skb)) {
+				return NET_RX_SUCCESS;
+			}
+		}
+	}
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 	rcu_read_lock();
 
 #ifdef CONFIG_RPS
@@ -6876,6 +6911,19 @@ int register_netdevice(struct net_device *dev)
 	if (!dev->rtnl_link_ops ||
 	    dev->rtnl_link_state == RTNL_LINK_INITIALIZED)
 		rtmsg_ifinfo(RTM_NEWLINK, dev, ~0U, GFP_KERNEL);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	/* Getting Packet type(station/ethernet type) based on interface name */
+	if (strncmp(dev->name, ETH_IF_NAME, strlen(ETH_IF_NAME)) == 0) {
+		dev->if_type = ETHERNET_TYPE;
+		if (set_destination_node(dev)) {
+			goto err_uninit;
+		}
+	} else if (strncmp(dev->name, STA_IF_NAME, strlen(STA_IF_NAME)) == 0) {
+		dev->if_type = STATION_TYPE;
+	} else{
+		dev->if_type = UNKNOWN_TYPE;
+	}
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 
 out:
 	return ret;
@@ -7845,6 +7893,11 @@ static void __net_exit default_device_exit_batch(struct list_head *net_list)
 	 */
 	struct net_device *dev;
 	struct net *net;
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	remove_proc_entry("spirent_pkt_fwd", NULL);
+	remove_proc_entry("stats", proc_dir);
+	remove_proc_entry("spirent_pkt_stats", NULL);
+#endif
 	LIST_HEAD(dev_kill_list);
 
 	/* To prevent network device cleanup code from dereferencing
@@ -7875,6 +7928,48 @@ static struct pernet_operations __net_initdata default_device_ops = {
 	.exit = default_device_exit,
 	.exit_batch = default_device_exit_batch,
 };
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+ssize_t read_proc(struct file *filp,char *buf,size_t count,loff_t *offp)
+{
+	int ret;
+	char proc_buf[2];
+	ret = copy_to_user(buf,proc_buf,sizeof(char));
+	if (ret == 0) {
+		printk(KERN_INFO "proc read value : %d\n", pkt_frwd_flag);
+		return ret;
+	}
+	else
+		printk(KERN_INFO "read_proc: copy to user failed \n");
+	return ret;
+}
+ssize_t write_proc(struct file *filp,const char *buf,size_t count,loff_t *offp)
+{
+	int ret;
+	char proc_buf[2];
+	proc_buf[1] = '\0';
+	ret = copy_from_user(proc_buf, buf, sizeof(char));
+	if (ret == 0) {
+		if (!strncmp(proc_buf,"1",sizeof(char)))
+		{
+			printk(KERN_INFO "write_proc: pkt frwd flag is enabled\n");
+			pkt_frwd_flag = 1;
+		}
+		else {
+			printk(KERN_INFO "write_proc: pkt frwd flag is disabled\n");
+			pkt_frwd_flag = 0;
+		}
+		return count;
+	}
+	return ret;
+}
+struct file_operations proc_fops = {
+	.read = read_proc,
+	.write = write_proc,
+};
+struct file_operations stats_fops = {
+	.write = write_stats,
+};
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 
 /*
  *	Initialize the DEV module. At boot time this walks the device list and
@@ -7890,7 +7985,34 @@ static struct pernet_operations __net_initdata default_device_ops = {
 static int __init net_dev_init(void)
 {
 	int i, rc = -ENOMEM;
-
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+	if ((proc_create("spirent_pkt_fwd",0, NULL, &proc_fops)) != NULL) {
+		proc_dir = proc_mkdir("spirent_pkt_stats",NULL);
+		if (proc_dir != NULL) {
+			if ((proc_create("stats",0, proc_dir, &stats_fops)) == NULL) {
+#ifdef DEBUG_PRINT
+				printk(KERN_INFO "%s:Error in /proc/spirent_pkt_stats/stats file generation\n",__func__);
+#endif
+				remove_proc_entry("spirent_pkt_fwd", NULL);
+				remove_proc_entry("spirent_pkt_stats", NULL);
+				return -ENOMEM;
+			}
+		}
+		else {
+#ifdef DEBUG_PRINT
+           printk(KERN_INFO "%s:Error in /proc/spirent_pkt_stats directory generation\n",__func__);
+#endif
+           remove_proc_entry("spirent_pkt_fwd", NULL);
+           return -ENOMEM;
+       }
+   }
+   else {
+#ifdef DEBUG_PRINT
+       printk(KERN_INFO "%s:Error in /proc/spirent_pkt_fwd file generation\n",__func__);
+#endif
+       return -ENOMEM;
+   }
+#endif // defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 	BUG_ON(!dev_boot_phase);
 
 	if (dev_proc_init())

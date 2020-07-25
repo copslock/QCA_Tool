@@ -390,7 +390,9 @@
 #define IWEVPMKIDCAND	0x8C09		/* PMKID candidate for RSN
 					 * pre-authentication
 					 * (struct iw_pmkid_cand) */
-
+#if defined(CONFIG_PORT_SPIRENT_HK) || defined(SPIRENT_PORT)
+#define IWEVFTEVENT	0x8C0A		/* FT event for sending ft ies information */
+#endif
 #define IWEVFIRST	0x8C00
 #define IW_EVENT_IDX(cmd)	((cmd) - IWEVFIRST)
 

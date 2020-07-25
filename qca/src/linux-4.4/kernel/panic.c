@@ -116,6 +116,10 @@ void panic(const char *fmt, ...)
 		dump_stack();
 #endif
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/*function to update crash info to NOR flash for Revanche*/
+	save_crashdump(norbufdump, sizeof(norbufdump));
+#endif
 	/*
 	 * If we have crashed and we have a crash kernel loaded let it handle
 	 * everything else.

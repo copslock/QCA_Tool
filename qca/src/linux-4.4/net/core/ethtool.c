@@ -1364,6 +1364,47 @@ static int ethtool_phys_id(struct net_device *dev, void __user *useraddr)
 	return rc;
 }
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+static int ethtool_get_stats(struct net_device *dev, void __user *useraddr)
+{
+	struct ethtool_stats stats;
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+	u64 *data;
+	int ret, n_stats;
+	int tot_sta;
+
+	if (!ops->get_ethtool_stats || !ops->get_sset_count)
+		return -EOPNOTSUPP;
+
+	n_stats = ops->get_sset_count(dev, ETH_SS_STATS);
+	if (n_stats < 0)
+		return n_stats;
+	WARN_ON(n_stats == 0);
+
+	if (copy_from_user(&stats, useraddr, sizeof(stats)))
+		return -EFAULT;
+	tot_sta = stats.n_stats + 1;
+	stats.n_stats = n_stats;
+	data = kmalloc(tot_sta * n_stats * sizeof(u64), GFP_USER);
+	if (!data)
+		return -ENOMEM;
+
+	data[0] = tot_sta;
+	ops->get_ethtool_stats(dev, &stats, data);
+
+	ret = -EFAULT;
+	if (copy_to_user(useraddr, &stats, sizeof(stats)))
+		goto out;
+	useraddr += sizeof(stats);
+	if (copy_to_user(useraddr, data, tot_sta * stats.n_stats * sizeof(u64)))
+		goto out;
+	ret = 0;
+
+ out:
+	kfree(data);
+	return ret;
+}
+#else
 static int ethtool_get_stats(struct net_device *dev, void __user *useraddr)
 {
 	struct ethtool_stats stats;
@@ -1401,6 +1442,7 @@ static int ethtool_get_stats(struct net_device *dev, void __user *useraddr)
 	kfree(data);
 	return ret;
 }
+#endif
 
 static int ethtool_get_perm_addr(struct net_device *dev, void __user *useraddr)
 {
@@ -1780,6 +1822,10 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GSSET_INFO:
 	case ETHTOOL_GSTRINGS:
 	case ETHTOOL_GSTATS:
+#if defined(CONFIG_PORT_SPIRENT_HK) && (SPT_ADV_STATS)
+ 	case ETHTOOL_GET_DUMP_DATA:
+ 	case ETHTOOL_GET_DUMP_FLAG:
+#endif	
 	case ETHTOOL_GTSO:
 	case ETHTOOL_GPERMADDR:
 	case ETHTOOL_GUFO:

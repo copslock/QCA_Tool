@@ -17,6 +17,11 @@
 #include <linux/syscore_ops.h>
 #include <linux/uaccess.h>
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+#include <linux/gpio.h>
+#include <linux/mtd/mtd.h>
+struct mtd_info *mtd;
+#endif
 /*
  * this indicates whether you can reboot with ctrl-alt-del: the default is yes
  */
@@ -29,6 +34,10 @@ EXPORT_SYMBOL(cad_pid);
 #define DEFAULT_REBOOT_MODE		= REBOOT_HARD
 #else
 #define DEFAULT_REBOOT_MODE
+#endif
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+#define FPGA_SPARE_LINUX_RST_GPIO       64
+#define FPGA_SPARE_LINUX_RST_GPIO_NAME  "gpio64"
 #endif
 enum reboot_mode reboot_mode DEFAULT_REBOOT_MODE;
 
@@ -50,6 +59,46 @@ int reboot_force;
 
 void (*pm_power_off_prepare)(void);
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+/*
+ * function:      save_crashdump
+ * arguments:     char *buf, int size
+ * description:
+ *                upon kernel panic, this function stores the kernel
+ * panic buffer into NOR flash boot config 2nd partition area. It also dumps the
+ * buf in char format.
+ *
+ */
+void save_crashdump(char *buf, int size)
+{
+    size_t written;
+    int err;
+    loff_t addr = 0x10000; //Erase block size of Revanche NOR flash
+
+    //get mtd information of boot_config (2)
+    mtd = get_mtd_device(NULL, 2);
+
+    //write the buf into NOR memory area
+    err = mtd_write(mtd, addr, size, &written, buf);
+
+    //check for return
+    if (err)
+        printk("error: write failed at %#llx==%ld==%d\n", addr, written, size);
+
+   //mtd_write error type identification, for debug only.
+   switch(err)
+   {
+       case -EINVAL:
+          printk("write failure EINVAL\n");
+       break;
+       case -EROFS:
+          printk("write failure EROFS\n");
+       break;
+       default:
+          printk("Crash dump updated in NOR, actual=%zu sz=%d\n", written, size);
+   }
+}
+#endif
 /**
  *	emergency_restart - reboot the system
  *
@@ -61,7 +110,12 @@ void (*pm_power_off_prepare)(void);
 void emergency_restart(void)
 {
 	kmsg_dump(KMSG_DUMP_EMERG);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+jasuja
+        machine_power_off();
+#else
 	machine_emergency_restart();
+#endif
 }
 EXPORT_SYMBOL_GPL(emergency_restart);
 
@@ -221,7 +275,12 @@ void kernel_restart(char *cmd)
 	else
 		pr_emerg("Restarting system with command '%s'\n", cmd);
 	kmsg_dump(KMSG_DUMP_RESTART);
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	pr_info("\n Notify FPGA to trigger ipq reset!! \n");
+	gpio_set_value(FPGA_SPARE_LINUX_RST_GPIO, 1);
+#else
 	machine_restart(cmd);
+#endif	
 }
 EXPORT_SYMBOL_GPL(kernel_restart);
 

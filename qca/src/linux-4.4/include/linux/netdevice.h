@@ -64,6 +64,11 @@ struct mpls_dev;
 void netdev_set_default_ethtool_ops(struct net_device *dev,
 				    const struct ethtool_ops *ops);
 
+#define CONFIG_PORT_SPIRENT_HK 1
+#define SPT_ADV_STATS 1
+#define SPT_DATA_PATH 1
+#define SPT_MULTI_CLIENTS 1
+
 /* Backlog congestion levels */
 #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */
 #define NET_RX_DROP		1	/* packet dropped */
@@ -108,6 +113,15 @@ enum netdev_tx {
 	NETDEV_TX_LOCKED = 0x20,	/* driver tx lock was already taken */
 };
 typedef enum netdev_tx netdev_tx_t;
+
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+/* Packet type */
+typedef enum {
+	UNKNOWN_TYPE,
+	ETHERNET_TYPE,
+	STATION_TYPE,
+} packet_forward_if_type;
+#endif
 
 /*
  * Current order: NETDEV_TX_MASK > NET_XMIT_MASK >= 0 is significant;
@@ -1840,7 +1854,13 @@ struct net_device {
 	struct phy_device *phydev;
 	struct lock_class_key *qdisc_tx_busylock;
 	bool proto_down;
-};
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)        
+	u64 last_kickout_time;
+#endif        
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)        
+	packet_forward_if_type if_type;
+#endif        
+}; 
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 
 #define	NETDEV_ALIGN		32
