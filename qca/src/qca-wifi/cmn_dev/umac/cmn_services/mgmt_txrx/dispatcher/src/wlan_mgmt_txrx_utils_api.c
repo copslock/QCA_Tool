@@ -31,6 +31,11 @@
 #include "wlan_objmgr_peer_obj.h"
 #include "qdf_nbuf.h"
 #include "wlan_lmac_if_api.h"
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+#include "ol_txrx_api.h"
+#include "cdp_txrx_ops.h"
+#include "cdp_txrx_mon.h"
+#endif
 
 /**
  * wlan_mgmt_txrx_psoc_obj_create_notification() - called from objmgr when psoc
@@ -370,6 +375,9 @@ QDF_STATUS wlan_mgmt_txrx_mgmt_frame_tx(struct wlan_objmgr_peer *peer,
 	struct mgmt_txrx_priv_pdev_context *txrx_ctx;
 	struct wlan_objmgr_vdev *vdev;
 	QDF_STATUS status;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+	ol_txrx_soc_handle soc_txrx_handle;
+#endif
 
 	if (!peer) {
 		mgmt_txrx_err("peer passed is NULL");
@@ -404,6 +412,18 @@ QDF_STATUS wlan_mgmt_txrx_mgmt_frame_tx(struct wlan_objmgr_peer *peer,
 		wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_NB_ID);
 		return QDF_STATUS_E_NULL_VALUE;
 	}
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+    soc_txrx_handle = wlan_psoc_get_dp_handle(psoc);
+    if (soc_txrx_handle->ops)
+    {
+        cdp_monitor_mgmt_tx_frames(soc_txrx_handle, wlan_objmgr_pdev_get_pdev_id(pdev), buf);
+    }
+    else
+    {
+        mgmt_txrx_err("Tx monitor intf: psoc or pdev unavailable for peer %pK vdev %pK",
+                               peer, vdev);
+    }
+#endif
 
 	txrx_ctx = (struct mgmt_txrx_priv_pdev_context *)
 			wlan_objmgr_pdev_get_comp_private_obj(pdev,

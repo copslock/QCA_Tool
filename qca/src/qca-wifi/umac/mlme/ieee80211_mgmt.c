@@ -54,6 +54,16 @@
 #include <wlan_vdev_mgr_utils_api.h>
 #include "ald_netlink.h"
 
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ROAMING
+#include "ieee80211_ie_utils.h"
+#endif // SPT_ROAMING
+#ifdef SPT_MULTI_CLIENTS
+#define STA_5G_MPSTA_1 "staX0"
+#define STA_5G_MPSTA_2 "staX2"
+#define STA_2G_MPSTA "staX1"
+#endif // SPT_MULTI_CLIENTS
+#endif
 /*
  * xmit management processing code.
  */
@@ -1051,7 +1061,25 @@ ieee80211_send_deauth(struct ieee80211_node *ni, u_int16_t reason)
             frm = res;
             frlen = (frm - (u_int8_t *)wbuf_header(wbuf));
         }
-    } else {
+    }
+#ifdef PORT_SPIRENT_HK
+	/* Added PMF QoS header for unicast packet */
+	else if (wlan_crypto_is_pmf_enabled (vap->vdev_obj, ni->peer_obj))
+	{
+	    u8 *res;
+	    wh->i_fc[1] |= IEEE80211_FC1_WEP;
+	    res = ieee80211_add_mmie(vap,
+	                       (u_int8_t *)wbuf_header(wbuf),
+	                       (frm - (u_int8_t *)wbuf_header(wbuf)));
+	    if (res != NULL) {
+	        IEEE80211_NOTE(vap, IEEE80211_MSG_ACTION, ni,
+	                   "%s: Added PMF QoS HDR", __func__);
+	        frm = res;
+	        frlen = (frm - (u_int8_t *)wbuf_header(wbuf));
+	    }
+	}
+#endif
+    else {
         frlen = (frm - (u_int8_t *)wbuf_header(wbuf));
     }
 
@@ -3503,6 +3531,11 @@ ieee80211_recv_action(struct ieee80211_node *ni, wbuf_t wbuf, int subtype, struc
         } else {
             if (ieee80211_rrm_recv_action(vap, ni, ia->ia_action, frm, (efrm - frm)) != EOK)
                 *action_taken = FALSE;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+            else
+                ieee80211_recv_neighbor_resp(vap, ni, wbuf, subtype, rs);//to pass on Neighbor Report data to supplicant
+#endif
+
         }
 #else
         if (ieee80211_rrm_recv_action(vap, ni, ia->ia_action, frm, (efrm - frm)) != EOK)
@@ -4161,6 +4194,13 @@ ieee80211_recv_action(struct ieee80211_node *ni, wbuf_t wbuf, int subtype, struc
     }
     break;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    case IEEE80211_ACTION_CAT_FAST_BSS_TRNST:
+        /* Send FT Action response event */
+        if (vap->iv_opmode == IEEE80211_M_STA)
+            ieee80211_fast_bss_action_response(vap, ni, wbuf, subtype, rs);
+    break;
+#endif
     default:
         IEEE80211_NOTE(vap, IEEE80211_MSG_ACTION, ni,
                        "%s: action mgt frame has invalid category %d", __func__, ia->ia_category);
@@ -4235,6 +4275,13 @@ ieee80211_recv_mgmt(struct ieee80211_node *ni,
             return -EINVAL;
         }
     }
+
+/* if the frame received is reassociation response, save the latest response time */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+       if (subtype == IEEE80211_FC0_SUBTYPE_REASSOC_RESP) {
+           vap->ftstats.latest_resp_ts = jiffies;
+        }
+#endif
 
 #if UMAC_SUPPORT_WNM
     if (ieee80211_vap_wnm_is_set(vap) && ieee80211_wnm_bss_is_set(vap->wnm) &&
@@ -4535,7 +4582,19 @@ ieee80211_recv_mgmt(struct ieee80211_node *ni,
         break;
 
     case IEEE80211_FC0_SUBTYPE_DISASSOC:
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        if(vap) {
+             if((strncmp(vap->iv_netdev_name, STA_2G_MPSTA, strlen(STA_2G_MPSTA)) == 0) ||
+              (strncmp(vap->iv_netdev_name, STA_5G_MPSTA_1, strlen(STA_5G_MPSTA_1)) == 0) ||
+              (strncmp(vap->iv_netdev_name, STA_5G_MPSTA_2, strlen(STA_5G_MPSTA_2)) == 0)) {
+                 ret = ieee80211_recv_disassoc(ni, wbuf, subtype);
+            } else {
+                 ret = -EINVAL;
+            }
+        }
+#else
         ret = ieee80211_recv_disassoc(ni, wbuf, subtype);
+#endif
         if(ret){
             /*Something wrong, don't fwd to filter*/
            forward_to_filter = 0;
@@ -5824,6 +5883,88 @@ ieee80211_readjust_chwidth(struct ieee80211_node *ni,
 
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+/* Fast bss action response event code is referred from wnm action response.
+   ieee80211_fast_bss_action_response will send rx event to supplicant. supplicant
+   handles FT Action frames using p2p events. supplicant will post action request
+   information using p2p send action IOCTL and it receives data from p2p fetch
+   action using IEEE80211_EV_RX_MGMT EVENT. */
+int ieee80211_fast_bss_action_response(wlan_if_t vap, wlan_node_t ni, wbuf_t wbuf,
+                                int subtype, struct ieee80211_rx_status *rs)
+{
+    wlan_p2p_event p2p_event;
+    wlan_chan_t channel;
+    u_int32_t freq;
+    union iwreq_data wreq;
+    osif_dev *osifp;
+
+    if (!vap || !ni)
+        return -1;
+
+    osifp = (osif_dev *)vap->iv_ifp;
+
+    channel = wlan_node_get_chan(ni);
+    freq = wlan_channel_frequency(channel);
+
+    memset(&wreq, 0, sizeof(wreq));
+
+    /* Frame rx event data to send to supplicant */
+    p2p_event.u.rx_frame.frame_type = subtype;
+    p2p_event.u.rx_frame.frame_len = wbuf_get_pktlen(wbuf);
+    p2p_event.u.rx_frame.frame_buf = wbuf_header(wbuf);
+    p2p_event.u.rx_frame.freq = freq;
+
+    wreq.data.flags = IEEE80211_EV_RX_MGMT;
+    /* send p2p event in a queue */
+    osif_p2p_rx_frame_handler(osifp, &p2p_event, IEEE80211_EV_RX_MGMT);
+    /* Send custom event with rx mgmt event flag */
+    WIRELESS_SEND_EVENT(osifp->netdev, IWEVCUSTOM, &wreq, NULL);
+
+    return 0;
+}
+
+/* Function name: ieee80211_recv_neighbor_resp
+ * On Sending Neighbor report request to AP, Driver receives Neighbor report as response.
+ * This function sends RX event to Supplicant on receiving the rx_mgmt frame
+ * with Category code as 5 (Radio Measurement) & Action code as 5 (Neighbor Report Response)
+ * Driver passes the report(s) information using p2p event(IEEE80211_EV_RX_MGMT EVENT)
+ * to supplicant.
+ */
+int ieee80211_recv_neighbor_resp(wlan_if_t vap, wlan_node_t ni, wbuf_t wbuf,
+                                int subtype, struct ieee80211_rx_status *rs)
+{
+    wlan_p2p_event p2p_event;
+    wlan_chan_t channel;
+    u_int32_t freq;
+    union iwreq_data wreq;
+    osif_dev *osifp;
+
+    if (!vap || !ni)
+        return -1;
+
+    osifp = (osif_dev *)vap->iv_ifp;
+
+    channel = wlan_node_get_chan(ni);
+    freq = wlan_channel_frequency(channel);
+
+    memset(&wreq, 0, sizeof(wreq));
+
+    /* Frame rx event data to send to supplicant */
+    p2p_event.u.rx_frame.frame_type = subtype;
+    p2p_event.u.rx_frame.frame_len = wbuf_get_pktlen(wbuf);
+    p2p_event.u.rx_frame.frame_buf = wbuf_header(wbuf);
+    p2p_event.u.rx_frame.freq = freq;
+
+    wreq.data.flags = IEEE80211_EV_RX_MGMT;
+    /* send p2p event in a queue */
+    osif_p2p_rx_frame_handler(osifp, &p2p_event, IEEE80211_EV_RX_MGMT);
+    /* Send custom event with rx mgmt event flag */
+    WIRELESS_SEND_EVENT(osifp->netdev, IWEVCUSTOM, &wreq, NULL);
+
+    return 0;
+}
+
+#endif
 void wlan_omn_timer_callback(void* data)
 {
     struct ieee80211com *ic = (struct ieee80211com *)data;

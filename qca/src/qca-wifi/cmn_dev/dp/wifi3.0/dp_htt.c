@@ -34,6 +34,10 @@
 #include "dp_ratetable.h"
 #endif
 
+#ifdef PORT_SPIRENT_HK
+#include "spirent.h"
+#endif
+
 #define HTT_TLV_HDR_LEN HTT_T2H_EXT_STATS_CONF_TLV_HDR_SIZE
 
 #define HTT_HTC_PKT_POOL_INIT_SIZE 64
@@ -96,9 +100,15 @@ dp_peer_copy_delay_stats(struct dp_peer *peer,
 		return;
 
 	if (peer->last_delayed_ba) {
+#if SPIRENT_AP_EMULATION
+		QDF_TRACE_ERROR_RL(QDF_MODULE_ID_TXRX,
+			  "BA not yet recv for prev delayed ppdu[%d] - cur ppdu[%d]\n",
+			  peer->last_delayed_ba_ppduid, cur_ppdu_id);
+#else
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
 			  "BA not yet recv for prev delayed ppdu[%d] - cur ppdu[%d]",
 			  peer->last_delayed_ba_ppduid, cur_ppdu_id);
+#endif
 		vdev = peer->vdev;
 		if (vdev) {
 			pdev = vdev->pdev;
@@ -227,6 +237,11 @@ dp_tx_rate_stats_update(struct dp_peer *peer,
 		dp_ath_rate_lpf(peer->stats.tx.avg_tx_rate, ratekbps);
 	ppdu_tx_rate = dp_ath_rate_out(peer->stats.tx.avg_tx_rate);
 	DP_STATS_UPD(peer, tx.rnd_avg_tx_rate, ppdu_tx_rate);
+#if SPIRENT_AP_EMULATION && defined(SPT_ADV_STATS)
+	DP_STATS_UPD(peer, tx.last_tx_rate_mcs, ppdu->mcs);
+	DP_STATS_UPD(peer, tx.last_tx_ppdu_type, ppdu->ppdu_type);
+	DP_STATS_UPD(peer, tx.last_tx_ts, jiffies);
+#endif
 
 	if (peer->vdev) {
 		/*
@@ -266,6 +281,9 @@ dp_tx_stats_update(struct dp_pdev *pdev, struct dp_peer *peer,
 	uint16_t num_mpdu;
 	uint16_t mpdu_tried;
 	uint16_t mpdu_failed;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    struct dp_vdev *vdev = peer->vdev;
+#endif
 
 	preamble = ppdu->preamble;
 	mcs = ppdu->mcs;
@@ -273,6 +291,18 @@ dp_tx_stats_update(struct dp_pdev *pdev, struct dp_peer *peer,
 	num_mpdu = ppdu->mpdu_success;
 	mpdu_tried = ppdu->mpdu_tried_ucast + ppdu->mpdu_tried_mcast;
 	mpdu_failed = mpdu_tried - num_mpdu;
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	if (ppdu->tx_rate != 0) {
+		/* Since low level tx_nss count starts 0 - 7, Incrementing tx nss with 1
+		   while reporting to upper layer */
+		vdev->rev_stats.rev_txrx.tx_nss = ppdu->nss + 1;
+		vdev->rev_stats.rev_txrx.tx_mcs = mcs;
+		vdev->rev_stats.rev_txrx.tx_bw = ppdu->bw;
+		vdev->rev_stats.rev_txrx.tx_sgi = ppdu->gi;
+		vdev->rev_stats.rev_txrx.tx_pkt_type = preamble;
+	}
+#endif
 
 	/* If the peer statistics are already processed as part of
 	 * per-MSDU completion handler, do not process these again in per-PPDU
@@ -298,8 +328,13 @@ dp_tx_stats_update(struct dp_pdev *pdev, struct dp_peer *peer,
 	if (ppdu->mu_group_id <= MAX_MU_GROUP_ID &&
 	    ppdu->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
 		if (unlikely(!(ppdu->mu_group_id & (MAX_MU_GROUP_ID - 1))))
+#if SPIRENT_AP_EMULATION
+			QDF_TRACE_ERROR_RL(QDF_MODULE_ID_TXRX,
+				  "mu_group_id out of bound!!\n");
+#else
 			QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
 				  "mu_group_id out of bound!!\n");
+#endif
 		else
 			DP_STATS_UPD(peer, tx.mu_group_id[ppdu->mu_group_id],
 				     (ppdu->user_pos + 1));
@@ -391,7 +426,12 @@ dp_tx_stats_update(struct dp_pdev *pdev, struct dp_peer *peer,
 	DP_STATS_INCC(peer, tx.ldpc, num_msdu, ppdu->ldpc);
 	if (!(ppdu->is_mcast) && ppdu->ack_rssi_valid)
 		DP_STATS_UPD(peer, tx.last_ack_rssi, ack_rssi);
-
+#if SPIRENT_AP_EMULATION && defined(SPT_ADV_STATS)
+    /* only count all valid MCS pkts */
+	DP_STATS_INCC(peer,
+			tx.pkt_type[0].mcs_count[mcs], num_msdu,
+			((mcs < (MAX_MCS - 1)) && (preamble >= DOT11_N)));
+#else
 	DP_STATS_INCC(peer,
 			tx.pkt_type[preamble].mcs_count[MAX_MCS-1], num_msdu,
 			((mcs >= MAX_MCS_11A) && (preamble == DOT11_A)));
@@ -424,6 +464,7 @@ dp_tx_stats_update(struct dp_pdev *pdev, struct dp_peer *peer,
 			((mcs < (MAX_MCS - 1)) && (preamble == DOT11_AX)));
 	DP_STATS_INCC(peer, tx.ampdu_cnt, num_msdu, ppdu->is_ampdu);
 	DP_STATS_INCC(peer, tx.non_ampdu_cnt, num_msdu, !(ppdu->is_ampdu));
+#endif
 
 	dp_peer_stats_notify(pdev, peer);
 
@@ -599,7 +640,6 @@ htt_htc_misc_pkt_pool_free(struct htt_soc *soc)
 	struct dp_htt_htc_pkt_union *pkt, *next;
 	qdf_nbuf_t netbuf;
 
-	HTT_TX_MUTEX_ACQUIRE(&soc->htt_tx_mutex);
 	pkt = soc->htt_htc_pkt_misclist;
 
 	while (pkt) {
@@ -617,7 +657,6 @@ htt_htc_misc_pkt_pool_free(struct htt_soc *soc)
 		pkt = next;
 	}
 	soc->htt_htc_pkt_misclist = NULL;
-	HTT_TX_MUTEX_RELEASE(&soc->htt_tx_mutex);
 }
 
 /*
@@ -1038,7 +1077,6 @@ fail1:
 fail0:
 	return QDF_STATUS_E_FAILURE;
 }
-
 #ifdef QCA_SUPPORT_FULL_MON
 /**
  * htt_h2t_full_mon_cfg() - Send full monitor configuarion msg to FW
@@ -1859,7 +1897,7 @@ int htt_h2t_rx_ring_cfg(struct htt_soc *htt_soc, int pdev_id,
 		qdf_nbuf_data(htt_msg),
 		qdf_nbuf_len(htt_msg),
 		soc->htc_endpoint,
-		HTC_TX_PACKET_TAG_RUNTIME_PUT); /* tag for no FW response msg */
+		1); /* tag - not relevant here */
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, htt_msg);
 	status = DP_HTT_SEND_HTC_PKT(soc, pkt,
@@ -3951,10 +3989,9 @@ struct htt_soc *htt_soc_attach(struct dp_soc *soc, HTC_HANDLE htc_handle)
 	}
 	if (i != MAX_PDEV_CNT) {
 		for (j = 0; j < i; j++) {
-			qdf_mem_free(htt_soc->pdevid_tt[j].umac_ttt);
-			qdf_mem_free(htt_soc->pdevid_tt[j].lmac_ttt);
+			qdf_mem_free(htt_soc->pdevid_tt[i].umac_ttt);
+			qdf_mem_free(htt_soc->pdevid_tt[i].lmac_ttt);
 		}
-		qdf_mem_free(htt_soc);
 		return NULL;
 	}
 
@@ -4156,6 +4193,13 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	u_int32_t *msg_word;
 	enum htt_t2h_msg_type msg_type;
 	bool free_buf = true;
+#ifdef PORT_SPIRENT_HK
+        u_int16_t count = 0;
+        u_int16_t ccolor = 0;
+        u_int8_t pdev_id = 0;
+        struct dp_pdev *pdev;
+        struct dp_soc *dp_soc_t = (struct dp_soc *) soc->dp_soc;
+#endif
 
 	/* check for successful message reception */
 	if (pkt->Status != QDF_STATUS_SUCCESS) {
@@ -4223,7 +4267,7 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 
 			dp_rx_peer_unmap_handler(soc->dp_soc, peer_id,
 						 vdev_id, mac_addr, 0,
-						 DP_PEER_WDS_COUNT_INVALID);
+                                                 DP_PEER_WDS_COUNT_INVALID);
 			break;
 		}
 	case HTT_T2H_MSG_TYPE_SEC_IND:
@@ -4432,7 +4476,6 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 			HTT_RX_PEER_UNMAP_V2_NEXT_HOP_GET(*(msg_word + 2));
 			free_wds_count =
 			HTT_RX_PEER_UNMAP_V2_PEER_WDS_FREE_COUNT_GET(*(msg_word + 4));
-
 			QDF_TRACE(QDF_MODULE_ID_TXRX,
 				  QDF_TRACE_LEVEL_INFO,
 				  "HTT_T2H_MSG_TYPE_PEER_UNMAP msg for peer id %d vdev id %d n",
@@ -4443,27 +4486,30 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 						 is_wds, free_wds_count);
 			break;
 		}
-	case HTT_T2H_MSG_TYPE_RX_DELBA:
-		{
-			uint16_t peer_id;
-			uint8_t tid;
-			uint8_t win_sz;
-			QDF_STATUS status;
-
-			peer_id = HTT_RX_DELBA_PEER_ID_GET(*msg_word);
-			tid = HTT_RX_DELBA_TID_GET(*msg_word);
-			win_sz = HTT_RX_DELBA_WIN_SIZE_GET(*msg_word);
-
-			status = dp_rx_delba_ind_handler(
-				soc->dp_soc,
-				peer_id, tid, win_sz);
-
-			QDF_TRACE(QDF_MODULE_ID_TXRX,
-				  QDF_TRACE_LEVEL_INFO,
-				  FL("DELBA PeerID %d BAW %d TID %d stat %d"),
-				  peer_id, win_sz, tid, status);
-			break;
-		}
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+       case HTT_T2H_MSG_BSS_COUNT:
+               {
+                       count = HTT_STATS_CONF_COUNT_GET(*msg_word);
+                       pdev_id = HTT_STATS_CONF_ID_GET(*msg_word);
+                       if (pdev_id < MAX_NUM_MACS) {
+                          pdev = dp_soc_t->pdev_list[pdev_id];
+                          if (pdev != NULL)
+                             pdev->collision_count = count;
+                      }
+               }
+               break;
+       case HTT_T2H_MSG_BSS_COLOR_UPDATE:
+               {
+                       ccolor = HTT_STATS_CONF_BSSCOLOR_GET(*msg_word);
+                      pdev_id = HTT_STATS_CONF_BSSCOLOR_ID_GET(*msg_word);
+                       if (pdev_id < MAX_NUM_MACS) {
+                          pdev = dp_soc_t->pdev_list[pdev_id];
+                          if (pdev != NULL)
+                             pdev->collision_color = ccolor;
+                       }
+               }
+               break;
+#endif
 	default:
 		break;
 	};
@@ -4877,8 +4923,7 @@ QDF_STATUS dp_h2t_3tuple_config_send(struct dp_pdev *pdev,
 			qdf_nbuf_data(msg),
 			qdf_nbuf_len(msg),
 			soc->htc_endpoint,
-			/* tag for no FW response msg */
-			HTC_TX_PACKET_TAG_RUNTIME_PUT);
+			1);
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, msg);
 	DP_HTT_SEND_HTC_PKT(soc, pkt, HTT_H2T_MSG_TYPE_3_TUPLE_HASH_CFG,
@@ -4967,8 +5012,7 @@ QDF_STATUS dp_h2t_cfg_stats_msg_send(struct dp_pdev *pdev,
 			dp_htt_h2t_send_complete_free_netbuf,
 			qdf_nbuf_data(msg), qdf_nbuf_len(msg),
 			soc->htc_endpoint,
-			/* tag for no FW response msg */
-			HTC_TX_PACKET_TAG_RUNTIME_PUT);
+			1); /* tag - not relevant here */
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, msg);
 	status = DP_HTT_SEND_HTC_PKT(soc, pkt, HTT_H2T_MSG_TYPE_PPDU_STATS_CFG,
@@ -5137,7 +5181,6 @@ dp_htt_rx_flow_fst_setup(struct dp_pdev *pdev,
 		qdf_nbuf_data(msg),
 		qdf_nbuf_len(msg),
 		soc->htc_endpoint,
-		/* tag for no FW response msg */
 		HTC_TX_PACKET_TAG_RUNTIME_PUT);
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, msg);
@@ -5289,7 +5332,6 @@ dp_htt_rx_flow_fse_operation(struct dp_pdev *pdev,
 		qdf_nbuf_data(msg),
 		qdf_nbuf_len(msg),
 		soc->htc_endpoint,
-		/* tag for no FW response msg */
 		HTC_TX_PACKET_TAG_RUNTIME_PUT);
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, msg);
@@ -5403,7 +5445,6 @@ dp_htt_rx_fisa_config(struct dp_pdev *pdev,
 			       qdf_nbuf_data(msg),
 			       qdf_nbuf_len(msg),
 			       soc->htc_endpoint,
-			       /* tag for no FW response msg */
 			       HTC_TX_PACKET_TAG_RUNTIME_PUT);
 
 	SET_HTC_PACKET_NET_BUF_CONTEXT(&pkt->htc_pkt, msg);

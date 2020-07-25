@@ -5382,6 +5382,9 @@ static struct cdp_host_stats_ops dp_ops_host_stats = {
     .txrx_get_pdev_stats = ol_txrx_get_pdev_stats,
     .txrx_get_ratekbps = ol_txrx_get_ratekbps,
     .txrx_update_vdev_stats = ol_txrx_update_vdev_host_stats,
+#if defined(PORT_SPIRENT_HK) && defined(SPT_BSS_COLOR)
+    .set_bss_state = NULL,              /* set bss state */
+#endif
 };
 static struct cdp_wds_ops dp_ops_wds = {
 #if WDS_VENDOR_EXTENSION

@@ -2604,5 +2604,31 @@ cdp_soc_config_full_mon_mode(ol_txrx_soc_handle soc, uint8_t val)
 
 	return soc->ops->mon_ops->config_full_mon_mode(soc, val);
 }
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+/**
+ * cdp_get_cca_stats(): Function to get phy channel condition
+ * @soc : soc handle
+ * @pdev: pdev handle
+ * @chan_stats: channel stats values
+ *
+ * Return: void
+ */
+static inline void cdp_get_cca_stats(ol_txrx_soc_handle soc,
+					uint8_t pdev_id, void *cca_stats)
+{
+	if (!soc || !soc->ops) {
+		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+			  "%s: Invalid Instance:", __func__);
+		QDF_BUG(0);
+		return;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+	    !soc->ops->cmn_drv_ops->get_pdev_cca_stats)
+		return;
+
+	soc->ops->cmn_drv_ops->get_pdev_cca_stats(soc, pdev_id, cca_stats);
+}
+#endif // PORT_SPIRENT_HK
 
 #endif /* _CDP_TXRX_CMN_H_ */

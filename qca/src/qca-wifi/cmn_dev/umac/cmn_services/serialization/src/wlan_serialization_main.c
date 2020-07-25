@@ -181,7 +181,17 @@ wlan_serialization_create_cmd_pool(
 		uint16_t cmd_pool_size)
 {
 	struct wlan_serialization_command_list *cmd_list_ptr;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/**
+ * When increasing the macro "WLAN_SER_MAX_VDEVS" to
+ * SPIRENT_MAX_VDEVS_PER_RADIO, value of "cmd_pool_size" goes
+ * greater than 255. So, changed the data type of 'i' from uint8_t
+ * to uint16_t.
+ */
+       uint16_t i;
+#else
 	uint8_t i;
+#endif
 	QDF_STATUS status = QDF_STATUS_E_NOMEM;
 
 	qdf_list_create(&pdev_queue->cmd_pool_list, cmd_pool_size);
@@ -231,7 +241,17 @@ static QDF_STATUS wlan_serialization_pdev_create_handler(
 	uint8_t index;
 	uint8_t free_index;
 	uint8_t max_active_cmds;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/**
+ * When increasing the macro "WLAN_SER_MAX_VDEVS" to
+ * SPIRENT_MAX_VDEVS_PER_RADIO, value of "max_pending_cmds" goes
+ * greater than 255. So, changed the data type of "max_pending_cmds"
+ * from uint8_t to uint16_t.
+ */
+       uint16_t max_pending_cmds;
+#else
 	uint8_t max_pending_cmds;
+#endif
 	uint16_t cmd_pool_size;
 
 	ser_pdev_obj =

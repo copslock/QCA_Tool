@@ -52,6 +52,11 @@
 #endif
 #include "htt_ppdu_stats.h"
 #include "qdf_mem.h"   /* qdf_mem_malloc,free */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+#include "ieee80211_radiotap.h"
+#include <linux/signal.h>
+#include <linux/kthread.h>
+#endif
 #include "cfg_ucfg_api.h"
 #include "dp_mon_filter.h"
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
@@ -157,6 +162,13 @@ static QDF_STATUS
 dp_config_enh_tx_capture(struct dp_pdev *pdev_handle, uint8_t val)
 {
 	return QDF_STATUS_E_INVAL;
+}
+#endif
+
+#if defined PORT_SPIRENT_HK && defined(SPT_ADV_STATS)
+#define DP_REV_STATS_CLR(_handle, val) \
+{ \
+	memset(&(_handle), val, sizeof(_handle)); \
 }
 #endif
 
@@ -270,6 +282,32 @@ static uint8_t dp_soc_ring_if_nss_offloaded(struct dp_soc *soc,
 
 /* Budget to reap monitor status ring */
 #define DP_MON_REAP_BUDGET 1024
+
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+static void dp_get_pdev_cca_stats(struct cdp_soc_t *soc_hdl, uint8_t pdev_id, void *cca_stats);
+#endif
+
+#ifdef PORT_SPIRENT_HK
+// Defind SPIRENT customization function definition
+#ifdef SPT_MULTI_CLIENTS
+static inline void dp_peer_ast_handle_del(struct dp_soc *soc, uint8_t pdev_id, uint8_t *peer_mac_addr);
+#endif // SPT_MULTI_CLIENTS
+#ifdef SPT_ADV_STATS
+static int dp_get_vdev_txrx_adv_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id, struct dp_peer_rate_stats_tlv *adv_stats);
+static int dp_get_vdev_txrx_basic_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id, struct dp_vdev_rev_stats *txrx_stats);
+static int dp_get_vdev_rx_ru_values(void *soc, int pdev_id, void *rx_ru_stats);
+#endif // SPT_ADV_STATS
+#ifdef SPT_CAPTURE
+static int dp_monitor_capture_tx_mgmt(ol_txrx_soc_handle soc, uint8_t pdev_id, qdf_nbuf_t nbuf);
+static int dp_monitor_capture_eapol_frame(ol_txrx_soc_handle soc, uint8_t pdev_id, qdf_nbuf_t nbuf);
+static void dp_set_capture_mode(ol_txrx_soc_handle soc, uint8_t pdev_id, uint32_t val);
+#endif // SPT_CAPTURE
+#ifdef SPT_BSS_COLOR
+static void dp_set_bss_state(ol_txrx_soc_handle soc, uint8_t pdev_id, uint32_t val);
+static void dp_bss_collision_counter(ol_txrx_soc_handle soc, uint8_t pdev_id);
+static void dp_bss_color_request(ol_txrx_soc_handle soc, uint8_t pdev_id);
+#endif // SPT_BSS_COLOR
+#endif // PORT_SPIRENT_HK
 
 /**
  * default_dscp_tid_map - Default DSCP-TID mapping
@@ -4955,6 +4993,10 @@ static QDF_STATUS dp_vdev_detach_wifi3(struct cdp_soc_t *cdp_soc,
 
 	pdev = vdev->pdev;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+	soc->vdev_id_map[vdev->vdev_id] = NULL;
+    dp_peer_ast_handle_del(soc, pdev->pdev_id, vdev->mac_addr.raw);
+#endif
 	if (wlan_op_mode_sta == vdev->opmode) {
 		if (vdev->vap_self_peer)
 			dp_peer_delete_wifi3((struct cdp_soc_t *)soc,
@@ -6800,9 +6842,16 @@ void dp_aggregate_vdev_stats(struct dp_vdev *vdev,
 	soc = vdev->pdev->soc;
 
 	qdf_mem_copy(vdev_stats, &vdev->stats, sizeof(vdev->stats));
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    qdf_mem_zero(&vdev->stats, sizeof(vdev->stats));
+#endif
 
 	TAILQ_FOREACH(peer, &vdev->peer_list, peer_list_elem)
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        dp_update_vdev_stats(&vdev->stats, peer);
+#else
 		dp_update_vdev_stats(vdev_stats, peer);
+#endif
 
 #if defined(FEATURE_PERPKT_INFO) && WDI_EVENT_ENABLE
 	dp_wdi_event_handler(WDI_EVENT_UPDATE_DP_STATS, vdev->pdev->soc,
@@ -7057,6 +7106,13 @@ dp_txrx_host_stats_clr(struct dp_vdev *vdev)
 	DP_STATS_CLR(vdev->pdev->soc);
 	DP_STATS_CLR(vdev);
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	/* Clearing revanche stats */
+    DP_REV_STATS_CLR(vdev->rev_stats.rev_txrx, -1);
+    DP_REV_STATS_CLR(vdev->rev_stats.cstats, 0);
+    DP_REV_STATS_CLR(vdev->adv_stats, 0);
+#endif
+
 	hif_clear_napi_stats(vdev->pdev->soc->hif_handle);
 
 	TAILQ_FOREACH(peer, &vdev->peer_list, peer_list_elem) {
@@ -7182,7 +7238,16 @@ dp_print_host_stats(struct dp_vdev *vdev,
 		dp_txrx_host_stats_clr(vdev);
 		break;
 	case TXRX_RX_RATE_STATS:
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        if (vdev->rev_stats.cstats.txrx_adv_stats_req == 1) {
+            dp_update_txrx_rates(pdev, vdev);
+            vdev->rev_stats.cstats.txrx_adv_stats_req = 0;
+        } else {
+            dp_print_rx_rates(vdev);
+        }
+#else
 		dp_print_rx_rates(vdev);
+#endif
 		break;
 	case TXRX_TX_RATE_STATS:
 		dp_print_tx_rates(vdev);
@@ -8589,6 +8654,9 @@ QDF_STATUS dp_txrx_stats_request(struct cdp_soc_t *soc_handle,
 	int host_stats;
 	int fw_stats;
 	enum cdp_stats stats;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	int stats_flag = 0;
+#endif
 	int num_stats;
 	struct dp_vdev *vdev = dp_get_vdev_from_soc_vdev_id_wifi3(soc,
 								  vdev_id);
@@ -8605,6 +8673,15 @@ QDF_STATUS dp_txrx_stats_request(struct cdp_soc_t *soc_handle,
 	}
 
 	stats = req->stats;
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    /* Added changes to display adv. stats(rx stats)*/
+    stats_flag = req->stats;
+    if (stats_flag == 0xFFFF) {
+            stats = 258;
+    }
+#endif
+
 	if (stats >= CDP_TXRX_MAX_STATS)
 		return QDF_STATUS_E_INVAL;
 
@@ -8637,11 +8714,17 @@ QDF_STATUS dp_txrx_stats_request(struct cdp_soc_t *soc_handle,
 	}
 
 	if ((host_stats != TXRX_HOST_STATS_INVALID) &&
-			(host_stats <= TXRX_HOST_STATS_MAX))
+			(host_stats <= TXRX_HOST_STATS_MAX)) {
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        if (stats_flag == 0xFFFF) {
+            vdev->rev_stats.cstats.txrx_adv_stats_req = 1;
+        }
+#endif
 		return dp_print_host_stats(vdev, req);
-	else
+    } else {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO,
 				"Wrong Input for TxRx Stats");
+    }
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -9728,10 +9811,18 @@ static struct cdp_cmn_ops dp_ops_cmn = {
 #endif
 	.get_peer_mac_list = dp_get_peer_mac_list,
 	.tx_send_exc = dp_tx_send_exception,
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+    .get_pdev_cca_stats = dp_get_pdev_cca_stats,
+#endif
 };
 
 static struct cdp_ctrl_ops dp_ops_ctrl = {
 	.txrx_peer_authorize = dp_peer_authorize,
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	.txrx_get_vdev_adv_stats = dp_get_vdev_txrx_adv_stats,
+	.txrx_get_vdev_basic_stats = dp_get_vdev_txrx_basic_stats,
+        .txrx_get_vdev_rx_ru_values = dp_get_vdev_rx_ru_values,
+#endif        
 #ifdef VDEV_PEER_PROTOCOL_COUNT
 	.txrx_enable_peer_protocol_count = dp_enable_vdev_peer_protocol_count,
 	.txrx_set_peer_protocol_drop_mask =
@@ -9800,6 +9891,10 @@ static struct cdp_me_ops dp_ops_me = {
 
 static struct cdp_mon_ops dp_ops_mon = {
 	.txrx_reset_monitor_mode = dp_reset_monitor_mode,
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+	.txrx_monitor_capture_tx_mgmt = dp_monitor_capture_tx_mgmt,
+	.txrx_monitor_capture_eapol_frame = dp_monitor_capture_eapol_frame,
+#endif
 	/* Added support for HK advance filter */
 	.txrx_set_advance_monitor_filter = dp_pdev_set_advance_monitor_filter,
 	.txrx_deliver_tx_mgmt = dp_deliver_tx_mgmt,
@@ -9822,6 +9917,16 @@ static struct cdp_host_stats_ops dp_ops_host_stats = {
 	.txrx_get_pdev_stats = dp_txrx_get_pdev_stats,
 	.txrx_get_ratekbps = dp_txrx_get_ratekbps,
 	.txrx_update_vdev_stats = dp_txrx_update_vdev_host_stats,
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_CAPTURE
+    .set_capture_mode = dp_set_capture_mode,
+#endif // SPT_CAPTURE
+#ifdef SPT_BSS_COLOR
+    .set_bss_state = dp_set_bss_state,
+    .bss_collision_counter = dp_bss_collision_counter,
+    .bss_collision_color = dp_bss_color_request,
+#endif // SPT_BSS_COLOR
+#endif
 	/* TODO */
 };
 
@@ -12410,3 +12515,280 @@ static QDF_STATUS dp_pdev_init_wifi3(struct cdp_soc_t *txrx_soc,
 	return dp_pdev_init(txrx_soc, htc_handle, qdf_osdev, pdev_id);
 }
 
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+/*
+ * dp_get_pdev_cca_stats()- API to get channel stats
+ * @pdev_handle: DP_PDEV handle
+ *
+ * Return: Nothing
+ */
+static void
+dp_get_pdev_cca_stats(struct cdp_soc_t *soc_hdl, uint8_t pdev_id, void *cca_stats)
+{
+    struct cdp_txrx_stats_req req = {0,};
+#define HTT_STATS_1SEC_MASK (1)    
+    A_UINT32 stats_bitmask = HTT_STATS_1SEC_MASK;
+
+	struct dp_pdev *pdev =
+		dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc_hdl,
+						   pdev_id);
+	if (pdev == NULL)
+		return;
+
+    memcpy(cca_stats, pdev->cca_counters, WAL_CCA_CNTR_HIST_LEN * sizeof(pdev_stats_cca_counters));
+    req.stats = (enum cdp_stats)HTT_DBG_EXT_STATS_PDEV_CCA_STATS;
+    req.param0 = stats_bitmask;
+    dp_h2t_ext_stats_msg_send(pdev, req.stats, req.param0,
+        req.param1, req.param2, req.param3, 0, 0, 0);
+    return;
+}
+#endif
+
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MULTI_CLIENTS
+static inline void dp_peer_ast_handle_del(struct dp_soc *soc, uint8_t pdev_id,
+                                               uint8_t *peer_mac_addr)
+{
+    struct dp_ast_entry *ast_entry;
+    qdf_spin_lock_bh(&soc->ast_lock);
+    ast_entry = dp_peer_ast_hash_find_by_pdevid(soc, peer_mac_addr, pdev_id);
+    if (ast_entry)
+        dp_peer_del_ast(soc, ast_entry);
+    qdf_spin_unlock_bh(&soc->ast_lock);
+}
+#endif // SPT_MULTI_CLIENTS
+#ifdef SPT_ADV_STATS
+/*
+ * dp_peer_rate_stats_tlv() - get the tx/rx advance stats of the vdev
+ * @vdev_handle: virtual device object
+ * @val - value to be updated
+ *
+ * Return: struct dp_peer_rate_stats_tlv *
+ */
+
+static int dp_get_vdev_txrx_adv_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id, struct dp_peer_rate_stats_tlv *adv_stats)
+{
+	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
+	struct dp_vdev *vdev = dp_get_vdev_from_soc_vdev_id_wifi3(soc, vdev_id);
+	
+	if (vdev != NULL && adv_stats != NULL) {
+		memcpy(adv_stats, &vdev->adv_stats, sizeof(struct dp_peer_rate_stats_tlv));
+		return 0;
+	}
+
+	return -1;
+}
+
+/*
+ * dp_get_vdev_txrx_basic_stats() - get the tx/rx basic stats of the vdev
+ * @vdev_handle: virtual device object
+ * @val - value to be updated
+ *
+ * Return: struct dp_vdev_rev_stats *
+ */
+
+static int dp_get_vdev_txrx_basic_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id, struct dp_vdev_rev_stats *txrx_stats)
+{
+	struct dp_soc *soc = (struct dp_soc *)soc_hdl;
+	struct dp_vdev *vdev = dp_get_vdev_from_soc_vdev_id_wifi3(soc, vdev_id);
+
+	if (vdev != NULL && txrx_stats != NULL) {
+		memcpy(&txrx_stats->rev_txrx, &vdev->rev_stats.rev_txrx, sizeof(vdev->rev_stats.rev_txrx));
+		return 0;
+	}
+
+	return -1;
+}
+
+static int dp_get_vdev_rx_ru_values(void *soc, int pdev_id, void *rx_ru_stats)
+{
+       struct dp_pdev *pdev;
+       struct dp_soc *soc_t = (struct dp_soc *)soc;
+       struct dp_rx_ru_stats *ru_stats = (struct dp_rx_ru_stats *)rx_ru_stats;
+       pdev = dp_get_pdev_for_mac_id(soc_t, pdev_id);
+       if (pdev != NULL) {
+               ru_stats->bw = pdev->ppdu_info.rx_status.bw;
+               ru_stats->reception_type = pdev->ppdu_info.rx_status.reception_type;
+               ru_stats->he_RU[0] = pdev->ppdu_info.rx_status.he_RU[0];
+       }
+       return 0;
+}
+#endif // SPT_ADV_STATS
+#ifdef SPT_CAPTURE
+static int dp_monitor_capture_tx_mgmt(ol_txrx_soc_handle soc, uint8_t pdev_id, qdf_nbuf_t nbuf)
+{
+    struct dp_pdev *pdev;
+    struct ieee80211_radiotap_header radiotap ={0};
+    qdf_nbuf_t mgmt_frame;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return QDF_STATUS_E_FAILURE;
+
+    radiotap.it_len = sizeof(struct ieee80211_radiotap_header);
+
+    if (pdev->monitor_vdev && pdev->monitor_vdev->osif_rx_mon)
+    {
+        mgmt_frame = qdf_nbuf_copy(nbuf);
+
+        /* Adding radiotap dummy buffer */
+        qdf_nbuf_push_head(mgmt_frame, sizeof(struct ieee80211_radiotap_header));
+        qdf_mem_copy(qdf_nbuf_data(mgmt_frame), &radiotap, sizeof(struct ieee80211_radiotap_header));
+
+        pdev->monitor_vdev->osif_rx_mon(
+                pdev->monitor_vdev->osif_vdev, mgmt_frame, NULL);
+
+    }
+    return 0;
+}
+
+static int dp_monitor_capture_eapol_frame(ol_txrx_soc_handle soc, uint8_t pdev_id, qdf_nbuf_t nbuf)
+{
+    struct dp_pdev *pdev;
+    struct ieee80211_radiotap_header radiotap ={0};
+    struct ether_header* etherheader;
+    struct ether_header etherheader2;
+    struct ieee80211_qosframe qosframe  ={0};
+    struct llc llc_header ={0};
+    qdf_nbuf_t data_frame;
+    int index = 0;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return QDF_STATUS_E_FAILURE;
+
+    radiotap.it_len = sizeof(struct ieee80211_radiotap_header);
+
+    if (pdev->monitor_vdev) {
+       if (pdev->monitor_vdev->osif_rx_mon) {
+                if(qdf_nbuf_data_is_ipv4_eapol_pkt(nbuf->data)) {
+
+                    data_frame = qdf_nbuf_copy(nbuf);
+                    qdf_mem_copy(&etherheader2, data_frame->data, sizeof(struct ether_header));
+                   etherheader = &etherheader2;
+                    qdf_nbuf_pull_head(data_frame, sizeof(struct ether_header));
+                    qdf_nbuf_push_head(data_frame, sizeof(struct llc)+sizeof(struct ieee80211_radiotap_header)+sizeof(struct ieee80211_qosframe));
+                    /* Adding radiotap dummy buffer */
+                    qdf_mem_copy(qdf_nbuf_data(data_frame), &radiotap, sizeof(struct ieee80211_radiotap_header));
+
+                   /* Adding 802.11 header */
+
+                   qosframe.i_fc[0] = 0x88;
+                   qosframe.i_fc[1] = 0x02;
+                   qosframe.i_dur[0] = 0x3c;
+                   qosframe.i_dur[1] = 0x00;
+                   for (index = 0; index < 6; index++) {
+                        qosframe.i_addr1[index] = etherheader->ether_dhost[index];
+                        qosframe.i_addr2[index] = etherheader->ether_shost[index];
+                        qosframe.i_addr3[index] = etherheader->ether_shost[index];
+                   }
+                   qosframe.i_seq[0] = 0;
+                   qosframe.i_seq[1] = 0;
+                   qosframe.i_qos[0] = 0;
+                   qosframe.i_qos[1] = 0;
+                    qdf_mem_copy(qdf_nbuf_data(data_frame)+sizeof(struct ieee80211_radiotap_header), &qosframe, sizeof(struct ieee80211_qosframe));
+
+                   /* Adding LLC header */
+
+                    llc_header.llc_dsap = LLC_SNAP_LSAP;
+                    llc_header.llc_ssap = LLC_SNAP_LSAP;
+                    llc_header.llc_control = LLC_UI;
+                    llc_header.llc_snap.org_code[0] = 0;
+                    llc_header.llc_snap.org_code[1] = 0;
+                    llc_header.llc_snap.org_code[2] = 0;
+                    llc_header.llc_snap.ether_type = 0x8e88;
+                    qdf_mem_copy(qdf_nbuf_data(data_frame)+sizeof(struct ieee80211_radiotap_header)+sizeof(struct ieee80211_qosframe), &llc_header, sizeof(struct llc));
+
+                    pdev->monitor_vdev->osif_rx_mon(pdev->monitor_vdev->osif_vdev, data_frame, NULL);
+               }
+         }
+   }
+    return 0;
+}
+
+static void dp_set_capture_mode(ol_txrx_soc_handle soc, uint8_t pdev_id, uint32_t val)
+{
+    uint32_t config_param0 = val;
+    uint32_t config_param1 = 0;
+    uint32_t config_param2 = 0;
+    uint32_t config_param3 = 0;
+    struct dp_pdev *pdev;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return;
+
+    dp_h2t_ext_stats_msg_send(pdev, HTT_DBG_EXT_CAPTURE_STATUS,
+                                        config_param0, config_param1,
+                                        config_param2, config_param3,
+                                        0, 0, 0);
+}
+#endif // SPT_CAPTURE
+#ifdef SPT_BSS_COLOR
+static void
+dp_set_bss_state(ol_txrx_soc_handle soc, uint8_t pdev_id, uint32_t val)
+{
+    uint32_t config_param0 = 0;
+    uint32_t config_param1 = 0;
+    uint32_t config_param2 = 0;
+    uint32_t config_param3 = 0;
+    struct dp_pdev *pdev;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return;
+
+    /* update DP layer arguments */
+    config_param0 = val; /* can be 1/0 */
+    config_param1 = pdev_id; /* pdev_id */
+
+    /* Call DP Layer */
+    dp_h2t_ext_stats_msg_send(pdev, HTT_DBG_EXT_BSS_STATUS,
+                                        config_param0, config_param1,
+                                        config_param2, config_param3,
+                                        0, 0, 0);
+}
+static void
+dp_bss_collision_counter(ol_txrx_soc_handle soc, uint8_t pdev_id)
+{
+    uint32_t config_param0 = 0;
+    uint32_t config_param1 = 0;
+    uint32_t config_param2 = 0;
+    uint32_t config_param3 = 0;
+    struct dp_pdev *pdev;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return;
+        
+    config_param2 = pdev_id;
+
+    /* request bss counter via dp layer */
+    dp_h2t_ext_stats_msg_send(pdev, HTT_DBG_EXT_BSS_COLLISION_COUNTER,
+                                        config_param0, config_param1,
+                                        config_param2, config_param3,
+                                        0, 0, 0);
+}
+static void
+dp_bss_color_request(ol_txrx_soc_handle soc, uint8_t pdev_id)
+{
+    uint32_t config_param0 = 0;
+    uint32_t config_param1 = 0;
+    uint32_t config_param2 = 0;
+    uint32_t config_param3 = 0;
+    struct dp_pdev *pdev;
+
+    pdev = dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc, pdev_id);
+    if (!pdev)
+        return;
+    
+    config_param2 = pdev_id;
+
+    /* request bss color via dp layer */
+    dp_h2t_ext_stats_msg_send(pdev, HTT_DBG_EXT_BSS_COLOR_REQUEST,
+                                        config_param0, config_param1,
+                                        config_param2, config_param3,
+                                        0, 0, 0);
+}
+#endif // SPT_BSS_COLOR
+#endif // PORT_SPIRENT_HK

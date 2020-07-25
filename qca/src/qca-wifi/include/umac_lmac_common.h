@@ -37,11 +37,20 @@ typedef u_int32_t   ath_vap_infotype;
 #elif  defined(QCA_LOWMEM_PLATFORM)
 #define    ATH_BCBUF    4       /* number of beacon buffers for 4 VAP support */
 #else
+#ifdef PORT_SPIRENT_HK
+/* number of beacon buffers for 202 VAP support */
+#define    ATH_BCBUF    SPIRENT_MAX_VDEVS_PER_RADIO
+#else
 #define    ATH_BCBUF    17       /* number of beacon buffers for 17 VAP support */
+#endif
 #endif
 
 #if ATH_SUPPORT_WRAP
+#ifdef PORT_SPIRENT_HK
+#define ATH_VAPSIZE SPIRENT_MAX_VDEVS_PER_RADIO
+#else
 #define ATH_VAPSIZE 32
+#endif
 #else
 #define ATH_VAPSIZE ATH_BCBUF
 #endif

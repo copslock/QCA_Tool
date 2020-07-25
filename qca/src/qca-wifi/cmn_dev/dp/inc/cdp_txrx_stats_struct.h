@@ -64,6 +64,11 @@
 #define RU_484			18
 #define RU_996			37
 
+#ifdef PORT_SPIRENT_HK
+#define MAX_SGI         4
+#define MAX_MCS_ADV 	12
+#endif
+
 /* WME stream classes */
 #define WME_AC_BE    0    /* best effort */
 #define WME_AC_BK    1    /* background */
@@ -804,6 +809,13 @@ struct cdp_tx_stats {
 	uint32_t tx_data_ucast_last;
 	uint32_t tx_data_ucast_rate;
 	struct cdp_pkt_type pkt_type[DOT11_MAX];
+#ifdef PORT_SPIRENT_HK
+	/* SGI mcs count */
+	uint32_t sgi_mcs[MAX_GI][MAX_MCS];
+	/* bss collision counter */
+	uint16_t bss_color_count;
+	uint16_t bss_collision_color;
+#endif
 	uint32_t sgi_count[MAX_GI];
 
 	uint32_t nss[SS_COUNT];
@@ -859,6 +871,11 @@ struct cdp_tx_stats {
 
 	uint32_t num_ppdu_cookie_valid;
 	uint32_t no_ack_count[QDF_PROTO_SUBTYPE_MAX];
+#if SPIRENT_AP_EMULATION
+	uint32_t last_tx_ppdu_type;
+	/* timestamp of last update */
+	uint64_t last_tx_ts;  
+#endif
 };
 
 /* struct cdp_rx_stats - rx Level Stats
@@ -967,6 +984,10 @@ struct cdp_rx_stats {
 	uint32_t avg_rssi;
 	uint32_t rx_rate;
 	uint32_t last_rx_rate;
+#if SPIRENT_AP_EMULATION
+	uint32_t ru_loc[MAX_RU_LOCATIONS];
+	uint32_t last_rx_rate_mcs;
+#endif
 	uint32_t rnd_avg_rx_rate;
 	uint32_t avg_rx_rate;
 	struct cdp_pkt_info  dot11_rx_pkts;
@@ -989,6 +1010,13 @@ struct cdp_rx_stats {
 	uint8_t rssi;
 	uint8_t last_rssi;
 	uint32_t multipass_rx_pkt_drop;
+#if SPIRENT_AP_EMULATION
+	uint32_t last_rx_ppdu_type;
+	uint8_t last_rx_ru_type;
+	uint16_t last_rx_ru_index;
+	/* timestamp of last update */
+	uint64_t last_rx_ts;  
+#endif
 };
 
 /* struct cdp_tx_ingress_stats - Tx ingress Stats
@@ -1085,6 +1113,42 @@ struct cdp_tx_ingress_stats {
 	struct cdp_pkt_info sniffer_rcvd;
 	struct cdp_tso_stats tso_stats;
 };
+#ifdef PORT_SPIRENT_HK
+/* struct dp_txrx_rev_stats - parameters
+used to store the txrx stats values
+*/
+struct dp_txrx_rev_stats {
+	int8_t rx_mcs;
+	int8_t tx_mcs;
+	int8_t rx_bw;
+	int8_t tx_bw;
+	int8_t rx_sgi;
+	int8_t tx_sgi;
+	int8_t rx_nss;
+	int8_t tx_nss;
+	int8_t rx_pkt_type;
+	int8_t tx_pkt_type;
+	int8_t rx_rec_type;
+};
+
+/*
+struct cdp_rev_common_stats
+*/
+struct dp_rev_common_stats {
+	uint32_t sgi_mcs[MAX_SGI][MAX_MCS_ADV];
+	uint8_t txrx_adv_stats_req;
+};
+
+/* struct dp_vdev_rev_stats - vdev stats structure
+ * @tx: dp tx stats
+ * @rx: dp rx stats
+ * @cstats: dp common stats
+ */
+struct dp_vdev_rev_stats {
+	struct dp_txrx_rev_stats rev_txrx;
+	struct dp_rev_common_stats cstats;
+};
+#endif
 
 /* struct cdp_vdev_stats - vdev stats structure
  * @tx_i: ingress tx stats
@@ -1109,6 +1173,119 @@ struct cdp_peer_stats {
 	/* CDP Rx Stats */
 	struct cdp_rx_stats rx;
 };
+
+#ifdef PORT_SPIRENT_HK
+#define DP_TX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define DP_TX_PEER_STATS_NUM_GI_COUNTERS          4
+#define DP_TX_PEER_STATS_NUM_DCM_COUNTERS         5
+#define DP_TX_PEER_STATS_NUM_BW_COUNTERS          4
+#define DP_TX_PEER_STATS_NUM_SPATIAL_STREAMS      8
+#define DP_TX_PEER_STATS_NUM_PREAMBLE_TYPES       7
+
+typedef struct {
+    /* BIT [11 :  0]   :- tag
+     * BIT [23 : 12]   :- length
+     * BIT [31 : 24]   :- reserved
+     */
+    uint32_t tag__length;
+} dp_tlv_hdr_t;
+
+struct dp_tx_peer_rate_stats_tlv {
+    dp_tlv_hdr_t tlv_hdr;
+
+    uint32_t vdev_id;
+
+    /* Number of tx ldpc packets */
+    uint32_t tx_ldpc;
+    /* Number of tx rts packets */
+    uint32_t rts_cnt;
+    /* RSSI value of last ack packet (units = dB above noise floor) */
+    uint32_t ack_rssi;
+
+    uint32_t tx_mcs[MAX_MCS];
+    uint32_t tx_su_mcs[DP_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t tx_mu_mcs[DP_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t tx_nss[DP_TX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* element 0,1, ...7 -> NSS 1,2, ...8 */
+    uint32_t tx_bw[DP_TX_PEER_STATS_NUM_BW_COUNTERS]; /* element 0: 20 MHz, 1: 40 MHz, 2: 80 MHz, 3: 160 and 80+80 MHz */
+    uint32_t tx_stbc[DP_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t tx_pream[DP_TX_PEER_STATS_NUM_PREAMBLE_TYPES];
+
+    /* Counters to track number of tx packets in each GI (400us, 800us, 1600us & 3200us) in each mcs (0-11) */
+    uint32_t tx_gi[MAX_GI][MAX_MCS];
+
+    /* Counters to track packets in dcm mcs (MCS 0, 1, 3, 4) */
+    uint32_t tx_dcm[DP_TX_PEER_STATS_NUM_DCM_COUNTERS];
+
+#ifdef PORT_SPIRENT_HK
+    /* Newly added OFDMA results stats in V2*/
+    uint8_t txofdmamode;// 0: non-ofdma mode, 1: ofdma mode
+    uint8_t txrutype;
+    int16_t txruassignmentindex;
+    uint8_t txloruindex;
+    uint8_t txhiruindex;
+    uint64_t txofdmapkt;
+    uint32_t sgi_count[MAX_GI];
+    uint16_t bss_color_count;
+    uint16_t bss_collision_color;
+#endif
+};
+
+#define DP_RX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define DP_RX_PEER_STATS_NUM_GI_COUNTERS          4
+#define DP_RX_PEER_STATS_NUM_DCM_COUNTERS         5
+#define DP_RX_PEER_STATS_NUM_BW_COUNTERS          4
+#define DP_RX_PEER_STATS_NUM_SPATIAL_STREAMS      8
+#define DP_RX_PEER_STATS_NUM_PREAMBLE_TYPES       7
+
+struct dp_rx_peer_rate_stats_tlv {
+    dp_tlv_hdr_t tlv_hdr;
+
+    uint32_t vdev_id;
+    uint32_t nsts;
+
+    /* Number of rx ldpc packets */
+    uint32_t rx_ldpc;
+    /* Number of rx rts packets */
+    uint32_t rts_cnt;
+
+    uint32_t rssi_mgmt; /* units = dB above noise floor */
+    uint32_t rssi_data; /* units = dB above noise floor */
+    uint32_t rssi_comb; /* units = dB above noise floor */
+    uint32_t rx_mcs[MAX_MCS];
+    uint32_t rx_su_mcs[DP_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t rx_mu_mcs[DP_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t rx_nss[DP_RX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* element 0,1, ...7 -> NSS 1,2, ...8 */
+    uint32_t rx_dcm[DP_RX_PEER_STATS_NUM_DCM_COUNTERS];
+    uint32_t rx_stbc[DP_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    uint32_t rx_bw[DP_RX_PEER_STATS_NUM_BW_COUNTERS]; /* element 0: 20 MHz, 1: 40 MHz, 2: 80 MHz, 3: 160 and 80+80 MHz */
+    uint32_t rx_pream[DP_RX_PEER_STATS_NUM_PREAMBLE_TYPES];
+    uint8_t rssi_chain[DP_RX_PEER_STATS_NUM_BW_COUNTERS][DP_RX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* units = dB above noise floor */
+
+    /* Counters to track number of rx packets in each GI in each mcs (0-11) */
+    uint32_t rx_gi[MAX_GI][MAX_MCS];
+
+#ifdef PORT_SPIRENT_HK
+    /* Newly added OFDMA results stats in V2*/
+    uint8_t rxofdmamode;// 0: non-ofdma mode, 1: ofdma mode
+    uint8_t rxrutype;
+    int16_t rxruassignmentindex;
+    uint8_t rxloruindex;
+    uint8_t rxhiruindex;
+    uint64_t rxofdmapkt;
+#endif 
+};
+
+struct dp_peer_rate_stats_tlv {
+        struct dp_tx_peer_rate_stats_tlv tx_stats;
+        struct dp_rx_peer_rate_stats_tlv rx_stats;
+};
+
+struct dp_rx_ru_stats {
+       uint8_t bw;
+       uint8_t reception_type;
+       uint8_t he_RU[4];
+};
+#endif
 
 /* struct cdp_interface_peer_stats - interface structure for txrx peer stats
  * @peer_mac: peer mac address
@@ -1763,6 +1940,21 @@ enum _dp_param_t {
 
 	DP_PARAM_MAX,
 };
+
+#ifdef PORT_SPIRENT_HK
+/* Enumeration of RU Type values */
+enum _ol_ath_ru_type_t {
+	OL_ATH_RU_TYPE_NA    = 0,
+	OL_ATH_RU_TYPE_26    = 1,
+	OL_ATH_RU_TYPE_52    = 2,
+	OL_ATH_RU_TYPE_106   = 3,
+	OL_ATH_RU_TYPE_242   = 4,
+	OL_ATH_RU_TYPE_484   = 5,
+	OL_ATH_RU_TYPE_996   = 6,
+	OL_ATH_RU_TYPE_2X996 = 7,
+};
+#endif
+
 #endif
 /* Bitmasks for stats that can block */
 #define EXT_TXRX_FW_STATS		0x0001

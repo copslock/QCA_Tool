@@ -69,4 +69,40 @@ cdp_deliver_tx_mgmt(ol_txrx_soc_handle soc, uint8_t pdev_id,
 	return soc->ops->mon_ops->txrx_deliver_tx_mgmt(soc, pdev_id, nbuf);
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+
+static inline int cdp_monitor_mgmt_tx_frames
+(ol_txrx_soc_handle soc, uint8_t pdev_id, qdf_nbuf_t nbuf)
+{
+       if (!soc || !soc->ops) {
+               QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                               "%s: Invalid Instance", __func__);
+        printk("%s: Invalid Instance", __func__);
+               QDF_BUG(0);
+               return 0;
+       }
+
+       if (!soc->ops->mon_ops ||
+           !soc->ops->mon_ops->txrx_monitor_capture_tx_mgmt)
+               return 0;
+
+       return soc->ops->mon_ops->txrx_monitor_capture_tx_mgmt(soc, pdev_id, nbuf);
+}
+
+static inline int cdp_monitor_data_eapol_frames
+(ol_txrx_soc_handle soc, uint8_t pdev_id, struct sk_buff *skb)
+{
+        if (!soc || !soc->ops) {
+                QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance", __func__);
+                QDF_BUG(0);
+                return 0;
+        }
+        if (!soc->ops->mon_ops ||
+            !soc->ops->mon_ops->txrx_monitor_capture_eapol_frame)
+                return 0;
+
+        return soc->ops->mon_ops->txrx_monitor_capture_eapol_frame(soc, pdev_id, skb);
+}
+#endif // defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
 #endif

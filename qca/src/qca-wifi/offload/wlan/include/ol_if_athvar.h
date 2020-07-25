@@ -260,7 +260,11 @@ extern A_UINT32 dscp_tid_map[WMI_HOST_DSCP_MAP_MAX];
 
 /* Invalid Tbtt offset value from target
  */
+
 #define OL_TBTT_OFFSET_INVALID 0xffffffff
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+uint32_t ol_if_getrateindex_with_sgi(uint16_t mcs, uint8_t nss, uint8_t preamble, uint8_t bw, uint8_t sgi);
+#endif
 
 #ifdef QCA_OL_DMS_WAR
 /**
@@ -526,6 +530,21 @@ struct alloc_task_pvt_data {
 #define DEFAULT_WMI_TIMEOUT 600
 #endif
 #define DEFAULT_WMI_TIMEOUT_UNINTR 2
+#ifdef QCA_LOWMEM_CONFIG
+#define MAX_WMI_CMDS 512
+#elif defined QCA_512M_CONFIG
+#define MAX_WMI_CMDS 1024
+#else
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/*  Assert take place on "wmi_unified_cmd_send_fl" function,
+ *  Because of "MAX 3072 WMI Pending cmds reached". So "MAX_WMI_CMDS"
+ *  Macro value is increased to 4096
+ */
+#define MAX_WMI_CMDS 4096
+#else
+#define MAX_WMI_CMDS 2048
+#endif
+#endif
 
 #define DEFAULT_ANI_ENABLE_STATUS false
 

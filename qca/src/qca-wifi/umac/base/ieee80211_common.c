@@ -954,6 +954,11 @@ int wlan_set_device_param(wlan_dev_t ic, ieee80211_device_param param, u_int32_t
     case IEEE80211_DEVICE_CWM_ENABLE:
         ic->ic_cwm_set_enable(ic, val);
         break;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    case IEEE80211_DEVICE_FWDEBUG:
+        ic->ic_fwdebug(ic, val);
+        break;
+#endif
     case IEEE80211_DEVICE_CWM_EXTBUSYTHRESHOLD:
         ic->ic_cwm_set_extbusythreshold(ic, val);
         break;

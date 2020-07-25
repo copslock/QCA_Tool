@@ -6742,6 +6742,17 @@ typedef enum {
     /* Parameter used to enable/disable SR prohibit feature */
     WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT,
 
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+    WMI_PDEV_PARAM_FWDEBUG,
+#endif	
+#ifdef SPT_BSS
+    WMI_PDEV_PARAM_ADAPTIVE_CCA,
+#endif
+#ifdef SPT_NG	
+    WMI_PDEV_PARAM_NOISEGEN,
+#endif	
+#endif
 } WMI_PDEV_PARAM;
 
 #define WMI_PDEV_ONLY_BSR_TRIG_IS_ENABLED(trig_type) WMI_GET_BITS(trig_type, 0, 1)
@@ -14673,6 +14684,9 @@ typedef enum wmi_peer_sta_kickout_reason {
     WMI_PEER_STA_KICKOUT_REASON_IBSS_DISCONNECT = 3,
     WMI_PEER_STA_KICKOUT_REASON_TDLS_DISCONNECT = 4,    /* TDLS peer has disappeared. All tx is failing */
     WMI_PEER_STA_KICKOUT_REASON_SA_QUERY_TIMEOUT = 5,
+#ifdef PORT_SPIRENT_HK
+    WMI_PEER_STA_KICKOUT_REASON_THROTTLE_START=6,
+#endif
 } PEER_KICKOUT_REASON;
 
 typedef struct {
@@ -14683,6 +14697,10 @@ typedef struct {
     A_UINT32 reason;
     /** RSSI of the last bcn (averaged) in dB. 0 means Noise Floor value */
     A_UINT32 rssi;
+#ifdef PORT_SPIRENT_HK
+    /** vdev mac address */
+    wmi_mac_addr vdev_macaddr;
+#endif
 } wmi_peer_sta_kickout_event_fixed_param;
 
 #define WMI_WLAN_PROFILE_MAX_HIST     3

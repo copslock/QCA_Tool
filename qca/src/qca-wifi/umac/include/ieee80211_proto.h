@@ -974,6 +974,12 @@ void ieee80211_process_extender_ie(struct ieee80211_node *ni, const u_int8_t *ie
 #endif
 uint8_t *ieee80211_mgmt_add_chan_switch_ie(uint8_t *frm, struct ieee80211_node *ni,
                 uint8_t subtype, uint8_t chanchange_tbtt);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+int ieee80211_fast_bss_action_response(wlan_if_t vap, wlan_node_t ni, wbuf_t wbuf,
+                                int subtype, struct ieee80211_rx_status *rs);
+int ieee80211_recv_neighbor_resp(wlan_if_t vap, wlan_node_t ni ,wbuf_t wbuf,
+                                int subtype, struct ieee80211_rx_status *rs);
+#endif
 #endif /* end of _ATH_STA_IEEE80211_PROTO_H */
 
 /* Copy source to destination in-memory and advance destination "size" bytes,

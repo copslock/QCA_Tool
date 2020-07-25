@@ -1146,8 +1146,12 @@ QDF_STATUS dp_h2t_ext_stats_msg_send(struct dp_pdev *pdev,
 		uint32_t config_param_1, uint32_t config_param_2,
 		uint32_t config_param_3, int cookie, int cookie_msb,
 		uint8_t mac_id);
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+void dp_htt_stats_print_tag(struct dp_pdev *pdev, uint8_t tag_type, uint32_t *tag_buf);
+#else // PORT_SPIRENT_HK
 void dp_htt_stats_print_tag(struct dp_pdev *pdev,
 			    uint8_t tag_type, uint32_t *tag_buf);
+#endif // PORT_SPIRENT_HK
 void dp_htt_stats_copy_tag(struct dp_pdev *pdev, uint8_t tag_type, uint32_t *tag_buf);
 QDF_STATUS dp_h2t_3tuple_config_send(struct dp_pdev *pdev, uint32_t tuple_mask,
 				     uint8_t mac_id);
@@ -1256,6 +1260,15 @@ void dp_print_per_ring_stats(struct dp_soc *soc);
  * return: void
  */
 void dp_aggregate_pdev_stats(struct dp_pdev *pdev);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/**
+ * dp_update_txrx_rates(): Print Tx and Rx rate stats
+ * @vdev: DP_VDEV handle
+ *
+ * Return:void
+ */
+void dp_update_txrx_rates(struct dp_pdev *pdev, struct dp_vdev *vdev);
+#endif
 
 /**
  * dp_print_rx_rates(): Print Rx rate stats

@@ -739,4 +739,91 @@ cdp_host_get_radio_stats(ol_txrx_soc_handle soc,
 	return soc->ops->host_stats_ops->txrx_get_radio_stats(soc, pdev_id,
 							      buf);
 }
+#ifdef PORT_SPIRENT_HK
+/**
+ * @brief API to set the capture mode
+ *
+ * @param soc - opaque soc handle
+ * @param pdev - dp pdev objec
+ * @ val      -  capture mode
+ * @return - void
+ */
+#ifdef SPT_CAPTURE 
+static inline void cdp_set_dp_htt_capture_mode(ol_txrx_soc_handle soc,
+                uint8_t pdev_id, uint32_t val)
+{
+        if (!soc || !soc->ops) {
+                QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance", __func__);
+                QDF_BUG(0);
+                return;
+        }
+
+        if (!soc->ops->host_stats_ops ||
+            !soc->ops->host_stats_ops->set_capture_mode)
+                return;
+        soc->ops->host_stats_ops->set_capture_mode(soc, pdev_id, val);
+}
+#endif
+
+#ifdef SPT_ADV_STATS
+static inline void cdp_set_bss_state(ol_txrx_soc_handle soc, uint8_t pdev_id, uint32_t val)
+{
+        if (!soc || !soc->ops) {
+                QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance", __func__);
+                QDF_BUG(0);
+                return;
+        }
+
+        if (!soc->ops->host_stats_ops ||
+            !soc->ops->host_stats_ops->set_bss_state)
+        {
+                return;
+        }
+
+        soc->ops->host_stats_ops->set_bss_state
+                        (soc, pdev_id, val);
+}
+
+/* bss color collision counter */
+static inline void cdp_bss_collision_counter(ol_txrx_soc_handle soc, uint8_t pdev_id)
+{
+       if (!soc || !soc->ops) {
+                QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance", __func__);
+                QDF_BUG(0);
+                return;
+        }
+
+        if (!soc->ops->host_stats_ops ||
+            !soc->ops->host_stats_ops->bss_collision_counter) {
+               return;
+        }
+
+        soc->ops->host_stats_ops->bss_collision_counter
+                                         (soc, pdev_id);
+}
+
+/* bss collision color request */
+static inline void cdp_bss_collision_color(ol_txrx_soc_handle soc, uint8_t pdev_id)
+{
+       if (!soc || !soc->ops) {
+               QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance", __func__);
+                QDF_BUG(0);
+                return;
+        }
+
+        if (!soc->ops->host_stats_ops ||
+            !soc->ops->host_stats_ops->bss_collision_color) {
+               return;
+        }
+
+        soc->ops->host_stats_ops->bss_collision_color
+                                         (soc, pdev_id);
+}
+#endif
+
+#endif // PORT_SPIRENT_HK
 #endif /* _CDP_TXRX_HOST_STATS_H_ */

@@ -758,6 +758,36 @@ enum {
 	IEEE80211_PARAM_HE_DL_MU_OFDMA_BFER        = 693, /* Sets 11ax - HE DL MU OFDMA + TxBF*/
 	IEEE80211_PARAM_SEND_PROBE_REQ             = 694, /* Send bcast probe request with current ssid */
 	IEEE80211_PARAM_ASSOC_MIN_RSSI             = 695,
+#ifdef PORT_SPIRENT_HK
+    IEEE80211_PARAM_HTCAP                      = 696,    /*Capabilites for HT*/
+    IEEE80211_PARAM_VHTCAP                     = 697,    /*Capabilites for VHT*/
+    IEEE80211_PARAM_STA_STATE                  = 698,    /*Capabilites for Sta State*/
+    IEEE80211_PARAM_RX_MCS                     = 699,    /*Rx mcs*/
+    IEEE80211_PARAM_TX_MCS                     = 700,    /*Tx mcs*/
+    IEEE80211_PARAM_HE_PHY_0                   = 701,    /*Capabilities for HE PHY (0-3Bytes)*/
+    IEEE80211_PARAM_HE_PHY_1                   = 702,    /*Capabilities for HE PHY (4-7Bytes)*/
+    IEEE80211_PARAM_HE_PHY_2                   = 703,    /*Capabilities for HE PHY (9th Byte)*/
+    IEEE80211_PARAM_HE_MAC_LOW                 = 704,    /*Capabilities for HE MAC Low order*/
+    IEEE80211_PARAM_HE_MAC_HIGH                = 705,    /*Capabilities for HE MAC High order*/
+    IEEE80211_PARAM_RX_NSS                     = 706,    /*Rx nss*/
+    IEEE80211_PARAM_TX_NSS                     = 707,    /*Tx nss*/
+    IEEE80211_PARAM_RX_REC_TYPE                = 708,    /*Rx Reception Type*/
+    IEEE80211_PARAM_NSS_VAL                    = 709,    /*NSS value of VAP*/
+    IEEE80211_PARAM_TX_RATE                    = 710,    /*Tx rate*/
+    IEEE80211_PARAM_TX_BW                      = 711,    /*Tx Bandwidth*/
+    IEEE80211_PARAM_RX_BW                      = 712,    /*Rx Bandwidth*/
+    IEEE80211_PARAM_TX_GI                      = 713,    /*Tx Guard Interval*/
+    IEEE80211_PARAM_RX_GI                      = 714,    /*Rx Guard Interval*/
+    IEEE80211_PARAM_ADV_STATS                  = 715,    /*Update Tx/Rx advance stats*/
+    IEEE80211_PARAM_RX_SU_OFDMA_PKT            = 716,    /* SU_OFDMA Packet Count */
+    IEEE80211_PARAM_RX_MU_OFDMA_PKT            = 717,    /* MU_OFDMA Packet Count */
+    IEEE80211_PARAM_RX_MU_MIMO_PKT             = 718,    /* MU_MIMO Packet Count */
+    IEEE80211_PARAM_RX_MU_MIMO_OFDMA_PKT       = 719,    /* MU_MIMO_OFDMA Packet Count */
+    IEEE80211_PARAM_FWDEBUG                    = 720,    /* Enable FW debug */
+    IEEE80211_PARAM_CAPTURE_MODE_SET           = 721,    /* Set the capture mode */
+    IEEE80211_PARAM_BSS_SET_STATE              = 722,    /* Enable/Disable BSS Color */
+    IEEE80211_PARAM_FTDELAY                    = 723,    /*Get FT delay */
+#endif
 };
 
 enum {
@@ -1184,6 +1214,16 @@ enum _ol_ath_param_t {
 	OL_ATH_PARAM_NON_INHERIT_ENABLE = 443,
 	/* Set/Get next frequency for radar */
 	OL_ATH_PARAM_NXT_RDR_FREQ = 444,
+	
+#ifdef PORT_SPIRENT_HK
+	OL_ATH_PARAM_MAX_STA = 445,
+	OL_ATH_PARAM_HE_RU_INDEX = 446,
+	OL_ATH_PARAM_HE_RU_TYPE = 447,
+	OL_ATH_PARAM_SET_FW_DEBUG = 448,
+	OL_ATH_PARAM_ADAPTIVE_CCA_THR = 449,
+	OL_ATH_PARAM_NG_CH = 450,
+#endif
+	
 };
 
 #ifdef CONFIG_SUPPORT_LIBROXML

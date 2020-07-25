@@ -1197,7 +1197,21 @@ util_scan_entry_age(struct scan_cache_entry *scan_entry)
 {
 	qdf_time_t ts = scan_entry->scan_entry_time;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/**
+ * Due to clock synchronization, there is a possibility of
+ * getting a current time is less than scan entry time, in case
+ * of time drift correction. Below changes help to avoid
+ * the removal of valid scan entry(which age is less than
+ * CFG_SCAN_AGING_TIME_DEFAULT - 30 seconds) from the scan cache.
+ */
+	if (qdf_mc_timer_get_system_time() > ts)
+		return qdf_mc_timer_get_system_time() - ts;
+	else
+		return 0;
+#else
 	return qdf_mc_timer_get_system_time() - ts;
+#endif
 }
 
 /**
@@ -1690,4 +1704,13 @@ static inline bool util_scan_is_null_ssid(struct wlan_ssid *ssid)
 	return false;
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+QDF_STATUS
+util_scan_gen_scan_entry(struct wlan_objmgr_pdev *pdev,
+			 uint8_t *frame, qdf_size_t frame_len,
+			 uint32_t frm_subtype,
+			 struct mgmt_rx_event_params *rx_param,
+			 struct scan_mbssid_info *mbssid_info,
+			 qdf_list_t *scan_list);
 #endif
+#endif // PORT_SPIRENT_HK

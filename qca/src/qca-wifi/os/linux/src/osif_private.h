@@ -76,7 +76,11 @@
 #define OSIF_MAX_CONNECTION_ATTEMPT      3
 #define OSIF_MAX_CONNECTION_STOP_TIMEOUT 20
 #define OSIF_MAX_CONNECTION_TIMEOUT      0xFFFFFFFF
+#ifdef PORT_SPIRENT_HK
+#define OSIF_MAX_DELETE_VAP_TIMEOUT      50
+#else
 #define OSIF_MAX_DELETE_VAP_TIMEOUT      30
+#endif
 #define OSIF_MAX_DELETE_VAP_INIT_TIMEOUT 150
 #define OSIF_MAX_STOP_VAP_TIMEOUT_CNT    300
 #define OSIF_MAX_START_VAP_TIMEOUT_CNT   300
@@ -343,7 +347,18 @@ typedef struct _osif_dev {
 #endif
 #define OSIF_VENDOR_FWD_MGMT_MASK_DEFAULT 0x2000 /* Only action frames, bit-13 */
     uint16_t wlan_vendor_fwd_mgmt_mask; /* Subtype mask */
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+struct __pkt_fwd_stat{
+    uint32_t sta_rx_packets;
+    uint32_t sta_tx_packets;
+    uint32_t eth_rx_packets;
+    uint32_t eth_tx_packets;
+}pkt_fwd_stat;
+#endif
 } osif_dev;
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+void register_stat_counter_cb(void);
+#endif
 
 enum osif_cmd_type {
     OSIF_CMD_PDEV_START,

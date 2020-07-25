@@ -305,7 +305,12 @@ struct wlan_objmgr_psoc_objmgr {
 	uint16_t temp_peer_count;
 	struct wlan_objmgr_pdev *wlan_pdev_list[WLAN_UMAC_MAX_PDEVS];
 	struct wlan_objmgr_vdev *wlan_vdev_list[WLAN_UMAC_PSOC_MAX_VDEVS];
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define ID_MAP_SIZE DIV_ROUND_UP(WLAN_UMAC_PSOC_MAX_VDEVS, BITS_PER_BYTE * sizeof(uint32_t))
+    uint32_t wlan_vdev_id_map[ID_MAP_SIZE];
+#else
 	uint32_t wlan_vdev_id_map[2];
+#endif
 	struct wlan_peer_list peer_list;
 	qdf_atomic_t ref_cnt;
 	qdf_atomic_t ref_id_dbg[WLAN_REF_ID_MAX];

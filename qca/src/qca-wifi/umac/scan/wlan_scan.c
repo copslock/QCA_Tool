@@ -20,6 +20,9 @@
 #include <wlan_utility.h>
 #include <wlan_reg_services_api.h>
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#include <../../cmn_dev/umac/scan/core/src/spirent_ng.h>
+#endif
 /**
  * convert_ieee_ssid_to_wlan_ssid() - Function to convert ieee_ssid struct to wlan_ssid struct
  *
@@ -261,6 +264,14 @@ wlan_ucfg_scan_start(wlan_if_t vap, struct scan_start_request *scan_params,
         qdf_mem_free(scan_params);
         return QDF_STATUS_E_NOMEM;
     }
+
+#ifdef PORT_SPIRENT_HK
+    if(!vap->iv_bss) {
+        qdf_mem_free(scan_params);
+        qdf_mem_free(optie);
+        return QDF_STATUS_E_INVAL;
+    }
+#endif
 
     if (vap->iv_bss) {
         /* Add HT cap ie */
@@ -580,6 +591,22 @@ void wlan_scan_cache_update_callback(struct wlan_objmgr_pdev *pdev,
         qdf_err("%s: ic is NULL", __func__);
         return;
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+    if (CHK_NG_ENABLE(pdev)) {
+        new_chan = ng_wlan_scan_cache_update_callback(pdev,scan_entry);
+    }
+
+    if (!new_chan) {
+        scan_entry->phy_mode = wlan_scan_get_intersected_phymode(ic, scan_entry);
+        new_chan = wlan_scan_get_intersected_channel(ic, scan_entry);
+
+        prev_chan = se_chan->priv;
+        if ((prev_chan == NULL) ||
+                (wlan_channel_flags(prev_chan) != wlan_channel_flags(new_chan))) {
+            se_chan->priv = new_chan;
+        }
+    }
+#else
     scan_entry->phy_mode = wlan_scan_get_intersected_phymode(ic, scan_entry);
     new_chan = wlan_scan_get_intersected_channel(ic, scan_entry);
 
@@ -593,6 +620,7 @@ void wlan_scan_cache_update_callback(struct wlan_objmgr_pdev *pdev,
             (wlan_channel_flags(prev_chan) != wlan_channel_flags(new_chan))) {
         se_chan->priv = new_chan;
     }
+#endif
 
     /*
      * Process the beacons to derive bss-color from HE-OP params and build

@@ -141,6 +141,12 @@ int ieee80211_aplist_set_desired_bssidlist(
     }
 
     /* Save number of elements on the list */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    /* clear des_nbssid to 0 if bssid is broadcast address */
+    if (IEEE80211_IS_BROADCAST(bssidlist[0]))
+        pconfig->des_nbssid = 0;
+    else
+#endif
     pconfig->des_nbssid = nbssid;
 
     return EOK; 
@@ -520,8 +526,11 @@ void wlan_aplist_register_match_security_func(wlan_if_t vaphandle, ieee80211_apl
 }
 
 /*************************************************************************************/
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define IEEE80211_CANDIDATE_AP_MAX_COUNT              100
+#else
 #define IEEE80211_CANDIDATE_AP_MAX_COUNT              32
+#endif
 /** Max number of PMKID we can handle */
 #define IEEE80211_PMKID_MAX_COUNT                      3
 /** Max number of enabled multicast cipher algorithms */
@@ -1544,7 +1553,11 @@ ieee80211_candidate_aplist_match_entry(
     enum ieee80211_phymode            phy_mode     = ieee80211_chan2mode(channel);
     bool                              support_11g  = false;
     bool                              support_11a  = false;
+#ifndef PORT_SPIRENT_HK
     u_int32_t                         rank, age;
+#else
+    u_int32_t                         rank;
+#endif
     int                               is_ht = 0;
     wlan_if_t                         tmpvap;
 
@@ -1561,6 +1574,7 @@ ieee80211_candidate_aplist_match_entry(
     /* reset this entry's rank */
     rank = 0;
 
+#ifndef PORT_SPIRENT_HK
     /*
      * Ignore stale entries. We do periodic scanning, so it
      * an AP is not reasonably fresh, we don't accept it
@@ -1571,6 +1585,7 @@ ieee80211_candidate_aplist_match_entry(
                           " - Reject (Old Entry)", age, maximum_age);
         return false;
     }
+#endif
 
     /* Skip the AP that is marked as a bad AP */
     if (wlan_util_scan_entry_mlme_status(scan_entry) & AP_STATE_BAD) {
@@ -1956,6 +1971,26 @@ void ieee80211_candidate_list_prioritize_bssid(
     ieee80211_process_selected_bss(ap_list[0]);
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+/* check bss is holded by user */
+static bool __is_bss_holded_by_user(struct ieee80211vap *vap, char *bssid)
+{
+    struct bss_list *bss;
+
+    IEEE80211_VAP_LOCK(vap);
+    /* traverse holded bssid list */
+    list_for_each_entry(bss, &vap->hold_bss_list, list) {
+        /* check bssid is holded */
+        if(ether_addr_equal(bss->bssid, bssid)) {
+            qdf_print("%s: Already bss %s is holded by user \n", __func__, ether_sprintf(bss->bssid));
+            IEEE80211_VAP_UNLOCK(vap);
+            return true;
+        }
+    }
+    IEEE80211_VAP_UNLOCK(vap);
+    return false;
+}
+#endif
 void ieee80211_candidate_list_free(
     ieee80211_candidate_aplist_t    aplist
     )
@@ -1966,10 +2001,22 @@ void ieee80211_candidate_list_free(
         /* store current mlme info back to scan module */
         wlan_util_scan_entry_update_mlme_info(aplist->vaphandle,
             aplist->candidate_ap_list[i]);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+        /* check holded bss count to avoid traversing list incase any bssid is bot in holding list */
+        if (aplist->vaphandle->hold_bss_count) {
+            /* check bssis locked by user */
+            if(__is_bss_holded_by_user(aplist->vaphandle, aplist->candidate_ap_list[i]->bssid.bytes))
+                continue;
+        }
+#endif
         /* free scan entry from ap list */
         util_scan_free_cache_entry(aplist->candidate_ap_list[i]);
         aplist->candidate_ap_list[i] = NULL;
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    /* Don't reset ap count to 0 if there is holded bssid. */
+    if (!aplist->vaphandle->hold_bss_count)
+#endif
     aplist->candidate_ap_count = 0;
 }
 

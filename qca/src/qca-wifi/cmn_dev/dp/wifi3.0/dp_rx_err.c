@@ -709,6 +709,94 @@ void dp_rx_wbm_err_handle_bar(struct dp_soc *soc,
 			       start_seq_num);
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+
+static void dp_rx_tid_update_pnerr(struct dp_soc *soc, void *cb_ctxt,
+	union hal_reo_status *reo_status)
+{
+	struct dp_rx_tid *rx_tid = (struct dp_rx_tid *)cb_ctxt;
+
+	if ((reo_status->rx_queue_status.header.status !=
+		HAL_REO_CMD_SUCCESS) &&
+		(reo_status->rx_queue_status.header.status !=
+		HAL_REO_CMD_DRAIN)) {
+		/* Should not happen normally. Just print error for now */
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO_HIGH,"%s: Rx tid HW desc update failed(%d): tid %d",
+			  __func__,
+			  reo_status->rx_queue_status.header.status,
+			  rx_tid->tid);
+	}
+}
+
+/**
+ * dp_pn_error_handle() - Function to handle PN Error
+ *                        on WBM ring
+ *
+ * @soc: core DP main context
+ * @nbuf: buffer pointer
+ * @rx_tlv_hdr: start of rx tlv header
+ * @peer_id: peer id of first msdu
+ * @tid: Tid for which exception occurred
+ *
+ * This function handles PN Check Failed case .This Function
+ * Re enable PN check in REO for security
+ * when PN check Failure issue happens
+ *
+ */
+
+void
+dp_pn_error_handle(struct dp_soc *soc,
+                  qdf_nbuf_t nbuf,
+                  uint8_t *rx_tlv_hdr,
+                  uint16_t peer_id,
+                  uint8_t tid)
+{
+	struct dp_peer *peer = NULL;
+	int i;
+	uint8_t pn_size;
+	struct hal_reo_cmd_params params;
+
+        peer = dp_peer_find_by_id(soc, peer_id);
+        if (!peer ) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO_HIGH,
+                                  "Peer not found\n");
+                return;
+        }
+
+	qdf_mem_zero(&params, sizeof(params));
+        /* This is derived from the API dp_set_pn_check_wifi3 */
+	params.std.need_status = 1;
+	params.u.upd_queue_params.update_pn_valid = 1;
+	params.u.upd_queue_params.update_pn_size = 1;
+	params.u.upd_queue_params.update_pn = 1;
+	params.u.upd_queue_params.update_pn_check_needed = 1;
+	params.u.upd_queue_params.update_svld = 1;
+	params.u.upd_queue_params.svld = 0;
+	peer->security[dp_sec_ucast].sec_type = cdp_sec_type_aes_ccmp;
+	pn_size = 48;
+        /* As PN number is updated  with zero in the association time, Here PN
+	 number is not updated */
+	for (i = 0; i < DP_MAX_TIDS; i++) {
+		struct dp_rx_tid *rx_tid = &peer->rx_tid[i];
+		qdf_spin_lock_bh(&rx_tid->tid_lock);
+		if (rx_tid->hw_qdesc_vaddr_unaligned) {
+			params.std.addr_lo =
+				rx_tid->hw_qdesc_paddr & 0xffffffff;
+			params.std.addr_hi =
+				(uint64_t)(rx_tid->hw_qdesc_paddr) >> 32;
+
+		   rx_tid->pn_size = pn_size;
+	           dp_reo_send_cmd(soc, CMD_UPDATE_RX_REO_QUEUE, &params,
+				dp_rx_tid_update_pnerr, rx_tid);
+		} else {
+			QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO_HIGH,
+                                  "PN Check not setup for TID :%d ", i);
+		}
+		qdf_spin_unlock_bh(&rx_tid->tid_lock);
+	}
+}
+
+#endif // defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
 /**
  * dp_2k_jump_handle() - Function to handle 2k jump exception
  *                        on WBM ring
@@ -1950,6 +2038,21 @@ done:
 									 nbuf);
 					break;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+                case HAL_REO_ERR_PN_CHECK_FAILED:
+					pool_id = wbm_err_info.pool_id;
+				    peer_id = hal_rx_mpdu_start_sw_peer_id_get(hal_soc, rx_tlv_hdr);
+					tid = hal_rx_mpdu_start_tid_get(hal_soc, rx_tlv_hdr);
+					dp_pn_error_handle(soc, nbuf, rx_tlv_hdr, peer_id, tid);
+				    break;
+#endif
+
+#if SPIRENT_AP_EMULATION
+				case HAL_REO_ERR_REGULAR_FRAME_OOR:
+					dp_debug_rl("Got pkt with REO ERROR: %d",
+						  wbm_err_info.reo_err_code);
+					break;
+#endif
 				default:
 					dp_info_rl("Got pkt with REO ERROR: %d",
 						   wbm_err_info.reo_err_code);

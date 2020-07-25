@@ -537,6 +537,9 @@ struct cdp_cmn_ops {
 	uint16_t (*get_peer_mac_list)
 		 (ol_txrx_soc_handle soc, uint8_t vdev_id,
 		  u_int8_t newmac[][QDF_MAC_ADDR_SIZE], uint16_t mac_cnt);
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+    void        (*get_pdev_cca_stats)(struct cdp_soc_t *soc, uint8_t pdev_id, void *cca_stats);
+#endif // PORT_SPIRENT_HK
 };
 
 struct cdp_ctrl_ops {
@@ -740,6 +743,11 @@ struct cdp_ctrl_ops {
 						int8_t vdev_id);
 
 #endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	int (*txrx_get_vdev_adv_stats)(struct cdp_soc_t *soc, uint8_t vdev_id, struct dp_peer_rate_stats_tlv *adv_stats);
+	int (*txrx_get_vdev_basic_stats)(struct cdp_soc_t *soc, uint8_t vdev_id, struct  dp_vdev_rev_stats *txrx_rev_stats);
+	int (*txrx_get_vdev_rx_ru_values)(void *soc, int pdev_id, void *ru_rx_status);
+#endif
 };
 
 struct cdp_me_ops {
@@ -770,6 +778,12 @@ struct cdp_mon_ops {
 	/* Configure full monitor mode */
 	QDF_STATUS
 		(*config_full_mon_mode)(struct cdp_soc_t *soc, uint8_t val);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+	int (*txrx_monitor_capture_tx_mgmt)
+		(struct cdp_soc_t *cdp_soc, uint8_t pdev_id, qdf_nbuf_t nbuf);
+	int (*txrx_monitor_capture_eapol_frame)
+	        (struct cdp_soc_t *cdp_soc, uint8_t pdev_id, qdf_nbuf_t nbuf);
+#endif		
 };
 
 struct cdp_host_stats_ops {
@@ -897,6 +911,17 @@ struct cdp_host_stats_ops {
 				  uint8_t *peer_mac, void *stats,
 				  uint32_t last_tx_rate_mcs,
 				  uint32_t stats_id);
+#ifdef PORT_SPIRENT_HK
+
+        void
+               (*set_capture_mode) (struct cdp_soc_t *soc, uint8_t pdev_id, uint32_t val);
+        void
+               (*set_bss_state) (struct cdp_soc_t *soc, uint8_t pdev_id, uint32_t val);
+        void
+               (*bss_collision_counter) (struct cdp_soc_t *soc, uint8_t pdev_id);
+        void
+               (*bss_collision_color) (struct cdp_soc_t *soc, uint8_t pdev_id);
+#endif
 };
 
 struct cdp_wds_ops {

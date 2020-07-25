@@ -2117,6 +2117,10 @@ ol_if_getrateindex(uint16_t mcs, uint8_t nss, uint8_t preamble, uint8_t bw)
 
     mod = ol_getmodulation(preamble, bw);
     rc = mcs;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    /* decrement nss by 1 since phyrate calculation based on nss count 0 to 7 */
+    nss -= 1;
+#endif
     /* get the base of corresponding rate table  entry */
     res = _rc_idx[mod];
 
@@ -2156,4 +2160,69 @@ ol_if_getrateindex(uint16_t mcs, uint8_t nss, uint8_t preamble, uint8_t bw)
     return ratekbps;
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/*
+ * return rate table index given mcs/nss/preamble/bw/sgi parameters.
+ */
+uint32_t
+ol_if_getrateindex_with_sgi(uint16_t mcs, uint8_t nss, uint8_t preamble, uint8_t bw, uint8_t sgi)
+{
+    uint32_t ratekbps = 0, res = RT_INVALID_INDEX; /* represents failure */
+    uint16_t rc;
+    OL_WLAN_MODULATION_TYPE mod;
+
+    mod = ol_getmodulation(preamble, bw);
+    rc = mcs;
+    /* get the base of corresponding rate table  entry */
+    res = _rc_idx[mod];
+    switch (preamble) {
+#ifdef SUPPORT_11AX
+    case WIFI_HW_RATECODE_PREAM_HE:
+        res += rc + ((nss - 1) * NUM_HE_MCS);
+	if (sgi == 2) {
+		ratekbps = whal_11abgnRateTable.info[res].rateKbpsDGI;
+	} else if (sgi == 3) {
+		ratekbps = whal_11abgnRateTable.info[res].rateKbpsQGI;
+	} else {
+		ratekbps = whal_11abgnRateTable.info[res].userRateKbps;
+	}
+        break;
+#endif
+
+    case WIFI_HW_RATECODE_PREAM_VHT:
+        res += rc + ((nss - 1) * NUM_VHT_MCS);
+	if (sgi == 0) {
+            ratekbps = whal_11abgnRateTable.info[res].userRateKbps;
+	}else{
+            ratekbps = whal_11abgnRateTable.info[res].rateKbpsSGI;
+	}
+        break;
+
+    case WIFI_HW_RATECODE_PREAM_HT:
+        res += rc + ((nss - 1) * NUM_HT_MCS);
+	if (sgi == 0) {
+            ratekbps = whal_11abgnRateTable.info[res].userRateKbps;
+	} else {
+            ratekbps = whal_11abgnRateTable.info[res].rateKbpsSGI;
+	}
+        break;
+
+    case WIFI_HW_RATECODE_PREAM_CCK:
+        rc  &= ~HW_RATECODE_CCK_SHORT_PREAM_MASK;
+        res += rc;
+        ratekbps = whal_11abgnRateTable.info[res].userRateKbps;
+        break;
+
+    case WIFI_HW_RATECODE_PREAM_OFDM:
+        res += rc;
+        ratekbps = whal_11abgnRateTable.info[res].userRateKbps;
+        break;
+
+    default:
+        break;
+    }
+
+    return ratekbps;
+}
+#endif
 #endif // ATH_PERF_PWR_OFFLOAD

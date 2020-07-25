@@ -487,8 +487,18 @@ ieee80211_get_rxstreams(struct ieee80211com *ic, struct ieee80211vap *vap)
 u_int8_t
 ieee80211_get_txstreams(struct ieee80211com *ic, struct ieee80211vap *vap)
 {
+#ifdef PORT_SPIRENT_HK
+    struct vdev_mlme_obj *vdev_mlme;
+    u_int8_t tx_streams = 0;
+
+    if(!vap->vdev_mlme)
+        return 0;
+
+    vdev_mlme = vap->vdev_mlme;
+#else
     struct vdev_mlme_obj *vdev_mlme = vap->vdev_mlme;
     u_int8_t tx_streams = 0;
+#endif
 
     if(ic->ic_is_mode_offload(ic) && vdev_mlme->proto.generic.nss != 0){
         tx_streams = MIN(vdev_mlme->proto.generic.nss,
@@ -1208,12 +1218,33 @@ ieee80211_set_basic_htrates(u_int8_t *frm, const struct ieee80211_rateset *rs)
 static void
 ieee80211_add_htcap_cmn(struct ieee80211_node *ni, struct ieee80211_ie_htcap_cmn *ie, u_int8_t subtype)
 {
+#ifdef PORT_SPIRENT_HK
+    struct ieee80211com       *ic;
+    struct ieee80211vap       *vap;
+    u_int16_t                 htcap, hc_extcap = 0;
+    u_int8_t                  noht40 = 0;
+    u_int8_t rx_streams;
+    u_int8_t tx_streams;
+
+    if(!ni->ni_ic)
+        return;
+
+    if(!ni->ni_vap)
+        return;
+
+    ic = ni->ni_ic;
+    vap = ni->ni_vap;
+
+    rx_streams = ieee80211_get_rxstreams(ic, vap);
+    tx_streams = ieee80211_get_txstreams(ic, vap);
+#else
     struct ieee80211com       *ic = ni->ni_ic;
     struct ieee80211vap       *vap = ni->ni_vap;
     u_int16_t                 htcap, hc_extcap = 0;
     u_int8_t                  noht40 = 0;
     u_int8_t rx_streams = ieee80211_get_rxstreams(ic, vap);
     u_int8_t tx_streams = ieee80211_get_txstreams(ic, vap);
+#endif
 
     if (rx_streams > IEEE80211_MAX_11N_STREAMS)
     {
@@ -1422,6 +1453,10 @@ ieee80211_add_htcap(u_int8_t *frm, struct ieee80211_node *ni, u_int8_t subtype)
     ie = &htcap->hc_ie;
     htcaplen = sizeof(struct ieee80211_ie_htcap);
 
+#ifdef PORT_SPIRENT_HK
+    if(!ni)
+        return 0;
+#endif
     ieee80211_add_htcap_cmn(ni, ie, subtype);
 
     return frm + htcaplen;
@@ -5275,11 +5310,16 @@ ieee80211_set_vht_rates(struct ieee80211com *ic, struct ieee80211vap  *vap)
         /* eight stream */
             vap->iv_vhtcap_max_mcs.tx_mcs_set.mcs_map =
                 VHT_MCSMAP_NSS8_MCS0_9; /* MCS 0-9 */
-
+#ifdef PORT_SPIRENT_HK
+            //For VHTMCS setting for 2-radio all SMA1-8 0-7MCS setting, this value is 0, and getting restricted from driver, so removing this check
+            vap->iv_vhtcap_max_mcs.tx_mcs_set.mcs_map =
+                (vap->iv_vht_tx_mcsmap | VHT_MCSMAP_NSS8_MASK);
+#else
             if (vap->iv_vht_tx_mcsmap) {
                 vap->iv_vhtcap_max_mcs.tx_mcs_set.mcs_map =
                     (vap->iv_vht_tx_mcsmap | VHT_MCSMAP_NSS8_MASK);
             }
+#endif
         break;
 #endif /* QCA_SUPPORT_5SS_TO_8SS */
     } /* end switch */
@@ -5383,18 +5423,29 @@ ieee80211_set_vht_rates(struct ieee80211com *ic, struct ieee80211vap  *vap)
             vap->iv_vhtcap_max_mcs.rx_mcs_set.mcs_map =
                 VHT_MCSMAP_NSS8_MCS0_9; /* MCS 0-9 */
 
+#ifdef PORT_SPIRENT_HK
+            vap->iv_vhtcap_max_mcs.rx_mcs_set.mcs_map =
+                (vap->iv_vht_rx_mcsmap | VHT_MCSMAP_NSS8_MASK);
+#else
             if (vap->iv_vht_rx_mcsmap) {
                 vap->iv_vhtcap_max_mcs.rx_mcs_set.mcs_map =
                     (vap->iv_vht_rx_mcsmap | VHT_MCSMAP_NSS8_MASK);
             }
+#endif
         break;
 #endif /* QCA_SUPPORT_5SS_TO_8SS */
     }
+#ifdef PORT_SPIRENT_HK
+    /* rx and tx vht mcs will be same for iv_configured_vht_mcsmap option */
+    /* Assign either rx or tx mcs map back to this variable so that iwpriv get operation prints exact value */
+    vap->iv_configured_vht_mcsmap = vap->iv_vhtcap_max_mcs.rx_mcs_set.mcs_map;
+#else
     if(vap->iv_configured_vht_mcsmap) {
         /* rx and tx vht mcs will be same for iv_configured_vht_mcsmap option */
         /* Assign either rx or tx mcs map back to this variable so that iwpriv get operation prints exact value */
         vap->iv_configured_vht_mcsmap = vap->iv_vhtcap_max_mcs.rx_mcs_set.mcs_map;
     }
+#endif
     vap->iv_set_vht_mcsmap = true;
 }
 
@@ -5498,17 +5549,31 @@ ieee80211_add_vhtcap(u_int8_t *frm, struct ieee80211_node *ni,
 {
     int vhtcaplen = sizeof(struct ieee80211_ie_vhtcap);
     struct ieee80211_ie_vhtcap *vhtcap = (struct ieee80211_ie_vhtcap *)frm;
+#ifdef PORT_SPIRENT_HK
+    struct ieee80211vap  *vap;
+    struct vdev_mlme_obj *vdev_mlme;
+#else
     struct ieee80211vap  *vap = ni->ni_vap;
     struct vdev_mlme_obj *vdev_mlme = vap->vdev_mlme;
+#endif
     u_int32_t vhtcap_info;
     u_int32_t ni_vhtbfeestscap;
+#ifdef PORT_SPIRENT_HK
+    u_int8_t rx_streams;
+    u_int8_t tx_streams;
+#else
     u_int8_t rx_streams = ieee80211_get_rxstreams(ic, vap);
     u_int8_t tx_streams = ieee80211_get_txstreams(ic, vap);
+#endif
     ieee80211_vht_rate_t ni_tx_vht_rates;
     struct supp_tx_mcs_extnss tx_mcs_extnss_cap;
     u_int16_t temp;
     struct ieee80211_bwnss_map nssmap;
+#ifdef PORT_SPIRENT_HK
+    u_int8_t rx_chainmask;
+#else
     u_int8_t rx_chainmask = ieee80211com_get_rx_chainmask(ic);
+#endif
     enum ieee80211_phymode cur_mode;
     struct wlan_objmgr_pdev *pdev = NULL;
     struct wlan_objmgr_psoc *psoc = NULL;
@@ -5521,6 +5586,24 @@ ieee80211_add_vhtcap(u_int8_t *frm, struct ieee80211_node *ni,
     } else {
         qdf_err("null pdev");
     }
+#ifdef PORT_SPIRENT_HK
+    if(!ni->ni_vap)
+       return NULL;
+
+    vap = ni->ni_vap;
+
+    if(!vap->vdev_mlme)
+       return NULL;
+
+    vdev_mlme = vap->vdev_mlme;
+
+    if(!ic)
+        return NULL;
+
+    rx_streams = ieee80211_get_rxstreams(ic, vap);
+    tx_streams = ieee80211_get_txstreams(ic, vap);
+    rx_chainmask = ieee80211com_get_rx_chainmask(ic);
+#endif
 
     qdf_mem_zero(&nssmap, sizeof(nssmap));
 
@@ -5544,6 +5627,41 @@ ieee80211_add_vhtcap(u_int8_t *frm, struct ieee80211_node *ni,
     if (!vap->iv_sgi) {
         vhtcap_info &= ~(IEEE80211_VHTCAP_SHORTGI_80 | IEEE80211_VHTCAP_SHORTGI_160);
     }
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/*
+In HE mode(160/80_80/80) of operation the respective VHT SGI capabilities supported by HW are not getting
+reflected in  assoc request. If HW supports them (FW enables the capability), enable the same in VHT capability.
+*/
+    switch (cur_mode) {
+        case IEEE80211_MODE_11AXA_HE80_80:
+        case IEEE80211_MODE_11AXA_HE160:
+            if ((subtype == IEEE80211_FC0_SUBTYPE_ASSOC_REQ) && (ic->ic_vhtcap & IEEE80211_VHTCAP_SHORTGI_160)) {
+                vhtcap_info |= (IEEE80211_VHTCAP_SHORTGI_160 | IEEE80211_VHTCAP_SHORTGI_80);
+            }
+            break;
+        case IEEE80211_MODE_11AXA_HE80:
+            if ((subtype == IEEE80211_FC0_SUBTYPE_ASSOC_REQ) && (ic->ic_vhtcap & IEEE80211_VHTCAP_SHORTGI_80)) {
+                vhtcap_info |= IEEE80211_VHTCAP_SHORTGI_80;
+            }
+            break;
+        case IEEE80211_MODE_11AC_VHT80:
+            if (subtype == IEEE80211_FC0_SUBTYPE_ASSOC_REQ) {
+                vhtcap_info &= ~(IEEE80211_VHTCAP_SHORTGI_160);
+            }
+            break;
+        case IEEE80211_MODE_11AC_VHT40:
+        case IEEE80211_MODE_11AC_VHT40MINUS:
+        case IEEE80211_MODE_11AC_VHT40PLUS:
+        case IEEE80211_MODE_11AC_VHT20:
+            if (subtype == IEEE80211_FC0_SUBTYPE_ASSOC_REQ) {
+                vhtcap_info &= ~(IEEE80211_VHTCAP_SHORTGI_80 | IEEE80211_VHTCAP_SHORTGI_160);
+            }
+            break;
+        default:
+            break;
+    }
+#endif
 
     vhtcap_info &= ((vdev_mlme->proto.generic.ldpc & IEEE80211_HTCAP_C_LDPC_RX) ?
             ic->ic_vhtcap  : ~IEEE80211_VHTCAP_RX_LDPC);

@@ -170,12 +170,22 @@
 #define BMI_NVRAM_SEG_NAME_SZ 16
 #define BMI_SIGN_STREAM_START		    17
 
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_BSP)
+#define WIFI_5G                            0
+#define WIFI_2G                            1
+#define WIFI_5G_SLAVE                      2
+#define LED_GREEN                          0
+#define LED_RED                            1
+#endif
 #define UNSIGNED_MAX_24BIT                 0xFFFFFF
 
 #ifdef AH_CAL_IN_FLASH_PCI
 extern int pci_dev_cnt;
 #endif
 
+#if (defined(PORT_SPIRENT_HK) || (SPIRENT_AP_EMULATION)) && defined(SPT_BSP)
+extern int32_t pcie_fpga_wifi_led_set(uint32_t radio, uint32_t value);
+#endif
 int dfs_disable = 0;
 module_param(dfs_disable, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 qdf_export_symbol(dfs_disable);
@@ -3969,6 +3979,9 @@ __ol_ath_attach(void *hif_hdl, struct ol_attach_t *ol_cfg, osdev_t osdev, qdf_de
     soc->recovery_enable = RECOVERY_DISABLE;
     soc->pci_reconnect = pci_reconnect_cb;
 
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+    register_stat_counter_cb();
+#endif
 
     qdf_info("Allocated soc %pK", soc);
 #ifdef EPPING_TEST
@@ -4454,6 +4467,14 @@ __ol_ath_attach(void *hif_hdl, struct ol_attach_t *ol_cfg, osdev_t osdev, qdf_de
 
         error = ol_ath_pdev_attach(scn, &ol_wlan_reg_params,
                                                   lmac_get_pdev_idx(scn->sc_pdev));
+#if (defined(PORT_SPIRENT_HK) || (SPIRENT_AP_EMULATION)) && defined(SPT_BSP)
+        /* Enable Green LED for wifi radios (5G & 2G) */
+        if(( scn->radio_id  == WIFI_5G ) || (scn->radio_id  == WIFI_2G ) || (scn->radio_id == WIFI_5G_SLAVE)) {
+            pcie_fpga_wifi_led_set(scn->radio_id % WIFI_5G_SLAVE, LED_GREEN);
+        } else {
+            printk("\n %s ERROR: Invalid radio scn->radio_id:%d\n", __func__, scn->radio_id);
+        }
+#endif
         if (error) {
             qdf_info("%s: ol_ath_pdev_attach() failed. error %d\n", __func__, error);
             qdf_spinlock_destroy(&scn->scn_lock);

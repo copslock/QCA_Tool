@@ -97,3 +97,7 @@ extern unsigned int g_csa_max_rx_wait_time;
 u_int32_t ieee80211_ucfg_get_quality(wlan_if_t vap, void *iq);
 int ieee80211_ucfg_send_probereq(wlan_if_t vap, int val);
 #endif //IEEE80211_UCFG_H_
+#if defined(PORT_SPIRENT_HK) && defined(SPT_BSS_COLOR)
+#define ENABLE_BSS_STATE 1
+#define DISABLE_BSS_STATE 0
+#endif

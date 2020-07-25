@@ -289,6 +289,7 @@ wlan_set_param(wlan_if_t vaphandle, ieee80211_param param, u_int32_t val)
     ol_txrx_soc_handle soc = NULL;
     uint8_t vdev_id = wlan_vdev_get_id(vap->vdev_obj);
 
+#ifndef PORT_SPIRENT_HK
     if ((vap->iv_opmode == IEEE80211_M_MONITOR)
         && (param != IEEE80211_RX_FILTER_NEIGHBOUR_PEERS_MONITOR)
         && (param != IEEE80211_SECOND_CENTER_FREQ)
@@ -299,6 +300,7 @@ wlan_set_param(wlan_if_t vaphandle, ieee80211_param param, u_int32_t val)
         && (param != IEEE80211_STATS_UPDATE_PERIOD)
         )
             return -EINVAL;
+#endif
 
     switch (param) {
 	case IEEE80211_SET_TXPWRADJUST:
@@ -1473,13 +1475,15 @@ wlan_set_param(wlan_if_t vaphandle, ieee80211_param param, u_int32_t val)
 
          if (val > vap->iv_he_max_mcs_supp) {
             /* Treat this as disabling fixed rate */
+#ifndef PORT_SPIRENT_HK
             qdf_err("HE MCS value cannot be greater than %d\n",
                     vap->iv_he_max_mcs_supp);
             return EOK;
-         }
-
+#endif
+         } else {
          vap->iv_fixed_rate.mode = IEEE80211_FIXED_RATE_HE;
          vap->iv_he_fixed_mcs = val;
+         }
     break;
 
     case IEEE80211_CONFIG_HE_MULTI_TID_AGGR:

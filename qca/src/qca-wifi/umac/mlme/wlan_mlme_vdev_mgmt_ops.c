@@ -71,6 +71,12 @@
 #define DEFAULT_WLAN_VDEV_AP_KEEPALIVE_MAX_IDLE_TIME_SECS          (DEFAULT_WLAN_VDEV_AP_KEEPALIVE_MAX_UNRESPONSIVE_TIME_SECS - 5)
 #define DEFAULT_WLAN_VDEV_AP_KEEPALIVE_MIN_IDLE_TIME_SECS          (DEFAULT_WLAN_VDEV_AP_KEEPALIVE_MAX_IDLE_TIME_SECS/2)
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+int proxy_flag0;
+int proxy_flag1;
+int proxy_flag2;
+#endif
+
 uint8_t wlanphymode2ieeephymode[WLAN_PHYMODE_11AXA_HE80_80 + 1] = {
 	IEEE80211_MODE_AUTO,                /* WLAN_PHYMODE_AUTO,          */
 	IEEE80211_MODE_11A,                 /* WLAN_PHYMODE_11A,           */
@@ -224,6 +230,9 @@ static QDF_STATUS mlme_ext_vap_setup(struct vdev_mlme_obj *vdev_mlme,
     struct wlan_objmgr_vdev *vdev;
     struct ieee80211com *ic;
     struct ieee80211vap *vap;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    uint32_t pdev_id;
+#endif
 #if ATH_SUPPORT_WRAP
     u_int8_t bssid_var[QDF_MAC_ADDR_SIZE];
     u_int8_t mataddr_var[QDF_MAC_ADDR_SIZE];
@@ -291,16 +300,34 @@ static QDF_STATUS mlme_ext_vap_setup(struct vdev_mlme_obj *vdev_mlme,
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
     vap->iv_nss_qwrap_en = 1;
 #endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    pdev_id = vdev->vdev_objmgr.wlan_pdev->pdev_objmgr.wlan_pdev_id;
+#endif
     if ((opmode == QDF_SAP_MODE) && (flags & IEEE80211_WRAP_VAP)) {
         vap->iv_wrap = 1;
         ic->ic_nwrapvaps++;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    } else if ((opmode == QDF_STA_MODE) && (((proxy_flag0 == 0) && (pdev_id == 0)) || ((proxy_flag1 == 0) && (pdev_id == 1)) || ((proxy_flag2 == 0) && (pdev_id == 2)))) { 
+#else
     } else if ((opmode == QDF_STA_MODE) && (flags & IEEE80211_CLONE_MACADDR)) {
+#endif
         if (!(flags & IEEE80211_WRAP_NON_MAIN_STA))
         {
             /*
              * Main ProxySTA VAP for uplink WPS PBC and
              * downlink multicast receive.
              */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        if (pdev_id == 0) {
+           proxy_flag0 = 1;
+        }
+        if (pdev_id == 1) {
+            proxy_flag1 = 1;
+        }
+        if (pdev_id == 2) {
+            proxy_flag2 = 1;
+        } 
+#endif
             vap->iv_mpsta = 1;
         } else {
             /*
@@ -321,6 +348,24 @@ static QDF_STATUS mlme_ext_vap_setup(struct vdev_mlme_obj *vdev_mlme,
         vap->iv_psta = 1;
         ic->ic_npstavaps++;
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+     /*
+     * Configure first VDEV as normal STA and subsequent VDEVs as
+     * proxy STAs
+     */
+    /* CIPRVH-359 - Avoid ic_npstavaps incrementing for monitor interface else it triggers fake association
+                    in case of single client mu-mimo or ofmda configuration */
+    if (ic->ic_nstavaps > 0 && opmode == QDF_STA_MODE) {
+#define ATH_NSCAN_PSTA_VAPS 0
+        if (ic->ic_nscanpsta >= ATH_NSCAN_PSTA_VAPS)
+            vap->iv_no_event_handler = 1;
+        else
+            ic->ic_nscanpsta++;
+
+        vap->iv_psta = 1;
+        ic->ic_npstavaps++;
+    }
+#endif
 
     if (flags & IEEE80211_CLONE_MATADDR) {
         vap->iv_mat = 1;
@@ -384,6 +429,7 @@ static struct ieee80211vap
     struct ieee80211vap *vap = NULL;
     struct wlan_objmgr_vdev *vdev = vdev_mlme->vdev;
 
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_MULTI_CLIENTS) /* For creating more than one station */
 #if ATH_SUPPORT_WRAP
     if ((opmode == IEEE80211_M_STA) && (ic->ic_nstavaps > 0)) {
        if (!(flags & IEEE80211_WRAP_WIRED_STA) &&
@@ -391,6 +437,7 @@ static struct ieee80211vap
            return NULL;
        }
     }
+#endif
 #endif
 
     /* OL initialization
@@ -768,6 +815,9 @@ mlme_ext_vap_create_init_end:
 static QDF_STATUS mlme_ext_vap_post_delete_setup(struct ieee80211vap *vap)
 {
     struct ieee80211com *ic = vap->iv_ic;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    uint32_t pdev_id;
+#endif
 #if QCA_SUPPORT_GPR
 #if UMAC_SUPPORT_ACFG
     acfg_netlink_pvt_t *acfg_nl;
@@ -825,7 +875,18 @@ static QDF_STATUS mlme_ext_vap_post_delete_setup(struct ieee80211vap *vap)
          */
         if (vap->iv_mpsta || (!vap->iv_mpsta && !vap->iv_psta))
 #endif
+        {
             dp_lag_pdev_set_sta_vdev(vap->iv_ic->ic_pdev_obj, NULL);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+            pdev_id = vap->iv_ic->ic_pdev_obj->pdev_objmgr.wlan_pdev_id;
+            if (pdev_id == 0)
+                proxy_flag0 = 0;
+            if (pdev_id == 1)
+                proxy_flag1 = 0;
+            if (pdev_id == 2)
+                proxy_flag2 = 0;
+#endif
+        }
     }
 
     if (ieee80211vap_get_opmode(vap) == IEEE80211_M_HOSTAP)
@@ -963,6 +1024,16 @@ QDF_STATUS mlme_ext_vap_down(struct wlan_objmgr_vdev *vdev)
         wlan_remove_vap_from_6ghz_rnr_cache(vap);
         wlan_tmpl_update_lower_band_vdevs(wlan_pdev_get_psoc(ic->ic_pdev_obj));
     }
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MAIN_PROXY_REMOVAL)
+    if (vap->iv_mpsta && ic->ic_opmode == IEEE80211_M_STA) {
+        struct wlan_objmgr_pdev *pdev;
+        pdev = wlan_vdev_get_pdev(vdev);
+        if (pdev != NULL) {
+            memset(pdev->pdev_objmgr.group_keyvalue,0,WLAN_CRYPTO_KEYBUF_SIZE + WLAN_CRYPTO_MICBUF_SIZE);
+        }
+    }
+#endif
 
     /* bring down vdev in target */
     status = vdev_mgr_down_send(vdev_mlme);
@@ -1331,6 +1402,8 @@ QDF_STATUS mlme_ext_vap_up(struct ieee80211vap *vap, bool restart)
     } else if (opmode != IEEE80211_M_STA) {
         vdev_mlme->mgmt.mbss_11ax.profile_num = 0;
     }
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_MULTI_CLIENTS)
+    /* For Revanche, there will not be mpsta interface */
 
     /* Add a check to see if mpsta is up before bringing up psta interface.
      * This check is made to prevent a corner case during wifi down when mpsta
@@ -1343,6 +1416,7 @@ QDF_STATUS mlme_ext_vap_up(struct ieee80211vap *vap, bool restart)
             goto mlme_ext_vap_up_fail;
         }
     }
+#endif
 #endif
 
     if (opmode != IEEE80211_M_MONITOR)

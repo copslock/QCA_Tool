@@ -27,6 +27,9 @@
 #include <../../core/src/wlan_scan_main.h>
 #include <wlan_reg_services_api.h>
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#include <../../core/src/spirent_ng.h>
+#endif
 #define MAX_IE_LEN 1024
 #define SHORT_SSID_LEN 4
 #define NEIGHBOR_AP_LEN 1
@@ -1394,7 +1397,11 @@ static void util_scan_set_security(struct scan_cache_entry *scan_params)
 		scan_params->security_type |= SCAN_SECURITY_TYPE_WEP;
 }
 
+#if defined(PORT_SPIRENT_HK) && (SPT_NG)
+QDF_STATUS
+#else
 static QDF_STATUS
+#endif
 util_scan_gen_scan_entry(struct wlan_objmgr_pdev *pdev,
 			 uint8_t *frame, qdf_size_t frame_len,
 			 uint32_t frm_subtype,
@@ -1891,6 +1898,12 @@ util_scan_parse_beacon_frame(struct wlan_objmgr_pdev *pdev,
 
 	if (QDF_IS_STATUS_ERROR(status))
 		scm_debug_rl("Failed to create a scan entry");
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+	else if (CHK_NG_SCAN_ENTRY_IS_NULL(pdev) && CHK_NG_ENABLE(pdev)) {
+		qdf_print("NG_PRINT: Process NG beacon frame");
+		util_scan_parse_ng_beacon_frame(pdev, scan_list);
+	}
+#endif
 
 	return status;
 }

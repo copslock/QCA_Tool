@@ -35,17 +35,25 @@
 #endif
 
 /* Max no. of VDEV per PSOC */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define WLAN_UMAC_PSOC_MAX_VDEVS 246
+#else
 #ifdef WLAN_PSOC_MAX_VDEVS
 #define WLAN_UMAC_PSOC_MAX_VDEVS WLAN_PSOC_MAX_VDEVS
 #else
 #define WLAN_UMAC_PSOC_MAX_VDEVS 51
 #endif
+#endif // PORT_SPIRENT_HK
 
 /* Max no. of VDEVs, a PDEV can support */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define WLAN_UMAC_PDEV_MAX_VDEVS SPIRENT_MAX_VDEVS_PER_RADIO
+#else
 #ifdef WLAN_PDEV_MAX_VDEVS
 #define WLAN_UMAC_PDEV_MAX_VDEVS WLAN_PDEV_MAX_VDEVS
 #else
 #define WLAN_UMAC_PDEV_MAX_VDEVS 17
+#endif // PORT_SPIRENT_HK
 #endif
 
 /* Max no. of Peers, a device can support */
@@ -67,7 +75,12 @@
 #define WLAN_MAX_SEQ_NUM 4096
 
 /* Max no. of peers for STA vap */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/* Increased sta peer count to avoid deauth crash */
+#define WLAN_UMAC_MAX_STA_PEERS 3
+#else
 #define WLAN_UMAC_MAX_STA_PEERS 2
+#endif // PORT_SPIRENT_HK
 
 /* Max vdev_id */
 #define WLAN_UMAC_VDEV_ID_MAX 0xFF

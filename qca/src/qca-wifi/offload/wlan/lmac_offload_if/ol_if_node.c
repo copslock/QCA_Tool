@@ -37,6 +37,12 @@
 #include <cdp_txrx_cmn_struct.h>
 #include <ol_if_stats.h>
 #include <ol_if_stats_api.h>
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#include "ol_if_athpriv.h"
+#include "osif_private.h"
+#include "wlan_osif_priv.h"
+#include <linux/time.h>
+#endif
 #if MESH_MODE_SUPPORT
 #include <if_meta_hdr.h>
 #endif
@@ -508,6 +514,14 @@ static u_int32_t max_rates[IEEE80211_MODE_11AXA_HE80_80+
 
 };
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/**
+ * enum "WMI_PEER_STA_KICKOUT_REASON_THROTTLE_START", in file- wmi_unified.h
+ * can not able to include the header file. so added the macro for it.
+ * During Revanche porting, need to be reconsider.
+ */
+#define KICKOUT_REASON_THROTTLE_START  6
+#endif
 /* WMI interface functions */
 int
 ol_ath_node_set_param(struct ol_ath_softc_net80211 *scn, u_int8_t *peer_addr,u_int32_t param_id,
@@ -1361,9 +1375,11 @@ ol_ath_node_get_maxphyrate(struct ieee80211com *ic, struct ieee80211_node *ni)
                 break;
         }
 
+#ifndef PORT_SPIRENT_HK
         IEEE80211_DPRINTF(vap, IEEE80211_MSG_ASSOC,
                           "%s:%d Phymode = %d NSS = %d SGI =%d ",
                           __func__, __LINE__, curr_phy_mode, nss, sgi);
+#endif
 
         if((curr_phy_mode < IEEE80211_MODE_11AXA_HE20) ||
             (rate_mode != IEEE80211_FIXED_RATE_HE)) {
@@ -1707,9 +1723,11 @@ ol_ath_node_get_maxphyrate(struct ieee80211com *ic, struct ieee80211_node *ni)
         ratekbps = (((ni->ni_rates.rs_rates[ni->ni_rates.rs_nrates -1] & IEEE80211_RATE_VAL) * 1000) / 2);
     }
 
+#ifndef PORT_SPIRENT_HK
     IEEE80211_DPRINTF(vap, IEEE80211_MSG_ASSOC,
                       "%s:%d Phymode = %d NSS = %d SGI =%d  ratekbps=%d ",
                       __func__, __LINE__, curr_phy_mode, nss, sgi,  ratekbps );
+#endif
 
     return ratekbps;
 }
@@ -3060,6 +3078,19 @@ ol_peer_sta_kickout_event_handler(ol_scn_t sc, u_int8_t *data, u_int32_t datalen
     struct ieee80211vap *vap;
     struct ol_ath_vap_net80211 *avn;
     struct wmi_unified *wmi_handle;
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MULTI_CLIENTS
+    u_int32_t vap_state = 0;
+    u_int8_t pdev_id;
+    struct wlan_objmgr_vdev *vdev_kickout;
+    struct vdev_osif_priv *vdev_osifp_kickout = NULL;
+    osif_dev  *osifp_kickout;
+    struct net_device *netdev_kickout;
+#endif // SPT_MULTI_CLIENTS
+#ifdef SPT_NG
+    struct wlan_objmgr_pdev *pdev;
+#endif // SPT_NG
+#endif
 
     wmi_handle = lmac_get_wmi_hdl(soc->psoc_obj);
     if (!wmi_handle) {
@@ -3079,6 +3110,65 @@ ol_peer_sta_kickout_event_handler(ol_scn_t sc, u_int8_t *data, u_int32_t datalen
     }
     vdev = wlan_peer_get_vdev(peer_obj);
     vap = wlan_vdev_get_mlme_ext_obj(vdev);
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MULTI_CLIENTS
+    vap_state = wlan_vdev_mlme_get_state(vap->vdev_obj);
+    qdf_print("Kickout: PEER MAC Address: %02x:%02x:%02x:%02x:%02x:%02x, VDEV MAC Address: %02x:%02x:%02x:%02x:%02x:%02x, \
+              Reason: %d\n", kickout_event.peer_macaddr[0], kickout_event.peer_macaddr[1],
+              kickout_event.peer_macaddr[2], kickout_event.peer_macaddr[3], kickout_event.peer_macaddr[4],
+              kickout_event.peer_macaddr[5], kickout_event.vdev_macaddr[0], kickout_event.vdev_macaddr[1],
+              kickout_event.vdev_macaddr[2], kickout_event.vdev_macaddr[3], kickout_event.vdev_macaddr[4],
+              kickout_event.vdev_macaddr[5], kickout_event.reason);
+#endif // SPT_MULTI_CLIENTS
+#ifdef SPT_NG
+    /**
+    *   Noise generator mode :   
+    *       Ignore kickout event.
+    *       Becase Kickout event is generated as noise frames are never acked by peer.
+    */
+    pdev = vap->iv_ic->ic_pdev_obj;
+    if (CHK_NG_ENABLE(pdev))
+    {
+        wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);
+        return 0;
+    }
+#endif // SPT_NG
+#ifdef SPT_MULTI_CLIENTS
+    if ((kickout_event.reason == KICKOUT_REASON_THROTTLE_START) && (vap_state == WLAN_VDEV_S_UP)) {
+        pdev_id = wlan_objmgr_pdev_get_pdev_id(wlan_vdev_get_pdev(vdev));
+        vdev_kickout = wlan_objmgr_get_vdev_by_macaddr_from_psoc(soc->psoc_obj, pdev_id, kickout_event.vdev_macaddr, WLAN_MLME_SB_ID);
+        if (vdev_kickout != NULL ) {
+            struct timespec kickout_time;
+
+            vdev_osifp_kickout = wlan_vdev_get_ospriv(vdev_kickout);
+            if (!vdev_osifp_kickout) {
+                wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);
+                qdf_print("%s: Unable to find kickout os priv pointer", __func__);
+                return -1;
+            }
+            osifp_kickout = (osif_dev *)(vdev_osifp_kickout->legacy_osif_priv);
+            if (osifp_kickout == NULL) {
+                wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);
+                qdf_print("%s: Unable to find kickout OS IF pointer ", __func__);
+                return -1;
+            }
+            netdev_kickout = osifp_kickout->netdev;
+            if (netdev_kickout == NULL) {
+                wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);
+                qdf_print("%s: Unable to find kickout netdev", __func__);
+                return -1;
+            }
+            getnstimeofday(&kickout_time);
+            netdev_kickout->last_kickout_time = kickout_time.tv_sec;
+            /* Set dormant flag on station device */
+            netif_dormant_on(netdev_kickout);
+            qdf_print("Kickout: Sta_name = %s, last_kickout_time = %llu\n", netdev_kickout->name, netdev_kickout->last_kickout_time);
+        }
+        wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);
+        return 0;
+    }
+#endif // SPT_MULTI_CLIENTS
+#endif
     avn = OL_ATH_VAP_NET80211(vap);
     if (!avn) {
         wlan_objmgr_peer_release_ref(peer_obj, WLAN_MLME_SB_ID);

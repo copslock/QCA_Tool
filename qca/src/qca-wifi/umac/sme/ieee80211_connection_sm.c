@@ -446,6 +446,9 @@ static bool ieee80211_connection_state_init_event(void *ctx, u_int16_t event, u_
             /*
              * build the acandidate ap list.
              */
+#ifdef PORT_SPIRENT_HK
+            if (sm->is_aplist_built != 1)
+#endif
             rebuild_candidate_list(sm);
             IEEE80211_DPRINTF(sm->vap_handle, IEEE80211_MSG_STATE,
                               "%s event CONNECT_REQ: sm->candidate_aplist_count=%d\n",
@@ -609,7 +612,11 @@ static bool ieee80211_connection_state_scan_event(void *ctx, u_int16_t event, u_
     case IEEE80211_CONNECTION_EVENT_SCAN_END:
         /* build the candidate list from the scanned entries */
         rebuild_candidate_list(sm);
+#ifdef PORT_SPIRENT_HK
+        if (sm->candidate_aplist_count) {
+#else
         if (sm->vap_handle->iv_ic->ic_roaming != IEEE80211_ROAMING_MANUAL && sm->candidate_aplist_count) {
+#endif
                 /*
                  * there is atleast one AP in the list.
                  * try connecting.
@@ -1467,6 +1474,13 @@ static void ieee80211_connection_state_disconnecting_entry(void *ctx)
     }
     if (sm->no_stop_disassoc)
 	    flags &= ~IEEE80211_ASSOC_SM_STOP_DISASSOC;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    /* Sending no flags to send disconnect event instead of sending
+       de-assoc request during roaming */
+    if (sm->vap_handle->iv_roam.iv_roaming)
+        wlan_assoc_sm_stop(sm->assoc_sm_handle,false );
+    else
+#endif
     wlan_assoc_sm_stop(sm->assoc_sm_handle,flags );
 }
 

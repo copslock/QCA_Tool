@@ -1,0 +1,198 @@
+#include "spirent_ng.h"
+#include <wlan_scan_utils_api.h>
+#include <ieee80211_objmgr_priv.h>
+
+static char noise_gen_beacon_frame[] = {
+  0x80, 0x00, 
+  0x00, 0x00, 
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+  0xf0, 0xfd,
+  
+  0x36, 0x30, 0xb8, 0x6c, 0x55, 0x00, 0x00, 0x00,
+  0x64, 0x00, 0x01, 0x15, 
+  
+  //SSID : AX_NG
+  0x00, 0x05, 0x41, 0x58, 0x5f, 0x4E, 0x47, 
+  
+  0x01, 0x08, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c, 
+  
+  0x03, 0x01, 0x28, 
+  0x05, 0x04, 0x00, 0x03, 0x00, 0x00, 
+  0x07, 0x4e, 0x55, 0x53, 0x20, 0x24,
+  0x01, 0x1e, 0x28, 0x01, 0x1e, 0x2c, 0x01, 0x1e,
+  0x30, 0x01, 0x1e, 0x34, 0x01, 0x18, 0x38, 0x01,
+  0x18, 0x3c, 0x01, 0x18, 0x40, 0x01, 0x18, 0x64,
+  0x01, 0x18, 0x68, 0x01, 0x18, 0x6c, 0x01, 0x18,
+  0x70, 0x01, 0x18, 0x74, 0x01, 0x18, 0x78, 0x01,
+  0x18, 0x7c, 0x01, 0x18, 0x80, 0x01, 0x18, 0x84,
+  0x01, 0x18, 0x88, 0x01, 0x18, 0x8c, 0x01, 0x18,
+  0x90, 0x01, 0x18, 0x95, 0x01, 0x1e, 0x99, 0x01,
+  0x1e, 0x9d, 0x01, 0x1e, 0xa1, 0x01, 0x1e, 0xa5,
+  0x01, 0x1e, 0x46, 0x05, 0x73, 0xd0, 0x00, 0x00,
+  0x0c, 0x2d, 0x1a, 0xef, 0x09, 0x03, 0xff, 0xff,
+  0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x3d, 0x16, 0x28,
+  0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x7f, 0x08, 0x04,
+  0x00, 0x0f, 0x02, 0x00, 0x00, 0x00, 0x40, 0xbf,
+  0x0c, 0xf2, 0xe9, 0x8f, 0x33, 0xaa, 0xaa, 0x00,
+  0x00, 0xaa, 0xaa, 0x00, 0x00, 0xc0, 0x05, 0x01,
+  0x2a, 0x00, 0xfc, 0xff, 0xc3, 0x05, 0x03, 0x3c,
+  0x3c, 0x3c, 0x3c, 0xff, 0x2f, 0x23, 0x09, 0x01,
+  0x00, 0x02, 0x40, 0x00, 0x04, 0x60, 0x0c, 0x80,
+  0x00, 0x07, 0x80, 0x04, 0x00, 0x00, 0x00, 0xaa,
+  0xaa, 0xaa, 0xaa, 0x7f, 0x1c, 0xc7, 0x71, 0x1c,
+  0xc7, 0x71, 0x1c, 0xc7, 0x71, 0x1c, 0xc7, 0x71,
+  0x1c, 0xc7, 0x71, 0x1c, 0xc7, 0x71, 0x1c, 0xc7,
+  0x71, 0x1c, 0xc7, 0x71, 0xff, 0x07, 0x24, 0xf4,
+  0x3f, 0x00, 0x25, 0xfc, 0xff, 0xdd, 0x18, 0x00,
+  0x50, 0xf2, 0x02, 0x01, 0x01, 0x80, 0x00, 0x03,
+  0xa4, 0x00, 0x00, 0x27, 0xa4, 0x00, 0x00, 0x42,
+  0x43, 0x5e, 0x00, 0x62, 0x32, 0x2f, 0x00, 0xdd,
+  0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00,
+  0xff, 0x7f, 0xdd, 0x08, 0x8c, 0xfd, 0xf0, 0x01,
+  0x01, 0x02, 0x01, 0x00, 0xdd, 0x1d, 0x00, 0x50,
+  0xf2, 0x04, 0x10, 0x4a, 0x00, 0x01, 0x10, 0x10,
+  0x44, 0x00, 0x01, 0x02, 0x10, 0x3c, 0x00, 0x01,
+  0x03, 0x10, 0x49, 0x00, 0x06, 0x00, 0x37, 0x2a,
+  0x00, 0x01, 0x20
+};
+
+/**
+*  Check if the bssid is matched with any ng_bssid of the pdev.
+*/
+bool ng_check_bssid_matched(struct wlan_objmgr_psoc *psoc, struct scan_cache_node *node) {
+	struct wlan_objmgr_pdev *pdev;
+	int scn_idx;
+	for (scn_idx = 0; scn_idx < wlan_psoc_get_pdev_count(psoc); scn_idx++) {
+		pdev = wlan_objmgr_get_pdev_by_id(psoc, scn_idx, WLAN_MLME_NB_ID);
+		if (pdev == NULL) {
+			scm_err("pdev object (id: %d) is NULL ", scn_idx);
+			continue;
+		}
+		if (!CHK_NG_ENABLE(pdev))
+			continue;
+
+		if (qdf_is_macaddr_equal(&pdev->ng_bssid,&node->entry->bssid)) {
+			qdf_print("NG_PRINT: BSSID %pM ,matched with pdev id=%d",node->entry->bssid.bytes,scn_idx);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/**
+*  @util_scan_parse_ng_beacon_frame: Create NG AP entry and insert the entry to scan AP list.
+*/
+void util_scan_parse_ng_beacon_frame(struct wlan_objmgr_pdev *pdev, 
+   				qdf_list_t *scan_list)
+{
+    QDF_STATUS status;
+    struct scan_mbssid_info mbssid_info = { 0 };
+    qdf_list_node_t *node = NULL;
+    struct scan_cache_node *scan_node=NULL;
+    struct mgmt_rx_event_params rx_param={0};
+
+    rx_param.snr = NG_AP_RX_PARAM_SNR;
+    rx_param.rssi = NG_AP_RX_PARAM_RSSI;
+
+    if (!CHK_NG_SCAN_ENTRY_IS_NULL(pdev)) {
+        struct scan_cache_node *scan_node;
+        scan_node = qdf_mem_malloc_atomic(sizeof(*scan_node));
+        if (scan_node) {
+            qdf_print("NG_PRINT: Insert NG scan entry to scan_list");
+            scan_node->entry = util_scan_copy_cache_entry(pdev->ng_scan_entry);
+            qdf_list_insert_front(scan_list, &scan_node->node);
+        }
+    }
+    else {
+        qdf_mem_copy(&noise_gen_beacon_frame[10],&pdev->ng_bssid.bytes[0],sizeof(struct qdf_mac_addr));
+        qdf_mem_copy(&noise_gen_beacon_frame[16],&pdev->ng_bssid.bytes[0],sizeof(struct qdf_mac_addr));
+        status = util_scan_gen_scan_entry(pdev, noise_gen_beacon_frame,
+                sizeof(noise_gen_beacon_frame),
+                IEEE80211_FC0_SUBTYPE_BEACON,
+                &rx_param,
+                &mbssid_info,
+                scan_list);
+
+        if (QDF_IS_STATUS_ERROR(status))
+        {
+            qdf_print("Failed to create noise generator dummy scan entry ");
+        }
+        else
+        {
+            struct scan_cache_entry *ng_scan_entry;
+            qdf_list_peek_front(scan_list, &node);
+            scan_node = qdf_container_of(node, struct scan_cache_node, node);
+
+            ng_scan_entry = scan_node->entry;
+            pdev->ng_scan_entry = util_scan_copy_cache_entry(ng_scan_entry);
+            qdf_print("NG_PRINT: created noise generator dummy scan entry %pM", ng_scan_entry->bssid.bytes);
+        }
+    }
+}
+
+/*
+**   For noise generator mode (Set NG AP channel)
+*/
+wlan_chan_t ng_wlan_scan_cache_update_callback(struct wlan_objmgr_pdev *pdev,
+        struct scan_cache_entry* scan_entry)
+{
+    struct ieee80211com *ic = NULL;
+    wlan_chan_t new_chan = NULL;
+    struct channel_info *se_chan = util_scan_entry_channel(scan_entry);
+
+    ic = wlan_pdev_get_mlme_ext_obj(pdev);
+    if (!ic) {
+        qdf_err("%s: ic is NULL", __func__);
+        return NULL;
+    }
+
+    qdf_print("NG_PRINT: cache update=%pM : Channel_freq=%d", scan_entry->bssid.bytes, se_chan->chan_freq);
+    if(pdev && (qdf_is_macaddr_equal(&pdev->ng_bssid, &scan_entry->bssid))) {
+        uint32_t bcn_chan_freq;
+        uint8_t chan = pdev->ng_channel;
+
+        qdf_print("NG_PRINT : ic_flag = 0x%x, ic_modecaps = 0x%x",(int)ic->ic_flags,(int)ic->ic_modecaps);
+#ifdef CONFIG_BAND_6GHZ
+        if (CHECK_MODE_CAPABILITY(ic,IEEE80211_MODE_11AXA_HE160)) {
+            bcn_chan_freq = 5940 + 5 * chan;
+        }
+        else 
+#endif
+        { 
+            if (chan >= 1 && chan <= 13)
+                bcn_chan_freq = 2407 + 5 * chan;
+            else if (chan == 14)
+                bcn_chan_freq = 2484;
+            else if (chan >= 30)
+                bcn_chan_freq = 5000 + 5 * chan;
+        }
+        qdf_print("NG_PRINT : se_chan_freq = %d , new_chan_freq = %d ",se_chan->chan_freq, bcn_chan_freq);
+        
+        se_chan->chan_freq = bcn_chan_freq;
+        if (bcn_chan_freq <= 2484 )
+            scan_entry->phy_mode = IEEE80211_MODE_11AXG_HE40;
+        else if (CHECK_MODE_CAPABILITY(ic,IEEE80211_MODE_11AXA_HE80_80))
+            scan_entry->phy_mode = IEEE80211_MODE_11AXA_HE80_80;
+        else if (CHECK_MODE_CAPABILITY(ic,IEEE80211_MODE_11AXA_HE160))
+            scan_entry->phy_mode = IEEE80211_MODE_11AXA_HE160;
+        else
+            scan_entry->phy_mode = IEEE80211_MODE_11AXA_HE80;
+
+        qdf_print("NG_PRINT : enum phymode = %d",scan_entry->phy_mode);
+        new_chan = ieee80211_find_dot11_channel(ic, bcn_chan_freq,
+                0, scan_entry->phy_mode);
+        if (new_chan) {
+            qdf_print("NG_PRINT : %d %pM", bcn_chan_freq, scan_entry->bssid.bytes);
+            se_chan->priv = new_chan;
+            qdf_print("NG_PRINT : add channel to priv = %d , chan_freq = %d\n",new_chan->ic_ieee , new_chan->ic_freq);
+        }
+    }
+    return new_chan;
+}
+

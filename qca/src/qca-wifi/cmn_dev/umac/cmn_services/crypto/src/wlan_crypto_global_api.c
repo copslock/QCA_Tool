@@ -1581,7 +1581,11 @@ QDF_STATUS wlan_crypto_decap(struct wlan_objmgr_vdev *vdev,
 			return QDF_STATUS_E_INVAL;
 		}
 
+#if !AR_DECRYPT_ARM_CE
 		key = crypto_priv->key[keyid];
+#else
+		key = crypto_priv->key[crypto_priv->def_tx_keyid];
+#endif
 		if (!key)
 			return QDF_STATUS_E_INVAL;
 	}

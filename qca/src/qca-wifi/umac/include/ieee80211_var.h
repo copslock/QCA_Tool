@@ -280,7 +280,14 @@
 #define IEEE80211_MAX_PRIVACY_FILTERS           4 /* max privacy filters */
 #define IEEE80211_MAX_PMKID                     3 /* max number of PMKIDs */
 #define IEEE80211_MAX_MISC_EVENT_HANDLERS       5
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/* max vdev resource mgr event handlers */
+#define IEEE80211_MAX_RESMGR_EVENT_HANDLERS    SPIRENT_MAX_VDEVS_PER_RADIO
+/* mpsta fake association - this macro is used to handle roaming,mu-mimo and ofdma test cases to avoid fake association */
+#define IEEE80211_NO_OF_STATIONS_CREATED        1
+#else
 #define IEEE80211_MAX_RESMGR_EVENT_HANDLERS    32 /* max vdev resource mgr event handlers */
+#endif
 #define IEEE80211_MAX_DEVICE_EVENT_HANDLERS     6
 #define IEEE80211_MAX_VAP_EVENT_HANDLERS        8
 #define IEEE80211_MAX_VAP_MLME_EVENT_HANDLERS   4
@@ -1410,6 +1417,9 @@ typedef struct ieee80211com {
     void                              (*ic_cwm_set_extprotmode)(struct ieee80211com *ic, enum ieee80211_cwm_extprotmode mode);
     void                              (*ic_cwm_set_extprotspacing)(struct ieee80211com *ic, enum ieee80211_cwm_extprotspacing sp);
     void                              (*ic_cwm_set_enable)(struct ieee80211com *ic, u_int32_t en);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    void                              (*ic_fwdebug)(struct ieee80211com *ic, u_int32_t en);
+#endif
     void                              (*ic_cwm_set_extoffset)(struct ieee80211com *ic, int8_t val);
     void                              (*ic_cwm_set_extbusythreshold)(struct ieee80211com *ic, u_int32_t threshold);
     void                              (*ic_cwm_set_mode)(struct ieee80211com *ic, enum ieee80211_cwm_mode mode);
@@ -1604,6 +1614,11 @@ typedef struct ieee80211com {
                                          u_int32_t val);
     int                                 (*ic_vap_get_param)(struct ieee80211vap *vap,
                                          ieee80211_param param);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    int                                (*ic_vap_get_adv_stats)(struct ieee80211vap *vap,
+                                         ieee80211_param param, void *adv_stats);
+    int                               (*ic_vap_get_rx_ru_values)(struct wlan_objmgr_pdev *, int pdev_id, void *rx_ru_stats);
+#endif
     int                                 (*ic_ol_net80211_set_mu_whtlist)(wlan_if_t vap,
                                          u_int8_t *macaddr, u_int16_t tidmask);
     int                                 (*ic_node_add_wds_entry)(void *vdev_handle,
@@ -1734,6 +1749,10 @@ typedef struct ieee80211com {
     bool                                (*ic_is_target_ar900b)(struct ieee80211com *ic);
     int32_t                             (*ic_get_pdev_idx)(struct ieee80211com *ic);
     uint32_t                             (*ic_get_tgt_type)(struct ieee80211com *ic);
+#if defined(SPIRENT_AP_EMULATION)
+    /* Get advanced pkt counter */
+    bool (*ic_node_get_advanced_pkt_counters)(const struct ieee80211_node *ni, u_int8_t type, u_int32_t *data, u_int32_t datalen);
+#endif
 #if UMAC_SUPPORT_ACFG
     void                                *ic_acfg_handle;
 #endif
@@ -2107,8 +2126,43 @@ typedef struct ieee80211com {
     u_int8_t                            ic_scan_over_cac:1, /* Whether scan should be prioritized over cac for this radio */
                                         ic_is_cac_cancelled_by_scan:1; /* If CAC was cancelled due to scan issued */
 #endif
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+    void                                (*ic_get_cca_stats)(struct ieee80211com *ic, void *cca_stats);
+#endif
     qdf_freq_t                          ic_radar_next_usr_freq; /* Radar_Next_user frequency to use after radar detection. It will be cleared after a radar detection.  */
 } IEEE80211COM, *PIEEE80211COM;
+/* structrue which is used for manupulating fast BSS related structure */
+#ifdef PORT_SPIRENT_HK
+struct fbt_stats {
+    enum {
+        FBT_IDLE,
+        FBT_REQ_SENT,
+        FBT_RESP_RCVD,
+        FBT_FAIL
+    } state;
+
+    enum {
+        FBT_TYPE_OTA,         /* FT over the air */
+        FBT_TYPE_ODS          /* FT over DS */
+    } type;
+    u_int32_t latest_req_ts;  /* FT Authentication Request time during roaming */
+    u_int32_t latest_resp_ts; /* Reassociation Response time during roaming */
+    u_int32_t latest_delay;   /* Fast transition time when client roams from AP1 to AP2.
+                                 Fast roaming timing between FT authentication request time
+                                 and reassociation response time */
+    u_int32_t min_delay;      /* Minimum fast transtition delay when client roams from AP1 to AP2. */
+    u_int32_t max_delay;      /* Maximum fast transtition delay when client roams from AP1 to AP2. */
+    u_int32_t avg_delay;      /* Average fast transtition delay when client roams from AP1 to AP2. */
+    u_int64_t total_delay;    /* Total delay - used for calculating average delay */
+    u_int64_t success;        /* Number of time roam success. */
+    u_int64_t fail;           /* Number of time roam failures. */
+};
+
+struct bss_list {
+    struct list_head list;
+    char bssid[ETH_ALEN]; /* bssid for holding/unholding */
+};
+#endif
 
 struct assoc_sm_set_country{
     uint16_t cc;
@@ -2783,6 +2837,9 @@ typedef struct ieee80211vap {
     ieee80211_candidate_aplist_t      iv_candidate_aplist;    /* opaque handle to aplist private information */
 
     ieee80211_resmgr_vap_priv_t       iv_resmgr_priv;         /* opaque handle with resource manager private info */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    ieee80211_vap_state_info          iv_state_info;          /* vap private state information */
+#endif
 
     ieee80211_acl_t                   iv_acl;   /* opaque handle to acl */
     ieee80211_vap_ath_info_t          iv_vap_ath_info_handle; /* opaque handle for VAP_ATH_INFO */
@@ -3351,7 +3408,51 @@ typedef struct ieee80211vap {
     /* Set iv_user_disabled_vap_doth flag, if the user configures vap_doth as 0*/
     bool                    iv_user_disabled_vap_doth;
     uint8_t                 iv_oob_update;
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+    uint32_t                rx_mcs;
+    uint32_t                tx_mcs;
+    uint8_t                 nss_val;
+#endif // SPT_ADV_STATS
+#ifdef SPT_ROAMING
+    struct fbt_stats        ftstats;               /* fbt stats*/
+    uint32_t                hold_bss_count;        /* number of bssid holded */
+    struct list_head        hold_bss_list;         /* holding bss list sent by supplicant via ioctl */
+    struct __btm_counter{
+        u32 query;
+        u32 request;
+        u32 accept;
+        u32 deny;
+        u64 v_delay;
+    }btm_counter;
+#endif // SPT_ROAMING
+#ifdef SPT_CAPTURE
+    uint8_t                 cap_mode;              /* capture mode */
+#endif // SPT_CAPTURE
+#endif
 } IEEE80211VAP, *PIEEE80211VAP;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/* struct iv_rev_txrx_rev_stats - parameters used
+to store the txrx stats values
+*/
+struct iv_rev_txrx_rev_stats {
+    int8_t rx_mcs;
+    int8_t tx_mcs;
+    int8_t rx_bw;
+    int8_t tx_bw;
+    int8_t rx_sgi;
+    int8_t tx_sgi;
+    int8_t rx_nss;
+    int8_t tx_nss;
+    int8_t rx_pkt_type;
+    int8_t tx_pkt_type;
+    int8_t rx_rec_type;
+};
+
+struct iv_vdev_rev_txrx_stats {
+    struct iv_rev_txrx_rev_stats rev_txrx;
+};
+#endif
 
 #if QCN_IE
 #define EFF_CHAN_TIME(_chantime, _buffer)  (((_chantime) && (_chantime > _buffer)) ? ((_chantime) - (_buffer)) : (0))
@@ -5309,7 +5410,11 @@ ieee80211_get_bw_nss_mapping(struct ieee80211vap *vap, struct ieee80211_bwnss_ma
 #if ATH_SUPPORT_AP_WDS_COMBO
 #define IEEE80211_MAX_VAPS 16
 #elif ATH_SUPPORT_WRAP
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define IEEE80211_MAX_VAPS SPIRENT_MAX_VDEVS_PER_RADIO
+#else
 #define IEEE80211_MAX_VAPS 32
+#endif
 #elif ATH_PERF_PWR_OFFLOAD
 #define IEEE80211_MAX_VAPS 17
 #else

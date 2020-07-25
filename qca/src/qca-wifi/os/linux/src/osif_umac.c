@@ -123,6 +123,11 @@ int wlan_proxy_arp(wlan_if_t vap, wbuf_t wbuf);
 #include <wlan_mlme_if.h>
 #include <wlan_psoc_mlme.h>
 #include <wlan_psoc_mlme_main.h>
+#ifdef PORT_SPIRENT_HK
+#include <spirent.h>
+#define CCMP_HEADER 8
+#define REGULAR_CAPTURE 1
+#endif
 
 /* ahbskip usage  : Skip registering direct attach devices only when set to 1 */
 unsigned int ahbskip = 0;
@@ -164,6 +169,9 @@ wlan_get_vdev_dp_stats(struct ieee80211vap *vap,
 
 extern int wlan_vap_delete_complete(struct ieee80211vap *vap);
 static void ic_cancel_obss_nb_ru_tolerance_timer(struct ieee80211com *ic);
+#ifdef PORT_SPIRENT_HK
+static void osif_post_ft_event(osif_dev *osdev);
+#endif
 
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
 #include "osif_nss_wifiol_if.h"
@@ -1133,6 +1141,7 @@ static inline int wrap_rx_bridge(os_if_t *osif ,struct net_device **dev ,wlan_if
 int ol_wrap_rx_process (os_if_t *osif ,struct net_device **dev ,wlan_if_t vap, struct sk_buff *skb, int *nwifi)
 {
 
+#ifndef PORT_SPIRENT_HK /* Workaround for multiclient issue */
     if (qdf_unlikely(wlan_is_psta(vap)) || wlan_is_wrap(vap)) {
         if (*nwifi) {
             transcap_nwifi_to_8023(skb);
@@ -1142,6 +1151,9 @@ int ol_wrap_rx_process (os_if_t *osif ,struct net_device **dev ,wlan_if_t vap, s
         vap->iv_wrap_mat_rx(vap, (wbuf_t)skb);
     }
         return wrap_rx_bridge(osif, dev, &vap, skb);
+#else
+    return 0;
+#endif
 
 }
 qdf_export_symbol(ol_wrap_rx_process);
@@ -1473,6 +1485,7 @@ drop_mcast_rx(os_if_t *osif ,struct net_device **dev ,wlan_if_t *rxvap, struct s
 
 int dbdc_rx_process (os_if_t *osif ,struct net_device **dev , struct sk_buff *skb, int *nwifi)
 {
+#ifndef PORT_SPIRENT_HK /* Workaround for multiclient issue */
     osif_dev  *osdev = (osif_dev *)(*osif);
     wlan_if_t vap = osdev->os_if;
     if(ic_list.dbdc_process_enable) {
@@ -1484,6 +1497,7 @@ int dbdc_rx_process (os_if_t *osif ,struct net_device **dev , struct sk_buff *sk
             return drop_mcast_rx(osif, dev, &vap, skb, nwifi);
         }
     }
+#endif
     return 0;
 }
 qdf_export_symbol(dbdc_rx_process);
@@ -2121,16 +2135,20 @@ osif_notify_scan_done(struct net_device *dev, enum scan_completion_reason reason
     wlan_if_t vap;
 #if DBDC_REPEATER_SUPPORT
     struct ieee80211com *ic;
+#ifndef PORT_SPIRENT_HK
     static int count = 1;
+#endif
 #endif
 
     vap = osdev->os_if;
 #if DBDC_REPEATER_SUPPORT
     ic = vap->iv_ic;
+#ifndef PORT_SPIRENT_HK
     if (ic->ic_global_list->delay_stavap_connection && !(ic->ic_radio_priority ==1) && count) {
         count--;
         return;
     }
+#endif
 #endif
     IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN, "%s\n", "notify scan done");
 
@@ -2734,6 +2752,9 @@ void osif_start_acs_on_other_vaps(void *arg, wlan_if_t vap)
 {
     wlan_if_t *orig_vap = ((wlan_if_t *)arg);
     wlan_chan_t chan    =  NULL;
+#ifdef PORT_SPIRENT_HK
+    u_int8_t bssid_test[IEEE80211_ADDR_LEN];
+#endif
 
     chan = wlan_get_current_channel(vap, false);
 
@@ -2752,6 +2773,15 @@ void osif_start_acs_on_other_vaps(void *arg, wlan_if_t vap)
     } else {
         IEEE80211_DPRINTF(vap, IEEE80211_MSG_ACS,
             "%s: vap-%d brought down, acs not req.\n", __func__, vap->iv_unit);
+#ifdef PORT_SPIRENT_HK
+        /* clear bssid list to 0xff during VAP down */
+        memset(bssid_test, 0xff,IEEE80211_ADDR_LEN );
+        wlan_aplist_set_desired_bssidlist(vap, 1, &bssid_test);
+        /* clear roam variables during VAP down */
+        vap->iv_roam.iv_roaming = 0;
+        vap->iv_roam.iv_ft_roam = 0;
+        vap->iv_roam_inprogress = 0;
+#endif
     }
 }
 
@@ -3203,9 +3233,16 @@ osif_auth_complete_sta(os_handle_t osif, u_int8_t *macaddr, IEEE80211_STATUS sta
 	osif_dev *osifp = (osif_dev *)osif;
 	wlan_if_t vap = osifp->os_if;
 
+#ifndef PORT_SPIRENT_HK
 	if (vap->iv_cfg80211_create && vap->iv_roam.iv_roaming) {
 		ieee80211_cfg80211_post_ft_event(osif);
 	}
+#else
+	/* send ft event to update ft ies information to supplicant during fast roaming*/
+	if (vap->iv_roam.iv_roaming) {
+                osif_post_ft_event(osif);
+        }
+#endif
 
 #if UMAC_SUPPORT_ACFG
 	acfg_event = (acfg_event_data_t *)qdf_mem_malloc_atomic(sizeof(acfg_event_data_t));
@@ -4226,7 +4263,17 @@ static void osif_bringdown_vap_iter_func(void *arg, wlan_if_t vap)
         return;
 #endif
 
-    wlan_mlme_stop_vdev(vap->vdev_obj, 0, WLAN_MLME_NOTIFY_NONE);
+#ifdef PORT_SPIRENT_HK
+    /* vap of monitor interface should not be stopped during scan
+       It will help to capture all the packets after association */
+    if(wlan_vap_get_opmode(vap) != IEEE80211_M_MONITOR) {
+        /* Qualcomm patch for fast roaming in cfgmode */
+	vap->iv_roam_inprogress = 0;
+        wlan_mlme_stop_vdev(vap->vdev_obj, 0, WLAN_MLME_NOTIFY_NONE);
+    }
+#else
+        wlan_mlme_stop_vdev(vap->vdev_obj, 0, WLAN_MLME_NOTIFY_NONE);
+#endif
 }
 
 static void osif_bringdown_sta_vap_iter_func(void *arg, wlan_if_t vap)
@@ -4630,7 +4677,9 @@ static void osif_sta_sm_evhandler(wlan_connection_sm_t smhandle, os_if_t osif,
     struct net_device *dev = osdev->netdev;
     wlan_if_t vap = osdev->os_if;
     wlan_dev_t comhandle = wlan_vap_get_devhandle(vap);
+#ifdef ATHEROS_LINUX_PERIODIC_SCAN
     enum ieee80211_phymode des_mode = wlan_get_desired_phymode(vap);
+#endif
     u_int8_t bssid[QDF_MAC_ADDR_SIZE] = {0, 0, 0, 0, 0, 0};
     union iwreq_data wreq;
 #if UNIFIED_SMARTANTENNA
@@ -4853,7 +4902,12 @@ static void osif_sta_sm_evhandler(wlan_connection_sm_t smhandle, os_if_t osif,
                 osif_periodic_scan_stop(osif);
             }
 #endif
+#ifdef PORT_SPIRENT_HK
+            /* added iv_roaming condition */  
+            if (!osdev->is_restart && !vap->iv_roam.iv_roaming) {
+#else
             if (!osdev->is_restart) { /* bring down the vap only if it is not a restart */
+#endif
                 memset(wreq.ap_addr.sa_data, 0, QDF_MAC_ADDR_SIZE);
                 wreq.ap_addr.sa_family = ARPHRD_ETHER;
                 WIRELESS_SEND_EVENT(dev, SIOCGIWAP, &wreq, NULL);
@@ -4863,7 +4917,11 @@ static void osif_sta_sm_evhandler(wlan_connection_sm_t smhandle, os_if_t osif,
                    disconnect event to supplicant so that supplicant will not clear the
                    PMKID and it will be re-used in the reassociation with different AP.
                  */
+#ifdef PORT_SPIRENT_HK
+                if(vap->iv_cfg80211_create && !vap->iv_roam.iv_roaming) {
+#else
                 if(vap->iv_cfg80211_create && !vap->iv_roam_inprogress) {
+#endif
                     if(vap->iv_psta) {
                             ucfg_scan_flush_results(vap->iv_ic->ic_pdev_obj, NULL);
                     }
@@ -5629,6 +5687,10 @@ void osif_receive_monitor_80211_base (os_if_t osif, wbuf_t wbuf, void *rs)
     struct ieee80211vap *vap = osifp->os_if;
     struct sk_buff *skb;
     int found = 0;
+#ifdef PORT_SPIRENT_HK
+    struct ieee80211_qosframe *qosh;
+    uint8_t encryption_mode=0,pkt_type=0;
+#endif
     struct net_device *dev = osifp->netdev;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
     struct net_device_stats *stats = &osifp->os_devstats;
@@ -5682,6 +5744,28 @@ void osif_receive_monitor_80211_base (os_if_t osif, wbuf_t wbuf, void *rs)
             }
         }
     }
+#ifdef PORT_SPIRENT_HK
+/* if the capture mode is regular, remove the CCMP header*/
+if (vap->cap_mode == REGULAR_CAPTURE) {
+	/* Adding code here for Removing the CCMP header from Rx packet when AP is in Encryption mode */
+	qosh = (struct ieee80211_qosframe *)(qdf_nbuf_data(wbuf) + radiotap_header_len);
+	/* CIPNCD-21888: In sniffer capture,PMF de-auth packets shows as corrupted,with this fix,PMF de-auth frames are shows correctly */
+	pkt_type = (qosh->i_fc[0]) & IEEE80211_FC0_TYPE_MASK;
+	if (pkt_type != IEEE80211_FC0_TYPE_MGT)
+	{
+		/*Check the 6th bit for encrypted data or non encrypted data*/
+		encryption_mode = (qosh->i_fc[1])>>6;
+		if(encryption_mode & 0x01)
+		{
+			qosh->i_fc[1] = (qosh->i_fc[1] & (~(1<<6)));
+			/* Removed the encryption key*/
+			qdf_mem_move(qdf_nbuf_data(wbuf)+CCMP_HEADER,qdf_nbuf_data(wbuf),(radiotap_header_len+(sizeof(struct ieee80211_qosframe))));
+			qdf_nbuf_pull_head(wbuf, CCMP_HEADER);
+		}
+	}
+   }
+#endif
+
     skb = (struct sk_buff *)wbuf;
 
 #if ATH_SUPPORT_NAC
@@ -7400,7 +7484,11 @@ osif_delete_vap_wait_and_free(struct net_device *dev, int recover)
 
     /* If not set after waiting deinit vap from here*/
     if (!osifp->is_deleted) {
+#ifdef PORT_SPIRENT_HK
+        msleep(3000);
+#else
         msleep(2000);
+#endif
         if (!osifp->is_deleted) {
             QDF_PRINT_INFO(QDF_PRINT_IDX_SHARED, QDF_MODULE_ID_ANY, QDF_TRACE_LEVEL_INFO,
                     "WARNING: Waiting for VAP delete timedout!!! vdev id: %d\n", vap->iv_unit);
@@ -7412,6 +7500,13 @@ osif_delete_vap_wait_and_free(struct net_device *dev, int recover)
     }
 
     osnetdev->is_delete_in_progress = 0;
+#if !defined(SPIRENT_AP_EMULATION)
+    /*
+     * fengbin: when AP is down wlan_stop incurs no perpktinfo from
+     * target any more.  This lead to per STA stats get no refresh again.
+     *
+     * Disable it for AP emulation.
+     * */
     if (TAILQ_EMPTY(&ic->ic_vaps)) {
         /* cancel ru_tolerance_timer (per pdev), if we are about to stop target */
         ic_cancel_obss_nb_ru_tolerance_timer(ic);
@@ -7427,6 +7522,7 @@ osif_delete_vap_wait_and_free(struct net_device *dev, int recover)
         if(dev_close(parent))
             qdf_print("Unable to close parent Interface");
     }
+#endif
     return 0;
 }
 
@@ -7439,6 +7535,10 @@ osif_vap_roam(struct net_device *dev)
     osif_dev  *osifp = ath_netdev_priv(dev);
     wlan_if_t vap = osifp->os_if;
     int waitcnt;
+#ifndef PORT_SPIRENT_HK
+    /* Qualcomm patch for fast roaming in cfgmode */
+    int error = 0;
+#endif
     int is_ap_cac_timer_running = 0;
     struct net_device *parent = osifp->os_comdev;
     enum ieee80211_opmode opmode;
@@ -7597,7 +7697,11 @@ int osif_vap_init(struct net_device *dev, int forcescan)
             }
         }
 
+#ifdef PORT_SPIRENT_HK
+        if (!desired_bssid || !ssid.len || !osifp->sm_handle) {
+#else
         if ((!desired_bssid && !ssid.len) || !osifp->sm_handle) {
+#endif
             IEEE80211_DPRINTF(vap, IEEE80211_MSG_STATE,
                     "Did not start connection SM : num desired_bssid %d ssid len %d \n",
                     desired_bssid, ssid.len);
@@ -8615,6 +8719,14 @@ int osif_vap_stop(struct net_device *dev)
             wlan_aplist_set_desired_bssidlist(vap, 1, &des_bssid);
         }
 
+#ifdef PORT_SPIRENT_HK
+        /* vap stop will be called if association is failed.
+           update ft failure if roaming is in progress */
+        if (vap->iv_roam_inprogress) {
+	    vap->ftstats.state = FBT_FAIL;
+	    vap->ftstats.fail += 1;
+        }
+#endif
         vap->iv_roam_inprogress = FALSE;
         if (!osifp->sm_handle || wlan_mlme_stop_vdev(vdev, 0, WLAN_MLME_NOTIFY_OSIF)) {
 #if UMAC_SUPPORT_CFG80211
@@ -9184,7 +9296,762 @@ static struct net_device_ops osif_dev_ops = {
 #endif
 
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,2,0)) || PARTNER_ETHTOOL_SUPPORTED
+#ifndef PORT_SPIRENT_HK
 static struct ethtool_ops osif_ethtool_ops;
+#else
+/*Enabled Advance stats*/
+#define ENABLE_ADVANCE_STATS_REQ
+#ifdef ENABLE_ADVANCE_STATS_REQ
+#define IC_TX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define IC_TX_PEER_STATS_NUM_GI_COUNTERS          4
+#define IC_TX_PEER_STATS_NUM_DCM_COUNTERS         5
+#define IC_TX_PEER_STATS_NUM_BW_COUNTERS          4
+#define IC_TX_PEER_STATS_NUM_SPATIAL_STREAMS      8
+#define IC_TX_PEER_STATS_NUM_PREAMBLE_TYPES       7
+
+struct ic_tx_peer_rate_stats_tlv {
+    dp_tlv_hdr_t tlv_hdr;
+
+    A_UINT32 vdev_id;
+
+    /* Number of tx ldpc packets */
+    A_UINT32 tx_ldpc;
+    /* Number of tx rts packets */
+    A_UINT32 rts_cnt;
+    /* RSSI value of last ack packet (units = dB above noise floor) */
+    A_UINT32 ack_rssi;
+
+    A_UINT32 tx_mcs[MAX_MCS];
+    A_UINT32 tx_su_mcs[IC_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 tx_mu_mcs[IC_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 tx_nss[IC_TX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* element 0,1, ...7 -> NSS 1,2, ...8 */
+    A_UINT32 tx_bw[IC_TX_PEER_STATS_NUM_BW_COUNTERS]; /* element 0: 20 MHz, 1: 40 MHz, 2: 80 MHz, 3: 160 and 80+80 MHz */
+    A_UINT32 tx_stbc[IC_TX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 tx_pream[IC_TX_PEER_STATS_NUM_PREAMBLE_TYPES];
+
+    /* Counters to track number of tx packets in each GI (400us, 800us, 1600us & 3200us) in each mcs (0-11) */
+    A_UINT32 tx_gi[MAX_GI][MAX_MCS];
+
+    /* Counters to track packets in dcm mcs (MCS 0, 1, 3, 4) */
+    A_UINT32 tx_dcm[IC_TX_PEER_STATS_NUM_DCM_COUNTERS];
+
+/* Newly added OFDMA results stats in V2*/
+#ifdef PORT_SPIRENT_HK
+    A_UINT8 txofdmamode; /* 0: non-ofdma mode, 1: ofdma mode  */
+    A_UINT8 txrutype;
+    A_INT16 txruassignmentindex;
+    A_UINT8 txloruindex;
+    A_UINT8 txhiruindex;
+    A_UINT64 txofdmapkt;
+    A_UINT32 sgi_count[MAX_GI];
+    A_UINT16 bss_color_count;
+    A_UINT8 bss_color_code;
+#endif
+};
+
+#define IC_RX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define IC_RX_PEER_STATS_NUM_GI_COUNTERS          4
+#define IC_RX_PEER_STATS_NUM_DCM_COUNTERS         5
+#define IC_RX_PEER_STATS_NUM_BW_COUNTERS          4
+#define IC_RX_PEER_STATS_NUM_SPATIAL_STREAMS      8
+
+#define IC_RX_PEER_STATS_NUM_PREAMBLE_TYPES       7
+
+struct ic_rx_peer_rate_stats_tlv {
+    dp_tlv_hdr_t tlv_hdr;
+
+    A_UINT32 vdev_id;
+    A_UINT32 nsts;
+
+    /* Number of rx ldpc packets */
+    A_UINT32 rx_ldpc;
+    /* Number of rx rts packets */
+    A_UINT32 rts_cnt;
+
+    A_UINT32 rssi_mgmt; /* units = dB above noise floor */
+    A_UINT32 rssi_data; /* units = dB above noise floor */
+    A_UINT32 rssi_comb; /* units = dB above noise floor */
+    A_UINT32 rx_mcs[MAX_MCS];
+    A_UINT32 rx_su_mcs[IC_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 rx_mu_mcs[IC_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 rx_nss[IC_RX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* element 0,1, ...7 -> NSS 1,2, ...8 */
+    A_UINT32 rx_dcm[IC_RX_PEER_STATS_NUM_DCM_COUNTERS];
+    A_UINT32 rx_stbc[IC_RX_PEER_STATS_NUM_MCS_COUNTERS];
+    A_UINT32 rx_bw[IC_RX_PEER_STATS_NUM_BW_COUNTERS]; /* element 0: 20 MHz, 1: 40 MHz, 2: 80 MHz, 3: 160 and 80+80 MHz */
+    A_UINT32 rx_pream[IC_RX_PEER_STATS_NUM_PREAMBLE_TYPES];
+    A_UINT8 rssi_chain[IC_RX_PEER_STATS_NUM_BW_COUNTERS][IC_RX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* units = dB above noise floor */
+
+    /* Counters to track number of rx packets in each GI in each mcs (0-11) */
+    A_UINT32 rx_gi[MAX_GI][MAX_MCS];
+
+/* Newly added OFDMA results stats in V2*/
+#ifdef PORT_SPIRENT_HK
+    A_UINT8 rxofdmamode; /* 0: non-ofdma mode, 1: ofdma mode  */
+    A_UINT8 rxrutype;
+    A_INT16 rxruassignmentindex;
+    A_UINT8 rxloruindex;
+    A_UINT8 rxhiruindex;
+    A_UINT64 rxofdmapkt;
+#endif
+};
+
+struct ic_peer_rate_stats_tlv {
+    struct ic_tx_peer_rate_stats_tlv tx_stats;
+    struct ic_rx_peer_rate_stats_tlv rx_stats;
+};
+#endif
+
+static const char * const ieee80211_gstrings_sta_stats[] = {
+    "sta_name",
+    "wlanmode",
+    "mimomode",
+    "rxnss",
+    "txnss",
+    "freqband",
+    "chnbw",
+    "txmcsindex",
+    "rxmcsindex",
+    "ctlfreq",
+    "stastate",
+    "rssi",
+    "noisefloor",
+    "rxgi",
+    "txgi",
+    "sectype",
+    "sumumode",
+    "groupid",
+    "wmmstate",
+    "mfpstatus",
+    "tdlspeerstatus",
+    "maxrxphyrate",
+    "rxpkts",
+    "rxbytes",
+    "maxtxphyrate",
+    "txpkts",
+    "txbytes",
+    "ftdelay",
+    "ftmindelay",
+    "ftmaxdelay",
+    "ftavedelay",
+    "ftsuccess",
+    "ftfail",
+    "bssid",
+#ifdef ENABLE_ADVANCE_STATS_REQ
+    /* Per Spatial Stream Rx NSS Results : NSS[0-7] */
+    "ps_txpkts_0",
+    "ps_txpkts_1",
+    "ps_txpkts_2",
+    "ps_txpkts_3",
+    "ps_txpkts_4",
+    "ps_txpkts_5",
+    "ps_txpkts_6",
+    "ps_txpkts_7",
+    /* Per Spatial Stream Rx NSS Results : NSS[0-7] */
+    "ps_rxpkts_0",
+    "ps_rxpkts_1",
+    "ps_rxpkts_2",
+    "ps_rxpkts_3",
+    "ps_rxpkts_4",
+    "ps_rxpkts_5",
+    "ps_rxpkts_6",
+    "ps_rxpkts_7",
+    /* Per Channel Width Tx Results : BW[0-3] */
+    "pcw_txpkts_0",
+    "pcw_txpkts_1",
+    "pcw_txpkts_2",
+    "pcw_txpkts_3",
+    /* Per Channel Width Rx Results : BW[0-3] */
+    "pcw_rxpkts_0",
+    "pcw_rxpkts_1",
+    "pcw_rxpkts_2",
+    "pcw_rxpkts_3",
+    /* Per MCS Type Tx Results : MCS[0-11] */
+    "tx_counter_0",
+    "tx_counter_1",
+    "tx_counter_2",
+    "tx_counter_3",
+    "tx_counter_4",
+    "tx_counter_5",
+    "tx_counter_6",
+    "tx_counter_7",
+    "tx_counter_8",
+    "tx_counter_9",
+    "tx_counter_10",
+    "tx_counter_11",
+    /* Per MCS Type Rx Results : MCS[0-11] */
+    "rx_counter_0",
+    "rx_counter_1",
+    "rx_counter_2",
+    "rx_counter_3",
+    "rx_counter_4",
+    "rx_counter_5",
+    "rx_counter_6",
+    "rx_counter_7",
+    "rx_counter_8",
+    "rx_counter_9",
+    "rx_counter_10",
+    "rx_counter_11",
+    /* Per MCS Type Tx Results (SU) : MCS[0-11]*/
+    "tx_su_mcs_count_0",
+    "tx_su_mcs_count_1",
+    "tx_su_mcs_count_2",
+    "tx_su_mcs_count_3",
+    "tx_su_mcs_count_4",
+    "tx_su_mcs_count_5",
+    "tx_su_mcs_count_6",
+    "tx_su_mcs_count_7",
+    "tx_su_mcs_count_8",
+    "tx_su_mcs_count_9",
+    "tx_su_mcs_count_10",
+    "tx_su_mcs_count_11",
+    /*Per MCS Type Rx Results (SU) : MCS[0-11] */
+    "rx_su_mcs_count_0",
+    "rx_su_mcs_count_1",
+    "rx_su_mcs_count_2",
+    "rx_su_mcs_count_3",
+    "rx_su_mcs_count_4",
+    "rx_su_mcs_count_5",
+    "rx_su_mcs_count_6",
+    "rx_su_mcs_count_7",
+    "rx_su_mcs_count_8",
+    "rx_su_mcs_count_9",
+    "rx_su_mcs_count_10",
+    "rx_su_mcs_count_11",
+    /* Per MCS Type Tx Results (MU) : MCS[0-11] */
+    "tx_mu_mcs_count_0",
+    "tx_mu_mcs_count_1",
+    "tx_mu_mcs_count_2",
+    "tx_mu_mcs_count_3",
+    "tx_mu_mcs_count_4",
+    "tx_mu_mcs_count_5",
+    "tx_mu_mcs_count_6",
+    "tx_mu_mcs_count_7",
+    "tx_mu_mcs_count_8",
+    "tx_mu_mcs_count_9",
+    "tx_mu_mcs_count_10",
+    "tx_mu_mcs_count_11",
+    /*Per MCS Type Rx Results (MU) : MCS[0-11] */
+    "rx_mu_mcs_count_0",
+    "rx_mu_mcs_count_1",
+    "rx_mu_mcs_count_2",
+    "rx_mu_mcs_count_3",
+    "rx_mu_mcs_count_4",
+    "rx_mu_mcs_count_5",
+    "rx_mu_mcs_count_6",
+    "rx_mu_mcs_count_7",
+    "rx_mu_mcs_count_8",
+    "rx_mu_mcs_count_9",
+    "rx_mu_mcs_count_10",
+    "rx_mu_mcs_count_11",
+    /* Per GI Tx Results - 400ns, 800ns, 1600ns, 3200ns */
+    "tx_sgi_count_0",
+    "tx_sgi_count_1",
+    "tx_sgi_count_2",
+    "tx_sgi_count_3",
+    /* Per GI Rx Results - 400ns : GI[0-4]:MCS[0-11] */
+    "rx_gi_0_0",
+    "rx_gi_0_1",
+    "rx_gi_0_2",
+    "rx_gi_0_3",
+    "rx_gi_0_4",
+    "rx_gi_0_5",
+    "rx_gi_0_6",
+    "rx_gi_0_7",
+    "rx_gi_0_8",
+    "rx_gi_0_9",
+    "rx_gi_0_10",
+    "rx_gi_0_11",
+    /* Per GI Rx Results - 800ns */
+    "rx_gi_1_0",
+    "rx_gi_1_1",
+    "rx_gi_1_2",
+    "rx_gi_1_3",
+    "rx_gi_1_4",
+    "rx_gi_1_5",
+    "rx_gi_1_6",
+    "rx_gi_1_7",
+    "rx_gi_1_8",
+    "rx_gi_1_9",
+    "rx_gi_1_10",
+    "rx_gi_1_11",
+    /* Per GI Rx Results - 1600ns */
+    "rx_gi_2_0",
+    "rx_gi_2_1",
+    "rx_gi_2_2",
+    "rx_gi_2_3",
+    "rx_gi_2_4",
+    "rx_gi_2_5",
+    "rx_gi_2_6",
+    "rx_gi_2_7",
+    "rx_gi_2_8",
+    "rx_gi_2_9",
+    "rx_gi_2_10",
+    "rx_gi_2_11",
+    /* Per GI Rx Results - 3200ns */
+    "rx_gi_3_0",
+    "rx_gi_3_1",
+    "rx_gi_3_2",
+    "rx_gi_3_3",
+    "rx_gi_3_4",
+    "rx_gi_3_5",
+    "rx_gi_3_6",
+    "rx_gi_3_7",
+    "rx_gi_3_8",
+    "rx_gi_3_9",
+    "rx_gi_3_10",
+    /* Per Spatial Stream RSSI Channel Width 20MHz : BW[0-3]:NSS[0-7] */
+    "rssi_chain_0_0",
+    "rssi_chain_0_1",
+    "rssi_chain_0_2",
+    "rssi_chain_0_3",
+    "rssi_chain_0_4",
+    "rssi_chain_0_5",
+    "rssi_chain_0_6",
+    "rssi_chain_0_7",
+    /* Per Spatial Stream RSSI Channel Width 40MHz */
+    "rssi_chain_1_0",
+    "rssi_chain_1_1",
+    "rssi_chain_1_2",
+    "rssi_chain_1_3",
+    "rssi_chain_1_4",
+    "rssi_chain_1_5",
+    "rssi_chain_1_6",
+    "rssi_chain_1_7",
+    /* Per Spatial Stream RSSI Channel Width 80MHz */
+    "rssi_chain_2_0",
+    "rssi_chain_2_1",
+    "rssi_chain_2_2",
+    "rssi_chain_2_3",
+    "rssi_chain_2_4",
+    "rssi_chain_2_5",
+    "rssi_chain_2_6",
+    "rssi_chain_2_7",
+    /* Per Spatial Stream RSSI Channel Width 160MHz */
+    "rssi_chain_3_0",
+    "rssi_chain_3_1",
+    "rssi_chain_3_2",
+    "rssi_chain_3_3",
+    "rssi_chain_3_4",
+    "rssi_chain_3_5",
+    "rssi_chain_3_6",
+    "rssi_chain_3_7",
+    "rxofdmamode",
+    "rxrutype",
+    "rxruassignmentindex",
+    "rxloruindex",
+    "rxhiruindex",
+    "rxofdmapkt",
+    "txofdmamode",
+    "txrutype",
+    "txruassignmentindex",
+    "txloruindex",
+    "txhiruindex",
+    "txofdmapkt",
+    /* bss collsion counter */
+    "bss_color_count",
+    "bss_color_code",
+    "tx_ppdu_type",
+    "rx_ppdu_type",
+    /* btm stats counter */
+    "btm_query",
+    "btm_request",
+    "btm_resp_accept",
+    "btm_resp_deny"
+#endif
+};
+
+#define STA_STATS_LEN   sizeof(ieee80211_gstrings_sta_stats) / sizeof((ieee80211_gstrings_sta_stats)[0])
+/*
+ * osif_get_strset_count()
+ * Get string set count for ethtool operations
+ */
+static int32_t osif_dp_get_strset_count(struct net_device *netdev, int32_t sset)
+{
+    if (sset == ETH_SS_STATS) {
+        return STA_STATS_LEN; /* Total members in structure */
+    }
+
+    netdev_dbg(netdev, "%s: Invalid string set\n", __func__);
+    return -EPERM;
+}
+
+static void osif_get_strings(struct net_device *netdev, uint32_t sset,
+           uint8_t *data)
+{
+    int i;
+
+    if (sset == ETH_SS_STATS) {
+        for (i = 0; i < STA_STATS_LEN; i++) {
+            memcpy(data, ieee80211_gstrings_sta_stats[i],
+                    ETH_GSTRING_LEN);
+            data += ETH_GSTRING_LEN;
+        }
+    }
+}
+
+static int osif_get_frequency(struct net_device *netdev, struct iw_freq *freq)
+{
+        osif_dev *osifp = ath_netdev_priv(netdev);
+        wlan_if_t vap = osifp->os_if;
+        wlan_chan_t chan;
+
+        if (netdev->flags & (IFF_UP | IFF_RUNNING)) {
+                        chan = wlan_get_bss_channel(vap);
+        } else {
+                        chan = wlan_get_current_channel(vap, true);
+        }
+
+        if (chan != IEEE80211_CHAN_ANYC) {
+                        freq->m = chan->ic_freq * 100000;
+        } else {
+                        freq->m = 0;
+        }
+        return 0;
+}
+
+static void
+osif_set_quality(struct iw_quality *iq, u_int rssi, int16_t chan_nf)
+{
+    if(rssi >= 42)
+        iq->qual = 94 ;
+    else if(rssi >= 30)
+        iq->qual = 85 + ((94-85)*(rssi-30) + (42-30)/2) / (42-30) ;
+    else if(rssi >= 5)
+        iq->qual = 5 + ((rssi - 5) * (85-5) + (30-5)/2) / (30-5) ;
+    else if(rssi >= 1)
+        iq->qual = rssi ;
+    else
+        iq->qual = 0 ;
+    /* Noise floor value is received as 0xFF(junk) in some cases and this results in the
+    low value of signal strength than actual value. 0xA1 is the value received to
+    calculate signal strength during scan. Hence using that value as reference*/
+    if (((chan_nf >> 8) & 0xFFFFFF ) || (chan_nf == 0))
+    {
+        iq->noise = 0xa1;
+    }
+    else
+    {
+        iq->noise = chan_nf;
+    }
+
+    iq->level = iq->noise + rssi;
+    iq->updated = 0xf;
+}
+
+static void osif_get_authMode(wlan_if_t vap, int32_t *value) {
+#ifdef WLAN_CONV_CRYPTO_SUPPORTED
+    uint32_t authmode;
+    authmode = wlan_crypto_get_param(vap->vdev_obj, WLAN_CRYPTO_PARAM_AUTH_MODE);
+    *value = 0;
+    if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_WPA) | (1 << WLAN_CRYPTO_AUTH_RSNA)))
+        *value = WLAN_CRYPTO_AUTH_WPA;
+    else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_OPEN) | (1 << WLAN_CRYPTO_AUTH_SHARED)))
+        *value = WLAN_CRYPTO_AUTH_AUTO;
+    else {
+        if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_OPEN)))
+                *value = WLAN_CRYPTO_AUTH_OPEN;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_AUTO)))
+                *value = WLAN_CRYPTO_AUTH_AUTO;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_NONE)))
+                *value = WLAN_CRYPTO_AUTH_NONE;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_SHARED)))
+                *value = WLAN_CRYPTO_AUTH_SHARED;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_WPA)))
+                *value = WLAN_CRYPTO_AUTH_WPA;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_RSNA)))
+                *value = WLAN_CRYPTO_AUTH_RSNA;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_8021X)))
+                *value = WLAN_CRYPTO_AUTH_8021X;
+        else if (authmode & (uint32_t)((1 << WLAN_CRYPTO_AUTH_CCKM)))
+                *value = WLAN_CRYPTO_AUTH_CCKM;
+    }
+#else
+    int32_t retv = 0;
+    ieee80211_auth_mode modes[IEEE80211_AUTH_MAX];
+    retv = wlan_get_auth_modes(vap, modes, IEEE80211_AUTH_MAX);
+    if (retv > 0)
+    {
+        *value = modes[0];
+        if((retv > 1) && (modes[0] == IEEE80211_AUTH_OPEN) && (modes[1] == IEEE80211_AUTH_SHARED))
+                *value =  IEEE80211_AUTH_AUTO;
+        retv = 0;
+    }
+#endif
+}
+
+static void osif_get_ethtool_stats(struct net_device *netdev,
+           struct ethtool_stats *stats, uint64_t *data)
+{
+    uint32_t i = 0;
+    int32_t index = 0;
+    int32_t tempVal = 0;
+    uint32_t authMode = 0;
+    osif_dev  *osifp = ath_netdev_priv(netdev);
+    wlan_if_t m_vap = osifp->os_if;
+    struct ieee80211vap *vap;
+    wlan_dev_t ic = wlan_vap_get_devhandle(m_vap); 
+    struct iw_statistics *is = &osifp->os_iwstats;
+    u_int8_t bssid[QDF_MAC_ADDR_SIZE];
+    struct iw_freq freq;
+    struct iw_quality iq;
+    wlan_rssi_info rssi_info;
+    int value = 0;
+    uint32_t tot_sta = 0;
+    uint32_t j = 0;
+    uint8_t pdev_id=0;
+	int8_t rec_type = 0;
+	struct iv_vdev_rev_txrx_stats *txrx_stats;
+
+#ifdef ENABLE_ADVANCE_STATS_REQ
+    int32_t loop = 0;
+    int8_t retVal = 0;
+    struct ic_peer_rate_stats_tlv *adv_stats = NULL;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+    struct net_device_stats *devstats = &osifp->os_devstats;
+#else
+    struct rtnl_link_stats64 devstats;
+#endif
+
+    tot_sta = data[0];
+    memset(data, 0, tot_sta * STA_STATS_LEN * sizeof(uint64_t));
+
+    TAILQ_FOREACH(vap, &ic->ic_vaps, iv_next)
+    {
+        i = j * STA_STATS_LEN;
+        if(j >= tot_sta)
+        {
+            break;
+        }
+        j++;
+        memcpy(&data[i], (((osif_dev *)vap->iv_ifp)->netdev)->name, strlen((((osif_dev *)vap->iv_ifp)->netdev)->name));
+        i++;
+
+		data[i++] = (uint32_t)vap->nss_val; // nss
+		txrx_stats = (struct iv_vdev_rev_txrx_stats *)kmalloc(sizeof(struct iv_vdev_rev_txrx_stats), GFP_KERNEL);
+		if (txrx_stats != NULL) {
+			memset(txrx_stats, 0, sizeof(struct iv_vdev_rev_txrx_stats));
+			retVal = ic->ic_vap_get_adv_stats(vap, IEEE80211_CONFIG_GET_REV_TXRX_STATS, (void *)txrx_stats);
+			if (retVal != -1) {
+				data[i++] = (int8_t)txrx_stats->rev_txrx.rx_nss; //rx_nss
+				data[i++] = (int8_t)txrx_stats->rev_txrx.tx_nss; //tx_nss
+				data[i++] = (int8_t)txrx_stats->rev_txrx.tx_bw; //freq_band
+
+				tempVal = (int8_t)txrx_stats->rev_txrx.rx_bw; // rx_bw
+				if (tempVal < 0)
+					tempVal = (int8_t)txrx_stats->rev_txrx.tx_bw; //tx_bw
+
+				data[i++] = (int8_t)tempVal;
+				data[i++] = (int8_t)txrx_stats->rev_txrx.tx_mcs; //tx_mcs
+				data[i++] = (int8_t)txrx_stats->rev_txrx.rx_mcs; //rx_mcs
+				data[i++] = (int8_t)txrx_stats->rev_txrx.rx_sgi; //rx_gi
+				data[i++] = (int8_t)txrx_stats->rev_txrx.tx_sgi; //tx_gi
+
+				osif_get_authMode(vap, &authMode);
+				data[i++] = (uint32_t)authMode; //authmode
+				data[i++] = (int8_t)txrx_stats->rev_txrx.rx_rec_type; //rx_rec_type
+				data[i++] = (uint8_t)0; //grp_id
+				data[i++] = (uint8_t)wlan_get_param(vap,IEEE80211_FEATURE_WMM); //wmm
+				data[i++] = (uint8_t)0; //mfp_test
+				data[i++] = (uint8_t)0; //tdls_ps
+				data[i++] = (uint64_t)ic->ic_vap_get_param(vap,IEEE80211_CONFIG_GET_RX_RATE); //rx_rate
+				data[i++] = (uint64_t)ic->ic_vap_get_param(vap,IEEE80211_CONFIG_GET_TX_RATE); //tx_rate
+				data[i++] = (uint64_t) vap->ftstats.latest_delay; //ft_delay
+				data[i++] = (uint64_t) vap->ftstats.min_delay; //ft_min_delay
+				data[i++] = (uint64_t) vap->ftstats.max_delay; //ft_max_delay
+				data[i++] = (uint64_t) vap->ftstats.avg_delay; //ft_avg_delay
+				data[i++] = (uint64_t) vap->ftstats.success; //ft_success
+				data[i++] = (uint64_t) vap->ftstats.fail; //ft_fail
+				value = wlan_vdev_mlme_get_state(vap->vdev_obj);
+				vap->iv_state_info.iv_state = (uint8_t)value;
+				data[i++] = (uint8_t)vap->iv_state_info.iv_state; //sta_state
+				rec_type = txrx_stats->rev_txrx.rx_rec_type;
+			}
+            kfree(txrx_stats);
+		}
+
+       if (vap->iv_state_info.iv_state == 3) {
+            data[i++] = (uint32_t)wlan_get_bss_phymode(vap); // wlan mode
+            osif_get_frequency(netdev, &freq);
+            data[i++] = (uint32_t)freq.m; //ctlfreq
+            wlan_vap_get_bssid(vap, bssid); 
+
+            /* bssid */
+            for (index = 5; index >= 0; index--) { 
+                data[i] |= (uint64_t)((uint64_t)(bssid[index] & 0xff) << (index * 8));
+            }
+            i++;
+
+            wlan_getrssi(vap, &rssi_info, WLAN_RSSI_RX);
+            osif_set_quality(&is->qual, rssi_info.avg_rssi, ic->ic_get_cur_chan_nf(ic));
+            iq = is->qual;
+            data[i++] = (uint8_t)iq.level; //rssi
+            data[i++] = (uint8_t)iq.noise; //noise_floor
+            netdev->netdev_ops->ndo_get_stats64(((osif_dev *)vap->iv_ifp)->netdev, &devstats);
+            data[i++] = (uint64_t)devstats.rx_packets; //rx_pkts
+            data[i++] = (uint64_t)devstats.rx_bytes; //rx_bytes
+            data[i++] = (uint64_t)devstats.tx_packets; //tx_pkts
+            data[i++] = (uint64_t)devstats.tx_bytes; //tx_bytes
+
+#ifdef ENABLE_ADVANCE_STATS_REQ
+            adv_stats = (struct ic_peer_rate_stats_tlv *)kmalloc(sizeof(struct ic_peer_rate_stats_tlv), GFP_KERNEL);
+            if (adv_stats != NULL) {
+                memset(adv_stats, 0, sizeof(struct ic_peer_rate_stats_tlv));
+                retVal = ic->ic_vap_get_adv_stats(vap, IEEE80211_CONFIG_GET_ADV_STATS, (void *)adv_stats);
+                pdev_id=vap->vdev_obj->vdev_objmgr.wlan_pdev->pdev_objmgr.wlan_pdev_id;
+                if (retVal != -1) {
+                    /* per nss tx counter  - ps_txpkts */
+                    for (index = 0; index < IC_TX_PEER_STATS_NUM_SPATIAL_STREAMS; index++) {
+                        data[i++] = (uint64_t)adv_stats->tx_stats.tx_nss[index];
+                    }
+
+                    /* per nss rx counter - ps_rxpkts */
+                    for (index = 0; index < IC_RX_PEER_STATS_NUM_SPATIAL_STREAMS; index++) {
+                        data[i++] = (uint64_t)adv_stats->rx_stats.rx_nss[index];
+                    }
+
+                    /* per chw tx counter - pcw_txpkts */
+                    for (index = 0; index < IC_TX_PEER_STATS_NUM_BW_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->tx_stats.tx_bw[index];
+                    }
+
+                    /* per chw rx counter - pcw_rxpkts */
+                    for (index = 0; index < IC_RX_PEER_STATS_NUM_BW_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->rx_stats.rx_bw[index];
+                    }
+
+                    /* per mcstype tx counter */
+                    for (index = 0; index < IC_TX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->tx_stats.tx_mcs[index];
+                    }
+
+                    /* per mcstype rx counter */
+                    for (index = 0; index < IC_RX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->rx_stats.rx_mcs[index];
+                    }
+
+                    /* per mcstype tx su mcs counter */
+                    for (index = 0; index < IC_TX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->tx_stats.tx_su_mcs[index];
+                    }
+
+                    /* per mcstype rx su mcs counter */
+                    for (index = 0; index < IC_RX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->rx_stats.rx_su_mcs[index];
+                    }
+
+                    /* per mcstype tx mu mcs counter */
+                    for (index = 0; index < IC_TX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->tx_stats.tx_mu_mcs[index];
+                    }
+
+                    /* per mcstype rx mu mcs counter */
+                    for (index = 0; index < IC_RX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        data[i++] = (uint64_t)adv_stats->rx_stats.rx_mu_mcs[index];
+                    }
+
+                    /* tx sgi counters 400ns, 800ns, 1600ns, 3200ns */
+                    for (loop = 0; loop < IC_RX_PEER_STATS_NUM_GI_COUNTERS; loop++) {
+                        /* In driver code, index 0 is mapped to 800ns and index 1 is mapped to 400ns
+                        on contrary to the GUI, where, index 0 is mapped to 400ns and 1 to 800ns.
+                        Hence added the below logic to swap the data */
+                        if (loop == 0) {
+                            data[i++] = (uint64_t)adv_stats->tx_stats.sgi_count[1];
+                        } else if (loop == 1) {
+                            data[i++] = (uint64_t)adv_stats->tx_stats.sgi_count[0];
+                        } else {
+                            data[i++] = (uint64_t)adv_stats->tx_stats.sgi_count[loop];
+                        }
+                    }
+
+                    /* per GUI rx couter */
+                    for (loop = 0; loop < IC_RX_PEER_STATS_NUM_GI_COUNTERS; loop++) {
+                        for (index = 0; index < IC_RX_PEER_STATS_NUM_MCS_COUNTERS; index++) {
+                        /* In driver code, index 0 is mapped to 800ns and index 1 is mapped to 400ns
+                            on contrary to the GUI, where, index 0 is mapped to 400ns and 1 to 800ns.
+                            Hence added the below logic to swap the data */
+                            if (loop == 0) {
+                                data[i++] = (uint64_t)adv_stats->rx_stats.rx_gi[1][index];
+                            } else if (loop == 1) {
+                                data[i++] = (uint64_t)adv_stats->rx_stats.rx_gi[0][index];
+                            } else {
+                                data[i++] = (uint64_t)adv_stats->rx_stats.rx_gi[loop][index];
+                            }
+
+                        }
+                    }
+                    /* per stream rssi */
+                    for (loop = 0; loop < IC_RX_PEER_STATS_NUM_BW_COUNTERS; loop++) {
+                        for (index = 0; index < IC_RX_PEER_STATS_NUM_SPATIAL_STREAMS; index++) {
+                            data[i++] = (int8_t)adv_stats->rx_stats.rssi_chain[loop][index];
+                        }
+                    }
+                }
+                /* ofdma stats rx */
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxofdmamode;
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxrutype;
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxruassignmentindex;
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxloruindex;
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxhiruindex;
+                data[i++] = (uint64_t)adv_stats->rx_stats.rxofdmapkt;
+                /* bss collision counter */
+                if (pdev_id < MAX_NUM_MACS) {
+                   data[i++] = (uint64_t)adv_stats->tx_stats.bss_color_count;
+                   data[i++] = (uint64_t)adv_stats->tx_stats.bss_color_code;
+                }
+                data[i++] = (uint64_t)0; // tx_ppdu_type: Will be updated once the uplink mimo/ofdma are implemented
+                data[i++] = (uint64_t)rec_type; //rx_ppdu_type: SU = 0, MU-MIMO = 1, MU-OFDMA = 2, MU-MIMO-OFDMA = 3
+                kfree(adv_stats);
+                /* btm stats */
+                data[i++] = (uint64_t)vap->btm_counter.query;
+                data[i++] = (uint64_t)vap->btm_counter.request;
+                data[i++] = (uint64_t)vap->btm_counter.accept;
+                data[i++] = (uint64_t)vap->btm_counter.deny;
+            }
+#endif
+        }
+    }
+}
+
+static int
+osif_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump)
+{
+    dump->len = sizeof(pdev_stats_cca_counters) * WAL_CCA_CNTR_HIST_LEN;
+    return 0;
+}
+
+static int
+osif_get_dump_data(struct net_device *netdev, struct ethtool_dump *dump,
+			void *buffer)
+{
+    pdev_stats_cca_counters counters[WAL_CCA_CNTR_HIST_LEN];
+    osif_dev  *osifp = ath_netdev_priv(netdev);
+    wlan_if_t m_vap = osifp->os_if;
+    wlan_dev_t ic = wlan_vap_get_devhandle(m_vap); 
+
+    if (dump->len != sizeof(counters))
+    {
+        netdev_info(netdev, "Incorrect cca stats length: %d %lu\n", dump->len, sizeof(counters));
+        return -EFAULT;
+    }
+    
+    ic->ic_get_cca_stats(ic, (void *)counters);
+ 
+    /* Copy CCA stats */
+    memcpy(buffer, counters, dump->len);
+    dump->flag = 0;
+    return 0;
+}
+
+static struct ethtool_ops osif_ethtool_ops = {
+   .get_sset_count = &osif_dp_get_strset_count,
+   .get_strings = &osif_get_strings,
+   .get_ethtool_stats = &osif_get_ethtool_stats,
+   .get_dump_flag = &osif_get_dump_flag,
+   .get_dump_data = &osif_get_dump_data,   
+};
+#endif /* PORT_SPIRENT_HK */
 #endif /* LINUX_VERSION_CODE > KERNEL_VERSION(3,2,0) */
 
 static inline
@@ -9561,7 +10428,11 @@ osifp_create_wlan_vap(struct ieee80211_clone_params *cp,
     struct ieee80211com *ic = &scn->sc_ic;
     bool macreq_enabled = FALSE;
     uint8_t bsta_fixed_idmask = 0xff;
+#ifdef PORT_SPIRENT_HK
+    u_int64_t prealloc_idmask;
+#else
     u_int32_t prealloc_idmask;
+#endif
     u_int8_t req_mac[QDF_MAC_ADDR_SIZE] = {0, 0, 0, 0, 0, 0};
     uint8_t num_vdevs;
     int id = -1;
@@ -9889,6 +10760,74 @@ osifp_create_wlan_vap(struct ieee80211_clone_params *cp,
     return vap;
 }
 
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+typedef void (*pkt_fwd_set_stat)(struct net_device *, int);
+typedef uint32_t (*pkt_fwd_get_stat)(struct net_device *, int);
+extern void register_wif_net_device_stat(pkt_fwd_set_stat set, pkt_fwd_get_stat get);
+
+enum pkt_fwd_stats_enum{
+    STA_RX_PACKETS = 0,
+    STA_TX_PACKETS,
+    ETH_RX_PACKETS,
+    ETH_TX_PACKETS,
+    RESET_ALL,
+};
+
+void set_pkt_fwd_stat(struct net_device *dev, int indx){
+    osif_dev *pvt_dev = ath_netdev_priv(dev);
+    switch (indx){
+        case STA_RX_PACKETS:
+            ++pvt_dev->pkt_fwd_stat.sta_rx_packets;
+        break;
+        case STA_TX_PACKETS:
+            ++pvt_dev->pkt_fwd_stat.sta_tx_packets;
+        break;
+        case ETH_RX_PACKETS:
+            ++pvt_dev->pkt_fwd_stat.eth_rx_packets;
+        break;
+        case ETH_TX_PACKETS:
+            ++pvt_dev->pkt_fwd_stat.eth_tx_packets;
+        break;
+        case RESET_ALL:
+            memset(&pvt_dev->pkt_fwd_stat, 0, sizeof(pvt_dev->pkt_fwd_stat));
+        break;
+        default:
+            pr_err("Unhandled stats\n");
+        break;
+    }
+}
+EXPORT_SYMBOL(set_pkt_fwd_stat);
+
+uint32_t get_pkt_fwd_stat(struct net_device *dev, int indx){
+    osif_dev *pvt_dev = ath_netdev_priv(dev);
+    switch (indx){
+        case STA_RX_PACKETS:
+            return pvt_dev->pkt_fwd_stat.sta_rx_packets;
+        break;
+        case STA_TX_PACKETS:
+            return pvt_dev->pkt_fwd_stat.sta_tx_packets;
+        break;
+        case ETH_RX_PACKETS:
+            return pvt_dev->pkt_fwd_stat.eth_rx_packets;
+        break;
+        case ETH_TX_PACKETS:
+            return pvt_dev->pkt_fwd_stat.eth_tx_packets;
+        break;
+        default:
+            pr_err("Unhandled stats\n");
+        break;
+    }
+    return 0;
+}
+EXPORT_SYMBOL(get_pkt_fwd_stat);
+
+void register_stat_counter_cb(){
+    register_wif_net_device_stat( set_pkt_fwd_stat, get_pkt_fwd_stat);
+}
+EXPORT_SYMBOL(register_stat_counter_cb);
+
+#endif
+
 int
 osif_create_vap_complete(struct net_device *comdev,
                          struct ieee80211_clone_params *cp,
@@ -9917,6 +10856,11 @@ osif_create_vap_complete(struct net_device *comdev,
     memcpy(&vap->cp, cp, sizeof(vap->cp));
 
     INIT_LIST_HEAD(&osifp->pending_rx_frames);
+#ifdef PORT_SPIRENT_HK
+    /* Initialize list for holding bss */
+    INIT_LIST_HEAD(&vap->hold_bss_list);
+    vap->hold_bss_count = 0;
+#endif
     spin_lock_init(&osifp->list_lock);
 
     osifp->os_handle = os_handle;
@@ -10225,6 +11169,13 @@ osif_create_vap_complete(struct net_device *comdev,
                             ic->ic_pri20_cfg_blockchanlist.freq,
                             ic->ic_pri20_cfg_blockchanlist.n_freq);
     }
+
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    memset(&osifp->pkt_fwd_stat, 0, sizeof(osifp->pkt_fwd_stat));
+#endif
+#if defined(PORT_SPIRENT_HK)
+    memset(&vap->btm_counter, 0, sizeof(vap->btm_counter));
+#endif
 
     return 0;
 }
@@ -12308,6 +13259,38 @@ static void ic_cancel_obss_nb_ru_tolerance_timer(struct ieee80211com *ic)
     return;
 }
 
+#ifdef PORT_SPIRENT_HK
+static void
+osif_post_ft_event(osif_dev *osdev)
+{
+	struct ieee80211ft_event_params ft_event;
+	struct net_device *dev = osdev->netdev;
+	wlan_if_t vap = osdev->os_if;
+	union iwreq_data wrqu;
+	int i = 0;
+
+	if (vap->iv_roam.iv_ft_roam && vap->iv_roam.iv_ft_params.fties) {
+                memset(&ft_event, 0, sizeof(struct ieee80211ft_event_params));
+		memcpy(&ft_event.ies, vap->iv_roam.iv_ft_params.fties,vap->iv_roam.iv_ft_params.fties_len);
+		ft_event.ies_len = vap->iv_roam.iv_ft_params.fties_len;
+		for (i = 0; i < ft_event.ies_len; i++) {
+			IEEE80211_DPRINTF(vap, IEEE80211_MSG_IOCTL, " %x", ft_event.ies[i]);
+		}
+		ft_event.ft_action = 0;
+		memcpy(ft_event.target_ap, vap->iv_roam.iv_ft_params.target_ap, IEEE80211_ADDR_LEN);
+		memset(&wrqu, 0, sizeof(wrqu));
+		wrqu.data.flags = IEEE80211_EV_FT_EVENT;
+		wrqu.data.length = sizeof(struct ieee80211ft_event_params);
+		WIRELESS_SEND_EVENT(dev, IWEVFTEVENT, &wrqu, (char *)&ft_event);
+
+		qdf_mem_free(vap->iv_roam.iv_ft_params.fties);
+		vap->iv_roam.iv_ft_params.fties = NULL;
+		vap->iv_roam.iv_ft_params.fties_len = 0;
+		qdf_mem_zero(vap->iv_roam.iv_ft_params.target_ap, IEEE80211_ADDR_LEN);
+	}
+}
+#endif
+
 int init_umac(void)
 {
 	mlme_set_ops_cb();
@@ -12378,4 +13361,3 @@ MODULE_SUPPORTED_DEVICE("Atheros WLAN cards");
 #ifdef MODULE_LICENSE
 MODULE_LICENSE("Dual BSD/GPL");
 #endif
-

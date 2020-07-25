@@ -1077,14 +1077,22 @@ static int
 decap_dot11_to_8023(qdf_nbuf_t mpdu, uint8_t *peer_mac, struct ieee80211vap *vap)
 {
     struct ieee80211_qosframe_addr4 wh, *wh_ptr;
+#ifndef PORT_SPIRENT_HK	
     uint8_t type,subtype,sec_idx;
+#else
+    uint8_t type,subtype;
+#endif
     uint32_t hdrsize=0, trailersize = 4; //Account for FCS
     struct llc llchdr;
     struct ether_header *eth_hdr;
     uint8_t is_4addr = 0;
+#ifndef PORT_SPIRENT_HK
     uint32_t sec_type;
+#endif
 #ifdef WLAN_CONV_CRYPTO_SUPPORTED
+#ifndef PORT_SPIRENT_HK
     uint32_t auth_type;
+#endif
 #endif
 
     if (vap->iv_rx_decap_type == osif_pkt_type_native_wifi) {
@@ -1122,6 +1130,7 @@ decap_dot11_to_8023(qdf_nbuf_t mpdu, uint8_t *peer_mac, struct ieee80211vap *vap
             hdrsize += 4;
     }
 
+#if !PORT_SPIRENT_HK
     if (wh.i_fc[1] & IEEE80211_FC1_WEP) {
 
         /* For encrypted frames offset header accordingly. Strip
@@ -1189,6 +1198,7 @@ decap_dot11_to_8023(qdf_nbuf_t mpdu, uint8_t *peer_mac, struct ieee80211vap *vap
         }
 #endif
     }
+#endif /* PORT_SPIRENT_HK */
 
     qdf_mem_copy(&llchdr, ((uint8_t *)qdf_nbuf_data(mpdu)) + hdrsize,
               sizeof(struct llc));
@@ -1788,6 +1798,51 @@ static qdf_nbuf_t convert_frag_list_to_nbuf_chain(qdf_nbuf_t nbuf, wlan_if_t vap
      return tmp_nbuf;
 }
 
+#if PORT_SPIRENT_HK
+#define IEEE80211_FCS_LEN 4
+static int crypto_decap(struct wlan_objmgr_vdev *vdev, wlan_if_t vap,
+         qdf_nbuf_t nbuf)
+{
+    struct ieee80211_frame *wh;
+    u_int16_t hdrspace;
+    struct wlan_objmgr_pdev *pdev;
+    struct wlan_objmgr_psoc *psoc;
+    struct wlan_objmgr_peer *peer;
+    struct wlan_lmac_if_crypto_rx_ops *crypto_rx_ops;
+    wh = (struct ieee80211_frame *) qdf_nbuf_data(nbuf);
+    if (wh->i_fc[1] & IEEE80211_FC1_WEP) {
+       if((wh->i_fc[0]&IEEE80211_FC0_TYPE_MASK) != IEEE80211_FC0_TYPE_DATA)
+                       return -1;
+       /* Calculate header length */
+       hdrspace = ieee80211_hdrsize(qdf_nbuf_data(nbuf));
+       IEEE80211_DPRINTF(vap, IEEE80211_MSG_INPUT,
+                                       "%s: rx hdrlen: %x\n", __func__, hdrspace);
+
+       pdev = wlan_vdev_get_pdev(vdev);
+       if(pdev == NULL) {
+               qdf_print("%s[%d]pdev is NULL\n", __func__, __LINE__);
+               return -1;
+       }
+
+       psoc = wlan_pdev_get_psoc(pdev);
+       if(psoc == NULL) {
+               qdf_print("%s[%d]psoc is NULL\n", __func__, __LINE__);
+               return -1;
+       }
+
+       crypto_rx_ops = wlan_crypto_get_crypto_rx_ops(psoc);
+
+       peer = wlan_vdev_get_bsspeer(vdev);
+       if (peer == NULL) {
+               qdf_print("%s[%d]peer is NULL\n", __func__, __LINE__);
+       }
+
+       WLAN_CRYPTO_RX_OPS_DECAP(crypto_rx_ops)(vap->vdev_obj, nbuf, peer->macaddr, 16);
+    }
+
+    return 0;
+}
+#endif
 void
 osif_rsim_rx_decap(os_if_t osif,
         qdf_nbuf_t *pdeliver_list_head,
@@ -1808,6 +1863,10 @@ osif_rsim_rx_decap(os_if_t osif,
    qdf_nbuf_t frag_list_tail = NULL;
    qdf_nbuf_t  prev = NULL;
    qdf_nbuf_t  next = NULL;
+#if (PORT_SPIRENT_HK && DECRYPT_MULTIPLE_SKBUFF)
+   u_int32_t new_mpdu_len=0;
+   struct wlan_objmgr_vdev *vdev = osdev->ctrl_vdev;
+#endif
 
    if (vap == NULL) {
         qdf_print("vap is NULL");
@@ -1889,6 +1948,25 @@ osif_rsim_rx_decap(os_if_t osif,
                qdf_print("Rx 802.11 packet hexdump before decap");
                RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(nbuf), qdf_nbuf_len(nbuf));
            }
+#if (PORT_SPIRENT_HK && DECRYPT_MULTIPLE_SKBUFF)
+           if (vap->iv_rawmodesim_debug) {
+               qdf_print("Rx 802.11 packet hexdump before decrypt\n");
+               RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(nbuf), qdf_nbuf_len(nbuf));
+           }
+
+           qdf_nbuf_trim_tail(nbuf, IEEE80211_FCS_LEN);
+           ret = crypto_decap(vdev, vap, nbuf);
+           qdf_nbuf_put_tail(nbuf, IEEE80211_FCS_LEN);
+
+           if (ret < 0) {
+               RAWSIM_TXRX_NODE_DELETE(*pdeliver_list_head,
+                       *pdeliver_list_tail,
+                       prev,
+                       nbuf);
+               nbuf = next;
+               continue;
+           }
+#endif
            ret = decap_dot11_to_8023(nbuf, peer_mac, vap);
            if (vap->iv_rawmodesim_debug) {
                qdf_print("Rx Ethernet II packet hexdump after decap");
@@ -1944,6 +2022,45 @@ osif_rsim_rx_decap(os_if_t osif,
                                       qdf_nbuf_len(tmpskb));
                }
            }
+#if (PORT_SPIRENT_HK && DECRYPT_MULTIPLE_SKBUFF)
+           qdf_nbuf_trim_tail(deliver_sublist_tail, IEEE80211_FCS_LEN);
+           ret = crypto_decap(vdev, vap, deliver_sublist_head);
+           if (ret < 0) {
+               deliver_sublist_tail->len = deliver_sublist_tail->len + IEEE80211_FCS_LEN;
+               RAWSIM_TXRX_SUBLIST_DELETE(*pdeliver_list_head,
+                       *pdeliver_list_tail,
+                       prev,
+                       deliver_sublist_head,
+                       deliver_sublist_tail);
+               nbuf = next;
+               continue;
+           }
+
+           if (vap->iv_rawmodesim_debug) {
+               qdf_print("After decrypt \n");
+               for (index = 0, tmpskb = deliver_sublist_head;
+                       tmpskb != deliver_sublist_tail;
+                       tmpskb = qdf_nbuf_next(tmpskb)) {
+                   printk("Fragment No : %d\n", ++index);
+                   RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(tmpskb),
+                           qdf_nbuf_len(tmpskb));
+               }
+                   printk("Fragment No : %d\n", ++index);
+               RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(tmpskb),
+                       qdf_nbuf_len(tmpskb));
+           }
+           qdf_nbuf_put_tail(deliver_sublist_tail, IEEE80211_FCS_LEN);
+
+           /* Crypto will remove crypt header, so recomputing mpdu len */
+           new_mpdu_len = 0;
+           tmpskb = deliver_sublist_head;
+           while(tmpskb && !qdf_nbuf_is_rx_chfrag_end(tmpskb)) {
+               new_mpdu_len += qdf_nbuf_len(tmpskb);
+               tmpskb = qdf_nbuf_next(tmpskb);
+           }
+           new_mpdu_len += qdf_nbuf_len(tmpskb);
+           total_mpdu_len = new_mpdu_len;
+#endif
            ret = decap_dot11withamsdu_to_8023(NULL,
                        vap,
                        &deliver_sublist_head,
@@ -1987,6 +2104,26 @@ osif_rsim_rx_decap(os_if_t osif,
                qdf_print("Rx 802.11 packet hexdump before decap");
                RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(nbuf), qdf_nbuf_len(nbuf));
            }
+#if (PORT_SPIRENT_HK && DECRYPT_MULTIPLE_SKBUFF)
+           nbuf->len = nbuf->len - IEEE80211_FCS_LEN;
+           ret = crypto_decap(vdev, vap, nbuf);
+           if (ret < 0) {
+               nbuf->len = nbuf->len + IEEE80211_FCS_LEN;
+               RAWSIM_TXRX_NODE_DELETE(*pdeliver_list_head,
+                       *pdeliver_list_tail,
+                       prev,
+                       nbuf);
+               nbuf = next;
+               continue;
+           }
+
+           if (vap->iv_rawmodesim_debug) {
+                   qdf_print("After decrypt \n");
+                   RAWSIM_PKT_HEXDUMP(qdf_nbuf_data(nbuf),
+                                          qdf_nbuf_len(nbuf));
+           }
+           nbuf->len = nbuf->len + IEEE80211_FCS_LEN;
+#endif
            ret = decap_dot11withamsdu_to_8023(NULL,
                        vap,
                        &nbuf,

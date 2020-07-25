@@ -1599,6 +1599,10 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, uint32_t mac_id,
 	if (pdev->mon_ppdu_status != DP_PPDU_STATUS_START)
 		return;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        /* Enabled enable_ol_stats flag for getting the RU Values */
+        pdev->enhanced_stats_en = 1;
+#endif
 	rx_enh_capture_mode = pdev->rx_enh_capture_mode;
 
 	while (!qdf_nbuf_is_queue_empty(&pdev->rx_status_q)) {
@@ -1689,12 +1693,13 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, uint32_t mac_id,
 				dp_send_ack_frame_to_stack(soc, pdev,
 							   ppdu_info);
 
+#if (!defined(PORT_SPIRENT_HK) || SPIRENT_AP_EMULATION) && defined(SPT_ADV_STATS)
 			if (pdev->enhanced_stats_en ||
 			    pdev->mcopy_mode || pdev->neighbour_peers_added)
 				dp_rx_handle_ppdu_stats(soc, pdev, ppdu_info);
 			else if (dp_cfr_rcc_mode_status(pdev))
 				dp_rx_handle_cfr(soc, pdev, ppdu_info);
-
+#endif
 			pdev->mon_ppdu_status = DP_PPDU_STATUS_DONE;
 
 			/*

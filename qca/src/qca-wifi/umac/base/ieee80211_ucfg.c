@@ -1716,7 +1716,14 @@ int ieee80211_ucfg_setparam(wlan_if_t vap, int param, int value, char *extra)
                          (uint32_t)(1 << value));
         }
 
-        if (error == 0) {
+        if (error == 0
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        /* vap init is trigerred when encryption parameters are updated.
+           This cause redundant vap init when enable network is executed from wpa_supplicant
+           which results in reinitialiazation of SM and causing performance issues */
+        && osifp->os_opmode != IEEE80211_M_STA
+#endif
+        ) {
             if (osifp->os_opmode != IEEE80211_M_STA || !vap->iv_roam.iv_ft_enable) {
                 retv = ENETRESET;
             }
@@ -1824,7 +1831,11 @@ int ieee80211_ucfg_setparam(wlan_if_t vap, int param, int value, char *extra)
                 osifp->uciphers[count++] = IEEE80211_CIPHER_NONE;
             error = wlan_set_ucast_ciphers(vap,osifp->uciphers,count);
             if (error == 0) {
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+                if (osifp->os_opmode != IEEE80211_M_STA)
+#else
                 if (osifp->os_opmode != IEEE80211_M_STA || !vap->iv_roam.iv_ft_enable)
+#endif
                     error = ENETRESET;
             }
             else {
@@ -2880,6 +2891,27 @@ case IEEE80211_PARAM_NSS:
             retv = -EINVAL;
         }
         break;
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+    case IEEE80211_PARAM_FWDEBUG:
+        if (value >= 0) {
+             retv = wlan_set_device_param(ic,IEEE80211_DEVICE_FWDEBUG, value);
+             if (retv == EOK) {
+                 retv = ENETRESET;
+             }
+        } else {
+             retv = -EINVAL;
+        }
+       break;
+#endif // SPT_ADV_STATS
+#ifdef SPT_CAPTURE
+    case IEEE80211_PARAM_CAPTURE_MODE_SET:
+        if (ic->ic_vap_set_param) {
+           retv = ic->ic_vap_set_param(vap, IEEE80211_CONFIG_CAPTURE_MODE_SET,(u_int32_t) value);
+        }
+        break;
+#endif // SPT_CAPTURE
+#endif
     case IEEE80211_PARAM_CWM_EXTBUSYTHRESHOLD:
         if (value >=0 && value <=100) {
             retv = wlan_set_device_param(ic,IEEE80211_DEVICE_CWM_EXTBUSYTHRESHOLD, value);
@@ -3791,7 +3823,9 @@ case IEEE80211_PARAM_NSS:
             retv = -EBUSY;
             break;
         }
+#ifndef PORT_SPIRENT_HK
         ucfg_scan_flush_results(pdev, NULL);
+#endif
         wlan_objmgr_pdev_release_ref(pdev, WLAN_OSIF_SCAN_ID);
         retv = 0; /* success */
         break;
@@ -4205,11 +4239,17 @@ case IEEE80211_PARAM_NSS:
          * preamble (VHT)  = 0x3
          * preamble (HE)   = 0x4
          */
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_NG)
+        /**
+        *   Disable checking operation mode to use sta_fixed_rate with STA mode.
+        */
         if (osifp->os_opmode != IEEE80211_M_HOSTAP) {
             return -EINVAL;
         }
 
-        if (IEEE80211_VAP_IN_FIXED_RATE_MODE(vap)) {
+        if (IEEE80211_VAP_IN_FIXED_RATE_MODE(vap))
+#endif
+        {
             struct find_wlan_node_req req;
             if (!ic->ic_he_target) {
                 req.assoc_id = ((value >> RATECODE_LEGACY_RC_SIZE)
@@ -4343,7 +4383,22 @@ case IEEE80211_PARAM_NSS:
             }
         }
         break;
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_BSS_COLOR)
+     case IEEE80211_PARAM_BSS_SET_STATE:
+        /* check for valid value */
+        if (DISABLE_BSS_STATE == value || ENABLE_BSS_STATE == value) {
+            if (ic->ic_vap_set_param && vdev != NULL)
+              /* vap is used for vdev identification
+               * IEEE80211_CONFIG_BSS_COLOR_STATE_SET is used for command ID and
+               * value can be 1 or 0, always retv will be 0 */
+              retv = ic->ic_vap_set_param(vap, IEEE80211_CONFIG_BSS_COLOR_STATE_SET,(u_int32_t) value);
+            else
+              qdf_print("Invalid Station Info or Function Not Ready\n");
+        } else {
+           qdf_print("Invalid argument value, <0/1>\n");
+        }
+        break;
+#endif
     case IEEE80211_PARAM_SMART_MESH_CONFIG:
         retv = wlan_set_param(vap, IEEE80211_SMART_MESH_CONFIG, value);
         break;
@@ -4522,7 +4577,11 @@ case IEEE80211_PARAM_NSS:
         }
         break;
     case IEEE80211_PARAM_DISABLE_SELECTIVE_HTMCS_FOR_VAP:
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        if(vap->iv_opmode == IEEE80211_M_HOSTAP || vap->iv_opmode == IEEE80211_M_STA) {
+#else
         if(vap->iv_opmode == IEEE80211_M_HOSTAP) {
+#endif
             retv = wlan_set_param(vap, IEEE80211_CONFIG_DISABLE_SELECTIVE_HTMCS, value);
             if(retv == 0) {
                 retv = ENETRESET;
@@ -4533,8 +4592,13 @@ case IEEE80211_PARAM_NSS:
         }
         break;
     case IEEE80211_PARAM_CONFIGURE_SELECTIVE_VHTMCS_FOR_VAP:
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        if(vap->iv_opmode == IEEE80211_M_HOSTAP || vap->iv_opmode == IEEE80211_M_STA) {
+            {
+#else
         if(vap->iv_opmode == IEEE80211_M_HOSTAP) {
             if(value != 0) {
+#endif
                 retv = wlan_set_param(vap, IEEE80211_CONFIG_CONFIGURE_SELECTIVE_VHTMCS, value);
                 if(retv == 0) {
                     retv = ENETRESET;
@@ -5251,11 +5315,13 @@ case IEEE80211_PARAM_NSS:
         break;
 
     case IEEE80211_PARAM_FT_ENABLE:
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_ROAMING) // ft command should support with non cfg mode */
         if (!ic->ic_cfg80211_config) {
             IEEE80211_DPRINTF(vap, IEEE80211_MSG_IOCTL,
                 "FT supported only with cfg80211\n");
             return -EINVAL;
         }
+#endif
 
         if(vap->iv_opmode == IEEE80211_M_STA) {
             if (value > 1  ||  value < 0) {
@@ -5264,9 +5330,12 @@ case IEEE80211_PARAM_NSS:
                 return -EINVAL;
             }
             retv = wlan_set_param(vap, IEEE80211_CONFIG_FT_ENABLE, value);
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_ROAMING)
+            /* vap should not be reset during roaming */
             if (retv == 0) {
                 retv = ENETRESET;
             }
+#endif
         } else {
             IEEE80211_DPRINTF(vap, IEEE80211_MSG_IOCTL,
                 "Valid only in STA mode\n");
@@ -5464,6 +5533,10 @@ int ieee80211_ucfg_getparam(wlan_if_t vap, int param, int *value)
 #endif
     struct ieee80211_quality iq;
     cdp_config_param_type val = {0};
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    u_int32_t phy_type;
+#endif
 
 	if (!osifp || osifp->is_delete_in_progress)
 		return -EINVAL;
@@ -7528,7 +7601,86 @@ int ieee80211_ucfg_getparam(wlan_if_t vap, int param, int *value)
         *value = wlan_get_param(vap, IEEE80211_CONFIG_VDEV_PEER_PROTOCOL_DROP_MASK);
         break;
 #endif
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    case IEEE80211_PARAM_HTCAP:
+        phy_type = wlan_get_desired_phymode(vap);
+        switch(phy_type)
+        {
+            case IEEE80211_MODE_11NA_HT20:
+            case IEEE80211_MODE_11NG_HT20:
+            case IEEE80211_MODE_11NA_HT40PLUS:
+            case IEEE80211_MODE_11NA_HT40MINUS:
+            case IEEE80211_MODE_11NG_HT40PLUS:
+            case IEEE80211_MODE_11NG_HT40MINUS:
+            case IEEE80211_MODE_11NG_HT40:
+            case IEEE80211_MODE_11NA_HT40:
+            case IEEE80211_MODE_11AC_VHT20:
+            case IEEE80211_MODE_11AC_VHT40PLUS:
+            case IEEE80211_MODE_11AC_VHT40MINUS:
+            case IEEE80211_MODE_11AC_VHT40:
+            case IEEE80211_MODE_11AC_VHT80:
+            case IEEE80211_MODE_11AC_VHT160:
+            case IEEE80211_MODE_11AC_VHT80_80:
+            case IEEE80211_MODE_11AXA_HE20:
+            case IEEE80211_MODE_11AXG_HE20:
+            case IEEE80211_MODE_11AXA_HE40PLUS:
+            case IEEE80211_MODE_11AXA_HE40MINUS:
+            case IEEE80211_MODE_11AXG_HE40PLUS:
+            case IEEE80211_MODE_11AXG_HE40MINUS:
+            case IEEE80211_MODE_11AXA_HE40:
+            case IEEE80211_MODE_11AXG_HE40:
+            case IEEE80211_MODE_11AXA_HE80:
+            case IEEE80211_MODE_11AXA_HE160:
+            case IEEE80211_MODE_11AXA_HE80_80:
+                *value = ic->ic_htcap;
+                 break;
+             default:
+                *value = -1;
+                break;
+        }
+        break;
+    case IEEE80211_PARAM_VHTCAP:
+        phy_type = wlan_get_desired_phymode(vap);
+        switch(phy_type)
+        {
+            case IEEE80211_MODE_11AC_VHT20:
+            case IEEE80211_MODE_11AC_VHT40PLUS:
+            case IEEE80211_MODE_11AC_VHT40MINUS:
+            case IEEE80211_MODE_11AC_VHT40:
+            case IEEE80211_MODE_11AC_VHT80:
+            case IEEE80211_MODE_11AC_VHT160:
+            case IEEE80211_MODE_11AC_VHT80_80:
+            case IEEE80211_MODE_11AXA_HE20:
+            case IEEE80211_MODE_11AXA_HE40PLUS:
+            case IEEE80211_MODE_11AXA_HE40MINUS:
+            case IEEE80211_MODE_11AXA_HE40:
+            case IEEE80211_MODE_11AXA_HE80:
+            case IEEE80211_MODE_11AXA_HE160:
+            case IEEE80211_MODE_11AXA_HE80_80:
+                *value = ic->ic_vhtcap;
+                break;
+            default:
+                *value = -1;
+                break;
+        }
+        break;
+    case IEEE80211_PARAM_STA_STATE:
+#if defined(PORT_SPIRENT_HK)
+        *value = wlan_vdev_mlme_get_state(vap->vdev_obj);
+#else
+        *value = vap->iv_state_info.iv_state;
+#endif
+        break;
+   case IEEE80211_PARAM_RX_RATE:
+       *value = ic->ic_vap_get_param(vap,IEEE80211_CONFIG_GET_RX_RATE);
+       break;
+   case IEEE80211_PARAM_TX_RATE:
+       *value = ic->ic_vap_get_param(vap,IEEE80211_CONFIG_GET_TX_RATE);
+       break;
+   case IEEE80211_PARAM_FTDELAY:
+       *value = vap->ftstats.latest_delay;
+       break;
+#endif
     }
     if (retv) {
         qdf_print("%s : parameter 0x%x not supported ", __func__, param);
@@ -10091,6 +10243,13 @@ ieee80211_ucfg_setmlme(struct ieee80211com *ic, void *osif, struct ieee80211req_
                    vap->iv_sta_external_auth_enabled = false;
                 }
 #endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+		        /* call roam function instead of vap init when roam command is triggered */
+                if (vap->iv_roam.iv_roaming) {
+                    osif_vap_roam(osifp->netdev);
+                }
+                else
+#endif
                 osif_vap_init(osifp->netdev, 0);
             }
             else if (osifp->os_opmode ==  IEEE80211_M_HOSTAP) {
@@ -10191,6 +10350,11 @@ ieee80211_ucfg_setmlme(struct ieee80211com *ic, void *osif, struct ieee80211req_
                     //        return -EINVAL; /*fixme darwin does this, but linux did not before? */
                     //    }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MAIN_PROXY_REMOVAL)
+                    if (unlikely(vap->iv_mpsta) && ic->ic_npstavaps > IEEE80211_NO_OF_STATIONS_CREATED) {
+                        break;
+                    }
+#endif
 #if ATH_SUPPORT_DFS && ATH_SUPPORT_STA_DFS
                     if(wlan_mlme_is_stacac_running(vap)) {
                         IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Do not stop the BSS STA CAC is on\n");
@@ -10297,6 +10461,94 @@ ieee80211_ucfg_setmlme(struct ieee80211com *ic, void *osif, struct ieee80211req_
             osif_vap_stop(osifp->netdev);
 #endif
             break;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+	/* update FT ie information from supplicant */
+	case IEEE80211_MLME_UPDATE_FT_IES:
+        {
+		int retval = 0;
+
+		if ((!vap->iv_roam.iv_ft_enable) ||
+		    (!ieee80211_vap_is_connected(vap) && !ieee80211_vap_is_connecting(vap)) ||
+                    (osifp->is_delete_in_progress)) {
+			retval = -EINVAL;
+			goto error;
+		}
+
+		retval = wlan_mlme_set_ftie(vap, mlme->update_ft_ies.md, (u_int8_t *)mlme->update_ft_ies.ie, mlme->update_ft_ies.ie_len);
+
+error:
+		if (retval == 0) {
+			vap->iv_roam.iv_roaming = 1;
+			vap->iv_roam.iv_ft_roam = 1;
+		} else {
+			vap->iv_roam.iv_roaming = 0;
+			vap->iv_roam.iv_ft_roam = 0;
+		}
+		vap->iv_roam.iv_wait_for_ftie_update = 0;
+	}
+	break;
+	/* Add bssid received from supplicant */
+	case IEEE80211_MLME_HOLD_BSS:
+	{
+		struct bss_list *bss;
+
+		IEEE80211_VAP_LOCK(vap);
+		/* traverse the bss holding list */
+		list_for_each_entry(bss, &vap->hold_bss_list, list) {
+			/* check bss is already holded */
+			if(ether_addr_equal(bss->bssid, mlme->im_bssid)) {
+				qdf_print("%s: Already bss %s is holded by user \n", __func__,
+					ether_sprintf(bss->bssid));
+				goto done;
+			}
+		}
+		bss = (struct bss_list *) OS_MALLOC(osifp->os_handle, sizeof(*bss), GFP_ATOMIC);
+		if (bss) {
+			memcpy(bss->bssid, mlme->im_bssid, QDF_MAC_ADDR_SIZE);
+			/* add bssid received from supplicant to holding list */
+			list_add_tail(&bss->list, &vap->hold_bss_list);
+			vap->hold_bss_count += 1;
+                }
+        done:
+		IEEE80211_VAP_UNLOCK(vap);
+	}
+	break;
+	/* remove bssid received from supplicant to remove from bss hold list */
+	case IEEE80211_MLME_UNHOLD_BSS:
+	{
+		struct bss_list *bss;
+
+		IEEE80211_VAP_LOCK(vap);
+		/* traverse the bss holding list */
+		list_for_each_entry(bss, &vap->hold_bss_list, list) {
+			/* check bss is already holded */
+			if(ether_addr_equal(bss->bssid, mlme->im_bssid)) {
+				/* remove bss from holding list */
+				list_del(&bss->list);
+				vap->hold_bss_count -= 1;
+				kfree(bss);
+				break;
+			}
+		}
+		IEEE80211_VAP_UNLOCK(vap);
+	}
+	break;
+	case IEEE80211_MLME_SET_BTM_STATS:
+		memcpy( &vap->btm_counter, &mlme->im_optie[0], sizeof(vap->btm_counter));
+		qdf_print("%d,%d,%d,%d, %d\n",
+			vap->btm_counter.query, vap->btm_counter.request, vap->btm_counter.accept,
+			vap->btm_counter.deny, (int)vap->btm_counter.v_delay);
+	break;
+	/* update ft failure counter */
+	case IEEE80211_MLME_UPDATE_FT_FAIL:
+	{
+		IEEE80211_VAP_LOCK(vap);
+		vap->ftstats.state = FBT_FAIL;
+		vap->ftstats.fail += 1;
+		IEEE80211_VAP_UNLOCK(vap);
+	}
+	break;
+#endif
         default:
             return -EINVAL;
     }

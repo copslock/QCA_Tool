@@ -758,8 +758,21 @@ ieee80211_vap_setup(struct ieee80211com *ic, struct ieee80211vap *vap,
                vap->iv_he_dl_muofdma_bfer = ENABLE_HE_DL_MUOFDMA_BFER;
             }
         } else {
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+            if (vap->iv_psta || vap->iv_mpsta || (vap->iv_opmode == IEEE80211_M_STA)) {
+                vap->iv_he_dl_muofdma = ENABLE_HE_DL_MUOFDMA;
+                vap->iv_he_su_bfee    = ENABLE_HE_SU_BFEE;
+                vap->iv_he_su_bfer    = !ENABLE_HE_SU_BFER;
+                vap->iv_he_mu_bfee    = ENABLE_HE_MU_BFEE;
+                vap->iv_he_mu_bfer    = !ENABLE_HE_MU_BFER;
+           } else {
+                vap->iv_he_mu_bfer    = !ENABLE_HE_MU_BFER;;
+                vap->iv_he_dl_muofdma = !ENABLE_HE_DL_MUOFDMA;
+           }
+#else
             vap->iv_he_mu_bfer    = !ENABLE_HE_MU_BFER;;
             vap->iv_he_dl_muofdma = !ENABLE_HE_DL_MUOFDMA;
+#endif
         }
 
         vap->iv_he_ul_mumimo      = HECAP_PHY_UL_MU_MIMO_GET_FROM_IC
@@ -800,6 +813,7 @@ ieee80211_vap_setup(struct ieee80211com *ic, struct ieee80211vap *vap,
             vap->iv_he_ul_muofdma = ENABLE_HE_UL_MUOFDMA;
         }
 
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_MULTI_CLIENTS)
 #if ATH_SUPPORT_WRAP
         if (vap->iv_psta || vap->iv_mpsta) {
             vap->iv_he_ul_mumimo  = !ENABLE_HE_UL_MUMIMO;
@@ -810,6 +824,7 @@ ieee80211_vap_setup(struct ieee80211com *ic, struct ieee80211vap *vap,
             vap->iv_he_mu_bfee    = !ENABLE_HE_MU_BFEE;
             vap->iv_he_mu_bfer    = !ENABLE_HE_MU_BFER;
         }
+#endif
 #endif
         /* Set vedev params he su bfee, he su bfer, he mu bfee,
          * he mu bfer, he dl/ul muofdma and he ul mumimo by default.

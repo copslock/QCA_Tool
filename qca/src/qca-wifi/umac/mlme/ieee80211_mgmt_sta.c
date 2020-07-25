@@ -886,6 +886,9 @@ void ieee80211_recv_beacon_sta(struct ieee80211_node *ni, wbuf_t wbuf, int subty
         }
     snr = ieee80211_get_snr(scan_entry, vap);
     son_update_uplink_snr(vap->vdev_obj, snr);
+#ifdef PORT_SPIRENT_HK
+    ni->ni_rssi = snr;
+#endif
     /* Update the uplink rate */
     uplink_rate = son_get_uplinkrate(vap->vdev_obj, snr);
 
@@ -1217,7 +1220,9 @@ ieee80211_setup_assoc(
     }
 
     /*Add RM Enabled capabilities IE*/
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_ROAMING)
     if (vap->iv_rrm_cap_ie)
+#endif
         frm = ieee80211_add_rrm_cap_ie(frm, ni);
 
 #if ATH_SUPPORT_WAPI
@@ -1319,6 +1324,10 @@ ieee80211_setup_assoc(
             frm = ieee80211_add_htcap_vendor_specific(frm, ni, subtype);
         }
     }
+#ifdef PORT_SPIRENT_HK
+    /* Add rrm capbabilities, if supported */
+    frm = ieee80211_add_rrm_cap_ie(frm, ni);
+#endif /* PORT_SPIRENT_HK */
 
     /* Add extended capbabilities, if applicable */
     frm = ieee80211_add_extcap(frm, ni, IEEE80211_FC0_SUBTYPE_ASSOC_REQ);

@@ -566,15 +566,75 @@ static void ieee80211_assoc_state_join_exit(void *ctx)
     wlan_mlme_cancel(sm->vap_handle);/* cancel any pending mlme join req */
 }
 
-static bool ieee80211_assoc_state_join_event(void *ctx, u_int16_t event, u_int16_t event_data_len, void *event_data)
+/**/
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_NG
+static bool ieee80211_assoc_state_assoc_event(void *ctx, u_int16_t event, u_int16_t event_data_len, void *event_data);
+#endif // SPT_NG
+#ifdef SPT_MAIN_PROXY_REMOVAL
+static void ieee80211_assoc_state_run_entry(void *ctx);
+static void ieee80211_assoc_state_mpsta_fake_assoc(void *ctx)
 {
     wlan_assoc_sm_t sm = (wlan_assoc_sm_t) ctx;
 
+    /* force to call firmware vdev up routine, refer "ieee80211_mlme_recv_assoc_response" */
+    wlan_vdev_mlme_sm_deliver_evt_sync(sm->vap_handle->vdev_obj, WLAN_VDEV_SM_EV_START_SUCCESS, 0, NULL);
+
+    /* move the connect state machine to connected */
+    ieee80211_assoc_state_run_entry(ctx);
+    IEEE80211_DPRINTF(sm->vap_handle,IEEE80211_MSG_STATE,"%s: mpsta fake associated:%s \n",__func__,sm->vap_handle->iv_netdev_name);
+}
+#endif // SPT_MAIN_PROXY_REMOVAL
+#endif
+static bool ieee80211_assoc_state_join_event(void *ctx, u_int16_t event, u_int16_t event_data_len, void *event_data)
+{
+    wlan_assoc_sm_t sm = (wlan_assoc_sm_t) ctx;
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MAIN_PROXY_REMOVAL
+    struct ieee80211vap *vap=sm->vap_handle;
+    struct ieee80211com *ic=vap->iv_ic;
+#endif // SPT_MAIN_PROXY_REMOVAL
+#ifdef SPT_NG
+    struct wlan_objmgr_pdev *pdev=sm->vap_handle->iv_ic->ic_pdev_obj;
+#endif // SPT_NG
+#endif
     switch(event) {
         case IEEE80211_ASSOC_EVENT_JOIN_SUCCESS:
+            /* Fake association is triggered based on interface name, this is to support
+             * single client features like roaming,ofdma and mu-mimo where mpsta flag will
+             * get set. */
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MAIN_PROXY_REMOVAL
+            if (unlikely(vap->iv_mpsta) && ic->ic_npstavaps > IEEE80211_NO_OF_STATIONS_CREATED) {
+                ieee80211_assoc_state_mpsta_fake_assoc(ctx);
+                return true;
+            }
+#endif // SPT_MAIN_PROXY_REMOVAL
+#ifdef SPT_NG
+            /*
+            **   For noise generator mode (fake association)
+            */
+            if (CHK_NG_ENABLE(pdev)) {
+                qdf_print("NG_PRINT: By pass -> assoc success");
+                ieee80211_assoc_state_join_entry(ctx);
+                ieee80211_assoc_state_assoc_event(ctx, IEEE80211_ASSOC_EVENT_ASSOC_SUCCESS, 0, NULL);
+                ieee80211_assoc_state_run_entry(ctx);
+                wlan_vdev_mlme_sm_deliver_evt_sync(sm->vap_handle->vdev_obj, WLAN_VDEV_SM_EV_START_SUCCESS, 0, NULL);
+                return true;
+            }
+#endif // SPT_NG
+#endif
             if (wlan_util_scan_entry_mlme_assoc_state(sm->scan_entry) >= AP_ASSOC_STATE_AUTH) {
                 ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_ASSOC);
             } else {
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+              /* Authentication information are processed in FT action frames
+                 by wpa_supplicant and wpa_supplicant triggers associate. So
+                 transition state is changed to assoc state instead of auth state. */
+              if(sm->vap_handle->ftstats.type == FBT_TYPE_ODS)
+                ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_ASSOC);
+              else
+#endif
                 ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_AUTH);
             }
             return true;
@@ -825,12 +885,27 @@ static bool ieee80211_assoc_state_run_event(void *ctx, u_int16_t event, u_int16_
     qdf_print("%s: vap: %d(0x%pK) event: %d", __func__, vap->iv_unit, vap, event);
     switch(event) {
     case IEEE80211_ASSOC_EVENT_BEACON_MISS:
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+        /*
+        **   For noise generator mode (fake association mode)
+        */
+        {
+            struct wlan_objmgr_pdev *pdev = vap->iv_ic->ic_pdev_obj;
+            if (CHK_NG_ENABLE(pdev))
+                return true;
+        }
+#endif
         sm->last_failure = WLAN_ASSOC_SM_REASON_BEACON_MISS;    /* beacon miss */
         ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_INIT);
         return true;
         break;
     case IEEE80211_ASSOC_EVENT_DISASSOC:
         sm->last_failure = WLAN_ASSOC_SM_REASON_DISASSOC;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        printk("IEEE80211_ASSOC_EVENT_DEAUTH -> IEEE80211_ASSOC_STATE_INIT : event %d reason %d , sm->vap_handle %p  vap-%d(%s)\n",
+                        event, sm->last_reason, sm->vap_handle, vap->iv_unit,vap->iv_netdev_name);
+        wlan_mlme_cancel(sm->vap_handle);
+#endif
         ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_INIT);
         return true;
         break;
@@ -847,9 +922,36 @@ static bool ieee80211_assoc_state_run_event(void *ctx, u_int16_t event, u_int16_
             wlan_util_scan_entry_mlme_set_assoc_state(sm->scan_entry, AP_ASSOC_STATE_NONE);
             wlan_util_scan_entry_update_mlme_info(vap, sm->scan_entry);
         }
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_NG
+        /*
+        **   For noise generator mode (fake association mode)
+        */
+        {
+            struct wlan_objmgr_pdev *pdev = vap->iv_ic->ic_pdev_obj;
+            if (!pdev) {
+                scm_err("pdev is null");
+                return false;
+            }
+            if (CHK_NG_ENABLE(pdev)) {
+                qdf_print("NG_PRINT: By pass transition to assoc init");
+                ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_INIT);
+                return true;
+            }
+        }
+#endif // SPT_NG
+#ifdef SPT_ROAMING
+        /* As per 80211r standard, client should not send disassoc/deauth request
+           during roaming. client should send deauth when user disassociates. */
+        if (!vap->iv_roam_inprogress) {
+#endif // SPT_ROAMING
+#endif
         wlan_vap_get_bssid(sm->vap_handle, cur_bssid);
         vap->iv_roam.iv_roam_disassoc = 1;
         wlan_mlme_disassoc_request(sm->vap_handle, cur_bssid, IEEE80211_REASON_ASSOC_LEAVE);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+        }
+#endif
         ieee80211_sm_transition_to(sm->hsm_handle,IEEE80211_ASSOC_STATE_INIT);
         return true;
         break;
@@ -917,6 +1019,19 @@ static void ieee80211_assoc_state_disassoc_entry(void *ctx)
     } else {
         OS_SET_TIMER(&sm->sm_timer,sm->max_mgmt_time);
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+    /*
+    **   For noise generator mode (fake association mode)
+    */
+    {
+        struct wlan_objmgr_pdev *pdev = sm->vap_handle->iv_ic->ic_pdev_obj;
+        if (CHK_NG_ENABLE(pdev)) {
+            qdf_print("NG_PRINT: By pass disassoc entry");
+            wlan_vdev_mlme_sm_deliver_evt_sync(sm->vap_handle->vdev_obj,
+                WLAN_VDEV_SM_EV_MLME_DOWN_REQ, 0, NULL);
+        }
+    }
+#endif
 }
 
 static void ieee80211_assoc_state_disassoc_exit(void *ctx)
@@ -1236,6 +1351,17 @@ static void sm_deauth_indication(os_handle_t osif,u_int8_t *macaddr, u_int16_t a
 static void sm_disassoc_indication(os_handle_t osif,u_int8_t *macaddr, u_int16_t associd, u_int32_t reason)
 {
     wlan_assoc_sm_t sm = (wlan_assoc_sm_t) osif;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+    /*
+    **   For noise generator mode (fake association mode)
+    */
+    struct wlan_objmgr_pdev *pdev = sm->vap_handle->iv_ic->ic_pdev_obj;
+    if (CHK_NG_ENABLE(pdev)) {   
+        qdf_print("NG_PRINT: By pass deauth indicate : reason: %d", reason);
+        return;
+    }
+#endif
+
     sm->last_reason = reason;
     /*
      * In theory we should still be auth'ed
@@ -1271,6 +1397,17 @@ wlan_mlme_event_handler_table sta_mlme_evt_handler = {
 static void sm_beacon_miss(os_handle_t osif)
 {
     wlan_assoc_sm_t sm = (wlan_assoc_sm_t) osif;
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+    /*
+    **   For noise generator mode (fake association mode)
+    */
+    struct wlan_objmgr_pdev *pdev = sm->vap_handle->iv_ic->ic_pdev_obj;
+    if (CHK_NG_ENABLE(pdev)) {
+        qdf_print("NG_PRINT: By pass beacon miss");
+        return;
+    }
+#endif
 
     if (sm->scan_entry) wlan_util_scan_entry_mlme_set_assoc_state(sm->scan_entry, AP_ASSOC_STATE_NONE);
     ieee80211_sm_dispatch(sm->hsm_handle,IEEE80211_ASSOC_EVENT_BEACON_MISS,0,NULL);

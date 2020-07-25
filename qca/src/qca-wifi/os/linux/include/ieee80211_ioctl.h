@@ -56,7 +56,13 @@
 #if ATH_SUPPORT_AP_WDS_COMBO
 #define IEEE80211_MAX_VAPS 16
 #elif ATH_SUPPORT_WRAP
+#ifdef PORT_SPIRENT_HK
+#ifndef IEEE80211_MAX_VAPS
+#define IEEE80211_MAX_VAPS SPIRENT_MAX_VDEVS_PER_RADIO
+#endif
+#else
 #define IEEE80211_MAX_VAPS 32
+#endif
 #elif ATH_PERF_PWR_OFFLOAD
 #define IEEE80211_MAX_VAPS 17
 #else
@@ -300,6 +306,13 @@ struct ieee80211req_mlme {
 #define IEEE80211_MLME_AUTH	        8	/* auth resp to station */
 #define IEEE80211_MLME_REASSOC	        9	/* reassoc to station */
 #define	IEEE80211_MLME_AUTH_FILS        10	/* AUTH - when FILS enabled */
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION) || defined(SPIRENT_PORT)
+#define	IEEE80211_MLME_UPDATE_FT_IES    11	/* update ft_ies from supplicant */
+#define	IEEE80211_MLME_HOLD_BSS         12	/* get bssid from supplicant to add to bss list */
+#define	IEEE80211_MLME_UNHOLD_BSS       13	/* get bssid from supplicant to remove from bss list*/
+#define	IEEE80211_MLME_SET_BTM_STATS    14	/* set btm-stats from supplicant */
+#define	IEEE80211_MLME_UPDATE_FT_FAIL   15	/* update ft failure */
+#endif
 	u_int8_t	im_ssid_len;	/* length of optional ssid */
 	u_int16_t	im_reason;	/* 802.11 reason code */
 	u_int16_t	im_seq;	        /* seq for auth */
@@ -308,6 +321,10 @@ struct ieee80211req_mlme {
 	u_int8_t        im_optie[IEEE80211_MAX_OPT_IE];
 	u_int16_t       im_optie_len;
 	struct          ieee80211req_fils_aad  fils_aad;
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION) || defined(SPIRENT_PORT)
+	struct		ieee80211update_ft_ies update_ft_ies; /* update ft_ies information */
+	u_int8_t	im_bssid[IEEE80211_ADDR_LEN]; /* hold/unhold bssid */
+#endif
 };
 
 /*
@@ -2418,6 +2435,9 @@ enum {
     IEEE80211_EV_NOL_FINISHED,
     IEEE80211_EV_AUTHORIZED_IND_STA,
     IEEE80211_EV_NEIGH_REQ_RECV_AP,
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    IEEE80211_EV_FT_EVENT, // To update ft ies information to supplicant.
+#endif
 };
 
 #endif /* __linux__ */

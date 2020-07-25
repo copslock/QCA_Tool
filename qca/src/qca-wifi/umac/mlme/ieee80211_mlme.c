@@ -666,8 +666,19 @@ int wlan_mlme_disassoc_request_with_callback(
     wlan_node_set_peer_state(ni, WLAN_DISCONNECT_STATE);
     /* Send disassoc frame */
     delayed_cleanup = ieee80211node_has_flag(ni, IEEE80211_NODE_DELAYED_CLEANUP);
+#if defined(PORT_SPIRENT_HK) && (SPT_MULTI_CLIENTS)
+    /* CIPNCD 21795:Sending de-auth message, so that AP will clear its client
+    list immediately. */
+    /* CIPNCD 20670: Send de-auth frame as per Psylocke */
+    if(vap->iv_opmode == IEEE80211_M_STA) {
+        error = ieee80211_send_deauth(ni, IEEE80211_REASON_AUTH_LEAVE);
+    }
+    else {
+        error = ieee80211_send_disassoc_with_callback(ni, reason, handler, arg);
+    }
+#else
     error = ieee80211_send_disassoc_with_callback(ni, reason, handler, arg);
-
+#endif // #if defined(PORT_SPIRENT_HK) && (SPT_MULTI_CLIENTS)
     /* Node needs to be removed from table as well, do it only for AP now */
     if ((vap->iv_opmode == IEEE80211_M_HOSTAP  && ni != vap->iv_bss )
             || vap->iv_opmode == IEEE80211_M_IBSS) {
@@ -1595,6 +1606,12 @@ void wlan_mlme_connection_up(wlan_if_t vaphandle)
     struct ieee80211_mlme_priv    *mlme_priv = vap->iv_mlme_priv;
     ieee80211_vap_event           evt;
     struct ieee80211vap           *first_vap = NULL;
+    /* Workaround for assoc failure issue for secondary radio.
+       After successful association of primary radio, proxy station of secondary
+       radio will not associate for the first time. Suspecting LAG Enable code
+       is causing issue for major proxy station of secondary radio so disabled
+       DBDC REPEATER LAG support to avoid this issue. */
+#ifndef PORT_SPIRENT_HK
 #if DBDC_REPEATER_SUPPORT
     struct ieee80211vap           *tmp_vap, *tmp_stavap;
     struct ieee80211com           *ic = vap->iv_ic, *max_priority_ic = NULL;
@@ -1621,10 +1638,11 @@ void wlan_mlme_connection_up(wlan_if_t vaphandle)
 
     psoc = wlan_pdev_get_psoc(pdev);
 #endif
+#endif
 
     IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "%s\n", __func__);
 
-#if DBDC_REPEATER_SUPPORT
+#if (DBDC_REPEATER_SUPPORT && !(PORT_SPIRENT_HK))
     if ((vap->iv_opmode == IEEE80211_M_STA) && (mlme_priv->im_sta_connection_up == 0)
 #if ATH_SUPPORT_WRAP
     && !vap_is_psta(vap)

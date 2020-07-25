@@ -72,6 +72,11 @@ static void mlme_sta_scan_event_handler(struct wlan_objmgr_vdev *vdev, struct sc
      * SCAN_EVENT_TYPE_DEQUEUED can be safely ignored.
      */
     switch(event->type) {
+#ifndef PORT_SPIRENT_HK
+    case SCAN_EVENT_TYPE_STARTED:
+       ucfg_scan_flush_results(wlan_vap_get_pdev(vap), NULL);
+       break;
+#endif
     case SCAN_EVENT_TYPE_COMPLETED:
     case SCAN_EVENT_TYPE_BSS_CHANNEL:
         if (wlan_vdev_is_up(vap->vdev_obj) == QDF_STATUS_SUCCESS) {

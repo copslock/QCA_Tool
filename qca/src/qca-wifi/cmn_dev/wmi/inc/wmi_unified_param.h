@@ -4783,7 +4783,18 @@ typedef enum {
 	wmi_pdev_param_set_cong_ctrl_max_msdus,
 	wmi_pdev_param_enable_fw_dynamic_he_edca,
 	wmi_pdev_param_enable_srp,
-	wmi_pdev_param_enable_sr_prohibit,
+	wmi_pdev_param_enable_sr_prohibit,	
+#ifdef PORT_SPIRENT_HK    
+#ifdef SPT_ADV_STATS
+	wmi_pdev_param_fwdebug,
+#endif
+
+	wmi_pdev_param_ofadaptive_cca,
+
+#ifdef SPT_NG
+	wmi_pdev_param_noisegen,
+#endif
+#endif    
 	wmi_pdev_param_max,
 } wmi_conv_pdev_params_id;
 
@@ -5769,6 +5780,7 @@ typedef struct {
 	uint8_t peer_macaddr[QDF_MAC_ADDR_SIZE];
 	uint32_t reason;
 	uint32_t rssi;
+	uint8_t vdev_macaddr[QDF_MAC_ADDR_SIZE];
 } wmi_host_peer_sta_kickout_event;
 
 /**

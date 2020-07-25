@@ -53,6 +53,9 @@
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_dfs_utils_api.h>
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#include "spirent_ng.h"
+#endif
 #ifdef FEATURE_6G_SCAN_CHAN_SORT_ALGO
 
 struct channel_list_db *scm_get_rnr_channel_db(struct wlan_objmgr_psoc *psoc)
@@ -455,6 +458,13 @@ void scm_age_out_entries(struct wlan_objmgr_psoc *psoc,
 			&scan_db->scan_hash_tbl[i], NULL);
 		while (cur_node) {
 			if (!scm_bss_is_connected(cur_node->entry))
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+			/**
+			*  Do not check age out if ng enable and node's bssid equal 
+			*  to ng_bssid for each pdev.
+			*/
+			if (!ng_check_bssid_matched(psoc,cur_node))
+#endif
 				scm_check_and_age_out(scan_db, cur_node,
 					def_param->scan_cache_aging_time);
 			next_node = scm_get_next_node(scan_db,
@@ -944,6 +954,15 @@ QDF_STATUS __scm_handle_bcn_probe(struct scan_bcn_probe_event *bcn)
 
 		scan_entry = scan_node->entry;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+		/**
+		*	NG:	Skip channel mismatch for NG operation. The NG AP will be created during scan AP.
+		*		The NG AP will be created when scan AP found any beacon frame OTA.
+		*		And the user can select the NG AP's channel, then the NG AP will be free from scan list.
+		*		If the NG AP's channel is not match with the current scanning channel. 
+		*/
+		if (!CHK_NG_ENABLE(pdev)) {
+#endif		
 		if (scan_obj->drop_bcn_on_chan_mismatch &&
 		    scan_entry->channel_mismatch) {
 			scm_nofl_debug("Drop frame for chan mismatch %pM Seq Num: %d freq %d RSSI %d",
@@ -955,6 +974,9 @@ QDF_STATUS __scm_handle_bcn_probe(struct scan_bcn_probe_event *bcn)
 			qdf_mem_free(scan_node);
 			continue;
 		}
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+	}
+#endif
 
 		if (scan_obj->cb.update_beacon)
 			scan_obj->cb.update_beacon(pdev, scan_entry);

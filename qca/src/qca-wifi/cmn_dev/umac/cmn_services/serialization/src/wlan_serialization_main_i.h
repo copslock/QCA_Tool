@@ -28,7 +28,19 @@
 #include <wlan_objmgr_pdev_obj.h>
 #include <qdf_mc_timer.h>
 
-#define WLAN_SER_MAX_VDEVS WLAN_UMAC_PDEV_MAX_VDEVS
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/*
+ * Fix for CIPRVH-91: For Multiclient- 240 clients, WLAN Serialization
+ * queue gets overflow. "WLAN_SER_MAX_ACTIVE_CMDS" and
+ * "WLAN_SER_MAX_PENDING_CMDS" exceeds the limit, it causes error
+ * "Failed to add cmd to active/pending queue" in
+ * "wlan_serialization_enqueue_cmd" function. So increase the
+ * macro "WLAN_SER_MAX_VDEVS" to SPIRENT_MAX_VDEVS_PER_RADIO.
+ */
+#define WLAN_SER_MAX_VDEVS SPIRENT_MAX_VDEVS_PER_RADIO
+#else
+#define WLAN_SER_MAX_VDEVS 17
+#endif
 
 #define WLAN_SER_MAX_ACTIVE_CMDS WLAN_SER_MAX_VDEVS
 

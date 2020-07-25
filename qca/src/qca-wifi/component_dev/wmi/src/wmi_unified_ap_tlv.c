@@ -1107,6 +1107,11 @@ static QDF_STATUS extract_peer_sta_kickout_ev_tlv(wmi_unified_t wmi_handle,
 	WMI_MAC_ADDR_TO_CHAR_ARRAY(&kickout_event->peer_macaddr,
 							ev->peer_macaddr);
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    WMI_MAC_ADDR_TO_CHAR_ARRAY(&kickout_event->vdev_macaddr,
+                                                        ev->vdev_macaddr);
+#endif
+
 	ev->reason = kickout_event->reason;
 	ev->rssi = kickout_event->rssi;
 

@@ -242,7 +242,11 @@ typedef enum _wlan_connection_sm_param {
 #define   DEFAULT_ROAM_THRESH   15
 #define   DEFAULT_ROAM_CHECK_PERIOD  1000  /* 1 second */
 #define   MIN_ROAM_CHECK_PERIOD  100       /* 100msec */
+#ifdef PORT_SPIRENT_HK
+#define   DEFAULT_SCAN_CACHE_VALID_TIME 0xFFFFFFFF /* cache is always valid */
+#else
 #define   DEFAULT_SCAN_CACHE_VALID_TIME 60000 /* 60 seconds */
+#endif
 #define   MIN_SCAN_CACHE_VALID_TIME 3000 /* 3 seconds */
 #define   DEFAULT_CONNECT_TIMEOUT   6000 /* 6 seconds */
 #define   DEFAULT_RECONNECT_TIMEOUT 6000 /* 6 seconds */

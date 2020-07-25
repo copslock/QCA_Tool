@@ -1206,6 +1206,16 @@ void wlan_addba_request_handler(void *arg, wlan_node_t node);
  */
 void wlan_set_peer_nss(void *arg, wlan_node_t node);
 
+#if SPIRENT_AP_EMULATION
+/*
+ * get advanced pkt counters from node.
+ * @param node          :node handle.
+ * @param type          :counter type.
+ * @param data          :pointer to data.
+ * @param datalen       :data length.
+ */
+int wlan_node_get_advanced_counters(wlan_node_t node, uint8_t type, uint32_t *data, uint32_t datalen);
+#endif
 /**
  * configure frame injector on AP
  * @param vaphandle         : handle to a vap

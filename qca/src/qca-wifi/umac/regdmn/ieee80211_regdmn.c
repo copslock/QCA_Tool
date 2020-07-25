@@ -1570,6 +1570,12 @@ void regdmn_update_ic_channels(
                 continue;
             }
 
+#if SPIRENT_AP_EMULATION
+            /* only need to get sec_ch_2g_freq when it's 2G regdom and bandwidth is
+             * 40Mhz */
+            sec_ch_2g_freq = 0;
+            if((cm->flags & IEEE80211_CHAN_2GHZ) && (cm->bw == CH_WIDTH_40MHZ)) {
+#endif
             switch(cm->chan_ext) {
             case CHANNEL_40_NO:
                 sec_ch_2g_freq = 0;
@@ -1581,6 +1587,9 @@ void regdmn_update_ic_channels(
                 sec_ch_2g_freq = reg_chan->center_freq - CHAN_HT40_OFFSET;
                 break;
             }
+#if SPIRENT_AP_EMULATION
+            }
+#endif
 
             if (cm->bw == CH_WIDTH_80P80MHZ) {
 #ifdef CONFIG_BAND_6GHZ

@@ -2749,6 +2749,24 @@ enum ieee80211_phymode ieee80211_get_phy_mode(struct ieee80211com *ic,
              * supported by the hardware.
              */
             des_mode = IEEE80211_MODE_11AC_VHT80;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        } else if (des_mode ==  IEEE80211_MODE_11AC_VHT160) {
+            switch (bss_mode) {
+                case IEEE80211_MODE_11AXA_HE80:
+                    des_mode = IEEE80211_MODE_11AC_VHT80;
+                    break;
+                case IEEE80211_MODE_11AXA_HE40:
+                case IEEE80211_MODE_11AXA_HE40PLUS:
+                case IEEE80211_MODE_11AXA_HE40MINUS:
+                    des_mode = IEEE80211_MODE_11AC_VHT40;
+                    break;
+                case IEEE80211_MODE_11AXA_HE20:
+                    des_mode = IEEE80211_MODE_11AC_VHT20;
+                    break;
+                default:
+                    break;
+            }
+#endif
         } else {
             des_mode = IEEE80211_MODE_AUTO;
         }
@@ -3806,7 +3824,14 @@ int wlan_node_txrate_info(wlan_node_t node, ieee80211_rate_info *rinfo)
     u_int8_t rc;
     rinfo->rate = node->ni_ic->ic_node_getrate(node, IEEE80211_RATE_TX);
     rinfo->lastrate = node->ni_ic->ic_node_getrate(node, IEEE80211_LASTRATE_TX);
+#if SPIRENT_AP_EMULATION
+    rc = (u_int8_t) node->ni_ic->ic_node_getrate(node, IEEE80211_MCS_TX);
+    rinfo->last_ppdu_type = node->ni_ic->ic_node_getrate(node, IEEE80211_PPDUTYPE_TX);
+    rinfo->last_ru_type = node->ni_ic->ic_node_getrate(node, IEEE80211_TX_RU_TYPE);
+    rinfo->last_ru_index = node->ni_ic->ic_node_getrate(node, IEEE80211_TX_RU_INDEX);
+#else
     rc = (u_int8_t) node->ni_ic->ic_node_getrate(node, IEEE80211_RATECODE_TX);
+#endif    
     rinfo->mcs = rc;
     rinfo->type = (rinfo->mcs & 0x80)? IEEE80211_RATE_TYPE_MCS : IEEE80211_RATE_TYPE_LEGACY;
     rinfo->maxrate_per_client = node->ni_ic->ic_get_maxphyrate(node->ni_ic, node);
@@ -3819,12 +3844,30 @@ int wlan_node_rxrate_info(wlan_node_t node, ieee80211_rate_info *rinfo)
     u_int8_t rc;
     rinfo->rate = node->ni_ic->ic_node_getrate(node, IEEE80211_RATE_RX);
     rinfo->lastrate = node->ni_ic->ic_node_getrate(node, IEEE80211_LASTRATE_RX);
+#if SPIRENT_AP_EMULATION
+    rc = (u_int8_t) node->ni_ic->ic_node_getrate(node, IEEE80211_MCS_RX);
+    rinfo->last_ppdu_type = node->ni_ic->ic_node_getrate(node, IEEE80211_PPDUTYPE_RX);
+    rinfo->last_ru_type = node->ni_ic->ic_node_getrate(node, IEEE80211_RX_RU_TYPE);
+    rinfo->last_ru_index = node->ni_ic->ic_node_getrate(node, IEEE80211_RX_RU_INDEX);
+#else
     rc = (u_int8_t) node->ni_ic->ic_node_getrate(node, IEEE80211_RATECODE_RX);
+#endif    
     rinfo->mcs = rc;
     rinfo->type = (rinfo->mcs & 0x80)? IEEE80211_RATE_TYPE_MCS : IEEE80211_RATE_TYPE_LEGACY;
     rinfo->flags = (u_int8_t) node->ni_ic->ic_node_getrate(node, IEEE80211_RATEFLAGS_RX);
     return 0;
 }
+
+#if SPIRENT_AP_EMULATION
+int wlan_node_get_advanced_counters(wlan_node_t node, uint8_t type,
+        uint32_t *data, uint32_t datalen)
+{
+    if(node->ni_ic->ic_node_get_advanced_pkt_counters(node,
+                type, data, datalen))
+        return 0;
+    return -1;
+}
+#endif
 
 int wlan_node_getrssi(wlan_node_t node,wlan_rssi_info *rssi_info,  wlan_rssi_type rssi_type )
 {

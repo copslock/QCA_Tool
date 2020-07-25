@@ -75,6 +75,16 @@ void ol_cwm_set_enable(struct ieee80211com *ic, u_int32_t val)
     return;
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+void ol_fwdebug(struct ieee80211com *ic, u_int32_t val)
+{
+    struct ol_ath_softc_net80211 *scn = OL_ATH_SOFTC_NET80211(ic);
+    if(ol_ath_pdev_set_param(scn,
+        wmi_pdev_param_fwdebug, val)==0){
+    }
+    return;
+}
+#endif
 void ol_cwm_set_extbusythreshold(struct ieee80211com *ic, u_int32_t val)
 {
     /* TBD */
@@ -316,6 +326,9 @@ ol_ath_cwm_attach(struct ol_ath_softc_net80211 *scn)
     ic->obss_rssi_threshold = DEFAULT_OBSS_RSSI_THRESHOLD;
     ic->obss_rx_rssi_threshold = DEFAULT_OBSS_RX_RSSI_THRESHOLD;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    ic->ic_fwdebug = ol_fwdebug;
+#endif
     return 0;
 }
 

@@ -1155,11 +1155,13 @@ ol_ath_process_ppdu_stats(void *pdev_hdl, enum WDI_EVENT event,
                 if ((msg_copy = clone_nbuf(nbuf)))
                     ol_ath_process_rate_stats(scn, event, peer_id, status, msg_copy);
             }
+#if !defined(PORT_SPIRENT_HK) || !defined(SPT_CAPTURE)
             /* process tx ppdu desc if sniffer is enabled */
             if (scn->sc_ic.ic_debug_sniffer) {
                 if ((msg_copy = clone_nbuf(nbuf)))
                     ol_ath_process_tx_metadata(ic, (void *)msg_copy);
             }
+#endif
 #if UNIFIED_SMARTANTENNA
             /* smart antenna tx handler */
             wlan_pdev_obj_lock(pdev_obj);

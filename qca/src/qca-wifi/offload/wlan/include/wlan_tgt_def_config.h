@@ -15,6 +15,23 @@
  * set of default target config , that can be over written by platform
  */
 
+#ifdef SPIRENT_TBD
+// No configuration code in new code version
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/* Reduced the number of peers from (512 + CFG_TGT_NUM_VDEV_QCA8074)
++to (70 + CFG_TGT_NUM_VDEV_QCA8074). This change is done to reduce
++the SRAM FW memory allocation. */
+#define CFG_TGT_NUM_VDEV_QCA8074                (81 + CFG_TGT_MAX_MONITOR_VDEV)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV0         (128 + CFG_TGT_NUM_VDEV_QCA8074)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV1         (128 + CFG_TGT_NUM_VDEV_QCA8074)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV2         (128 + CFG_TGT_NUM_VDEV_QCA8074)
+#else
+#define CFG_TGT_NUM_VDEV_QCA8074                (16 + CFG_TGT_MAX_MONITOR_VDEV)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV0         (512 + CFG_TGT_NUM_VDEV_QCA8074)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV1         (512 + CFG_TGT_NUM_VDEV_QCA8074)
+#define CFG_TGT_NUM_PEERS_QCA8074_PDEV2         (512 + CFG_TGT_NUM_VDEV_QCA8074)
+#endif
+#endif // SPIRENT_TBD
 #define CFG_TGT_NUM_OFFLOAD_PEERS_QCA8074       4
 
 #define CFG_TGT_NUM_OFFLOAD_PEERS_QCN9000       4

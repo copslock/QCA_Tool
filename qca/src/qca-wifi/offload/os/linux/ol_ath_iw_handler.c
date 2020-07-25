@@ -95,6 +95,9 @@ int ol_ath_ucfg_setparam(void *vscn, int param, int value);
 #define OL_ATH_IOCTL_BTCOEX_DUTY_CYCLE  SIOCIWFIRSTPRIV+17
 #define OL_ATH_IOCTL_DP_PEER_STATS  SIOCIWFIRSTPRIV+18
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#define OL_ATH_IOCTL_SET_NG_BSSID                SIOCIWFIRSTPRIV+19
+#endif
 #if QCA_AIRTIME_FAIRNESS
  static int
  ol_ath_iw_set_atf_sched_dur(struct net_device *dev,
@@ -1070,6 +1073,28 @@ static const struct iw_priv_args ol_ath_iw_priv_args[] = {
         0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,       "get_rchwidth" },
     { OL_ATH_PARAM_MBSS_EN | OL_ATH_PARAM_SHIFT,
         0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,       "get_mbss_en" },
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+    { OL_ATH_PARAM_MAX_STA | OL_ATH_PARAM_SHIFT,
+        0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,       "g_max_sta" },
+    { OL_ATH_PARAM_HE_RU_INDEX | OL_ATH_PARAM_SHIFT,
+        0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,       "g_he_ru_index" },
+    { OL_ATH_PARAM_HE_RU_TYPE | OL_ATH_PARAM_SHIFT,
+        0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,       "g_he_ru_type" },
+    { OL_ATH_PARAM_SET_FW_DEBUG | ATH_PARAM_SHIFT,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0,       "fwdebug" },
+    { OL_ATH_PARAM_ADAPTIVE_CCA_THR | OL_ATH_PARAM_SHIFT,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0,  "OfCCAThEna" },
+#endif // SPT_ADV_STATS
+#ifdef SPT_NG
+    { OL_ATH_PARAM_NG_CH | OL_ATH_PARAM_SHIFT,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0,       "set_ng_ch" },
+    { OL_ATH_PARAM_NG_CH | OL_ATH_PARAM_SHIFT, 0 ,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,          "get_ng_ch" },
+    { OL_ATH_IOCTL_SET_NG_BSSID,
+        IW_PRIV_TYPE_CHAR | ((QDF_MAC_ADDR_SIZE * 3) - 1), 0,  "set_ng_bssid" },
+#endif // SPT_NG
+#endif
 };
 
 /******************************************************************************/
@@ -2099,6 +2124,66 @@ static int ol_ath_iw_get_dp_fw_stats(struct net_device *dev,
 
     return retval;
 }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+/******************************************************************************/
+/*!
+**  \brief Set noise generator dummy AP MAC address
+**
+**  Interface routine called by the iwpriv handler to directly set noise 
+**  generator dummy AP MAC address.
+**
+**  \param dev Net Device pointer, Linux driver handle
+**  \param info Request Info Stucture containing type info, etc.
+**  \param w Pointer to a word value
+**  \param extra Pointer to the actual data buffer.
+**  \return 0 for success
+**  \return Non Zero on error
+*/
+static int ol_ath_iw_set_ng_bssid(struct net_device *dev, struct iw_request_info *info, void *w, char *extra)
+{
+    int retval;
+    unsigned char addr[QDF_MAC_ADDR_SIZE];
+    int i = 0;
+    struct iw_point *wri  = (struct iw_point *)w;
+    char *str = (char *)wri->pointer;
+    char *buf = str;
+    struct ol_ath_softc_net80211 *scn = ath_netdev_priv(dev);
+    struct ieee80211com *ic = &scn->sc_ic;
+    struct wlan_objmgr_pdev *pdev;
+    pdev = ic->ic_pdev_obj;
+    do {
+        retval = char_to_num(*buf++);
+        if ( retval < 0 )
+            break;
+
+        addr[i] = retval << 4;
+
+        retval = char_to_num(*buf++);
+        if ( retval < 0 )
+            break;
+
+        addr[i++] += retval;
+
+        if ( i < QDF_MAC_ADDR_SIZE && *buf++ != ':' ) {
+            retval = -EINVAL;
+            break;
+        }
+        retval = 0;
+    } while ( i < QDF_MAC_ADDR_SIZE );
+
+    qdf_print("***%s: dev=%s input: %s set ng ap bssid: %pM", __func__, dev->name, str, addr);
+    qdf_mem_copy(pdev->ng_bssid.bytes,addr,QDF_MAC_ADDR_SIZE);
+    
+    if (!CHK_NG_SCAN_ENTRY_IS_NULL(pdev)) {
+		qdf_mem_free(pdev->ng_scan_entry);
+		pdev->ng_scan_entry = NULL;
+	}
+    if (!retval)
+        retval = 0;
+
+    return retval;
+}
+#endif
 /*
 ** iwpriv Handlers
 ** This table contains the references to the routines that actually get/set
@@ -2144,6 +2229,9 @@ static const iw_handler ol_ath_iw_priv_handlers[] = {
 #endif
      (iw_handler) ol_ath_iw_btcoex_duty_cycle,     /* SIOCWFIRSTPRIV+17 */
      (iw_handler) ol_ath_iw_get_dp_fw_stats,       /* SIOCWFIRSTPRIV+18 */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+     (iw_handler) ol_ath_iw_set_ng_bssid,        /* SIOCWFIRSTPRIV+19 */
+#endif
 };
 
 /*

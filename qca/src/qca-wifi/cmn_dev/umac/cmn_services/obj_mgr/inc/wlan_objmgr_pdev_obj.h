@@ -135,6 +135,11 @@
    /* RADAR DETECT Defer */
 #define WLAN_PDEV_OP_RADAR_DETECT_DEFER 0x00080000
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#define CHK_NG_ENABLE(_pdev)					(_pdev && (_pdev->ng_channel))
+#define CHK_NG_SCAN_ENTRY_IS_NULL(_pdev)			(!(_pdev->ng_scan_entry))
+#define CHECK_MODE_CAPABILITY(_ic, _mode)			((_ic)->ic_modecaps & (1ULL << (_mode)))
+#endif
 
 struct osif_pdev_priv;
 
@@ -193,6 +198,10 @@ struct wlan_objmgr_pdev_objmgr {
 	struct wlan_objmgr_psoc *wlan_psoc;
 	qdf_atomic_t ref_cnt;
 	qdf_atomic_t ref_id_dbg[WLAN_REF_ID_MAX];
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+        /*32 +16*/
+        uint8_t group_keyvalue[WLAN_CRYPTO_KEYBUF_SIZE + WLAN_CRYPTO_MICBUF_SIZE];
+#endif
 };
 
 /**
@@ -217,6 +226,17 @@ struct wlan_objmgr_pdev {
 	WLAN_OBJ_STATE obj_state;
 	target_pdev_info_t *tgt_if_handle;
 	qdf_spinlock_t pdev_lock;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+/**
+**	Noise Generator's parameters.
+*	@ng_channel: Parameter to set noise generator channel.
+*	@ng_scan_entry: Pointer to fake Access point entry, for station to do fake associateion the the AP for operate as noise generator.
+*	@ng_bssid: Parameter to specific bssid in noise frame.
+*/
+	uint32_t ng_channel;
+	struct scan_cache_entry *ng_scan_entry;
+	struct qdf_mac_addr ng_bssid;
+#endif	
 };
 
 /**

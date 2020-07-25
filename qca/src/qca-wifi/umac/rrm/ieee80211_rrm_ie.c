@@ -689,6 +689,17 @@ u_int8_t *ieee80211_add_rrm_cap_ie(u_int8_t *frm, struct ieee80211_node *ni)
         rrmcap->lci_meas = 1;
         rrmcap->civ_loc_meas = 1;
         rrmcap->ftm_range_report = 1;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+        /* STA side configurations for RRM Capabilities based on current Design*/
+        rrmcap->ap_chan_rpt = 1; //Set to get list of channels where a STA is likely to find an AP in response.
+        rrmcap->neig_rpt = 0; // Indicates STA is not capable of sending Neighbor report response.
+        rrmcap->bcn_table = 0;
+        rrmcap->lci_meas = 0;
+        rrmcap->tsm_meas = 0;
+        rrmcap->trig_tsm_meas = 0;
+        rrmcap->civ_loc_meas = 0;
+        rrmcap->ftm_range_report = 0;
+#endif
 
         return (frm + rrmcap_len);
     }

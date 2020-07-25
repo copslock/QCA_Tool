@@ -499,12 +499,17 @@ qdf_nbuf_t dp_rx_mon_restitch_mpdu_from_msdus(struct dp_soc *soc,
 
 	rx_desc = qdf_nbuf_data(msdu_orig);
 
+#ifndef PORT_SPIRENT_HK
+	/* No need to check the MPDU length error in monitor path. Since it is in capture mode, need to
+	capture all the packets. Also, this bit is described like, "Don't trust the MPDU length field"
+	in declaration */
 	if (HAL_RX_DESC_GET_MPDU_LENGTH_ERR(rx_desc)) {
 		/* It looks like there is some issue on MPDU len err */
 		/* Need further investigate if drop the packet */
 		DP_STATS_INC(dp_pdev, dropped.mon_rx_drop, 1);
 		return NULL;
 	}
+#endif
 
 	rx_desc = qdf_nbuf_data(last_msdu);
 

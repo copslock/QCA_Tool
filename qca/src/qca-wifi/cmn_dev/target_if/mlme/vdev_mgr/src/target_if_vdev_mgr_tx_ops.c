@@ -108,6 +108,9 @@ static QDF_STATUS target_if_vdev_mgr_rsp_timer_start(
 	uint8_t rsp_pos;
 	uint8_t vdev_id;
 
+#ifdef PORT_SPIRENT_HK
+	if (!vdev_rsp->rsp_timer.os_timer.entry.pprev) {
+#endif
 	/* it is expected to be only one command with FW at a time */
 	for (rsp_pos = START_RESPONSE_BIT; rsp_pos <= RESPONSE_BIT_MAX;
 	     rsp_pos++) {
@@ -143,7 +146,9 @@ static QDF_STATUS target_if_vdev_mgr_rsp_timer_start(
 	/* reference taken for timer start, will be released with stop */
 	wlan_objmgr_psoc_get_ref(psoc, WLAN_PSOC_TARGET_IF_ID);
 	qdf_timer_start(&vdev_rsp->rsp_timer, vdev_rsp->expire_time);
-
+#ifdef PORT_SPIRENT_HK
+	}
+#endif
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -536,6 +541,14 @@ static QDF_STATUS target_if_vdev_mgr_delete_send(
 		return QDF_STATUS_E_INVAL;
 	}
 
+#ifdef PORT_SPIRENT_HK
+	if (vdev_rsp->timer_status != QDF_STATUS_E_CANCELED) {
+		vdev_rsp->expire_time = 0;
+		vdev_rsp->timer_status = QDF_STATUS_E_CANCELED;
+		target_if_vdev_mgr_rsp_timer_stop(psoc, vdev_rsp,
+						STOP_RESPONSE_BIT);
+	}
+#endif
 	vdev_rsp->expire_time = DELETE_RESPONSE_TIMER;
 	target_if_vdev_mgr_rsp_timer_start(psoc, vdev_rsp,
 					   DELETE_RESPONSE_BIT);
@@ -602,6 +615,14 @@ static QDF_STATUS target_if_vdev_mgr_stop_send(
 			 wlan_psoc_get_id(psoc));
 		return QDF_STATUS_E_INVAL;
 	}
+#ifdef PORT_SPIRENT_HK
+	if (vdev_rsp->timer_status != QDF_STATUS_E_CANCELED) {
+		vdev_rsp->expire_time = 0;
+		vdev_rsp->timer_status = QDF_STATUS_E_CANCELED;
+		target_if_vdev_mgr_rsp_timer_stop(psoc, vdev_rsp,
+						STOP_RESPONSE_BIT);
+	}
+#endif
 
 	vdev_rsp->expire_time = STOP_RESPONSE_TIMER;
 	target_if_vdev_mgr_rsp_timer_start(psoc, vdev_rsp, STOP_RESPONSE_BIT);

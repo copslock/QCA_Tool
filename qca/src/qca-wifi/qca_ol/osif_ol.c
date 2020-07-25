@@ -966,6 +966,19 @@ bad:
     qdf_nbuf_free(skb);
     return 0;
 }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+static int cdp_mointor_tx_data_frame(struct sk_buff *skb, osif_dev **osdev)
+{
+    struct net_device *comdev = (*osdev)->os_comdev;
+    wlan_if_t vap = (*osdev)->os_if;
+    
+    struct ol_ath_softc_net80211 *scn = ath_netdev_priv(comdev);
+
+    ol_txrx_soc_handle soc_txrx_handle = wlan_psoc_get_dp_handle(scn->soc->psoc_obj);
+
+    return cdp_monitor_data_eapol_frames(soc_txrx_handle, wlan_objmgr_pdev_get_pdev_id(vap->iv_ic->ic_pdev_obj),skb);
+}
+#endif
 
 /**
  * osif_ol_process_tx_synchronous() - Process common Tx operations for legacy and lithium.
@@ -1281,7 +1294,9 @@ skip_lag_tx_process:
         spin_unlock_bh(&osdev->tx_lock);
         return 0;
     }
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+    cdp_mointor_tx_data_frame(skb, &osdev);
+#endif
     spin_unlock_bh(&osdev->tx_lock);
 
     if (is_exception) {

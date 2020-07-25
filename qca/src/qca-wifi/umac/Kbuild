@@ -559,6 +559,10 @@ umac-objs += $(HOST_CMN_CONVG_SRC)/umac/regulatory/core/src/reg_opclass.o
 endif
 umac-objs += $(DEPTH)/dp/dp_me.o
 
+ifeq ($(PORT_SPIRENT_HK), 1)
+umac-objs += $(HOST_CMN_CONVG_SRC)/umac/scan/core/src/spirent_ng.o
+endif
+
 ifeq ($(WLAN_SER_UTF), 1)
 umac-objs += $(HOST_CMN_CONVG_SRC)/umac/cmn_services/serialization/src/wlan_serialization_utf.o
 endif

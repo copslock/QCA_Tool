@@ -79,6 +79,9 @@
 #include <target_if_fd.h>
 #endif
 
+#ifdef PORT_SPIRENT_HK
+#include "spirent.h"
+#endif
 #define RC_2_RATE_IDX(_rc)        ((_rc) & 0x7)
 #ifndef HT_RC_2_STREAMS
 #define HT_RC_2_STREAMS(_rc)    ((((_rc) & 0x78) >> 3) + 1)
@@ -94,6 +97,11 @@ typedef enum {
     GROUP_USAGE         = 0x01,
     TX_USAGE            = 0x02,     /* default Tx Key - Static WEP only */
 } KEY_USAGE;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+int main_proxy_flag0;
+int main_proxy_flag1;
+int main_proxy_flag2;
+#endif
 
 #ifdef QCA_NSS_WIFI_OFFLOAD_SUPPORT
 enum {
@@ -156,6 +164,10 @@ extern int config_rxchainmask(struct ieee80211com *ic,
                               struct ieee80211_ath_channel *chan);
 #if ATH_PERF_PWR_OFFLOAD
 extern void osif_vap_setup_ol (struct ieee80211vap *vap, osif_dev *osifp);
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+int ol_ath_calculate_rate(ol_txrx_soc_handle soc_txrx_handle, uint8_t vdev_id, uint8_t direction);
+#endif
 
 /*
 +legacy rate table for the MCAST/BCAST rate. This table is specific to peregrine
@@ -686,11 +698,13 @@ ol_ath_validate_tx_encap_type(struct ol_ath_softc_net80211 *scn,
         return 0;
     }
 
+#ifndef PORT_SPIRENT_HK
     if (wlan_vap_get_opmode(vap) != IEEE80211_M_HOSTAP)
     {
         qdf_print("Configuration capability available only for AP mode");
         return 0;
     }
+#endif
 
 #if !QCA_OL_SUPPORT_RAWMODE_TXRX
     if (val == 0) {
@@ -2609,6 +2623,20 @@ ol_ath_vap_set_param(struct ieee80211vap *vap,
         }
         break;
 
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_CAPTURE
+        case IEEE80211_CONFIG_CAPTURE_MODE_SET:
+             cdp_set_dp_htt_capture_mode(soc_txrx_handle, pdev_id, val);
+              /* Getting the capture mode */
+		      vap->cap_mode = val;
+        break;
+#endif // SPT_CAPTURE
+#ifdef SPT_BSS_COLOR
+        case IEEE80211_CONFIG_BSS_COLOR_STATE_SET:
+            cdp_set_bss_state(soc_txrx_handle, vdev_id, val);
+        break;
+#endif // SPT_BSS_COLOR
+#endif
         default:
             /*qdf_print("%s: VAP param unsupported param:%u value:%u", __func__,
                          param, val);*/
@@ -2770,6 +2798,14 @@ ol_ath_vap_get_param(struct ieee80211vap *vap,
         case IEEE80211_CONFIG_VDEV_PEER_PROTOCOL_DROP_MASK:
             retval = cdp_get_peer_protocol_drop_mask(soc_txrx_handle, vdev_id);
             break;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        case IEEE80211_CONFIG_GET_RX_RATE:
+            retval = ol_ath_calculate_rate(soc_txrx_handle, vdev_id, IEEE80211_STATS_RX);
+            break;
+        case IEEE80211_CONFIG_GET_TX_RATE:
+            retval = ol_ath_calculate_rate(soc_txrx_handle, vdev_id, IEEE80211_STATS_TX);
+            break;
+#endif
         default:
             /*qdf_nofl_info("%s: VAP param unsupported param:%u value:%u\n", __func__,
                     param, val);*/
@@ -2779,6 +2815,110 @@ ol_ath_vap_get_param(struct ieee80211vap *vap,
     return(retval);
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+static int
+ol_ath_vap_get_adv_stats(struct ieee80211vap *vap, ieee80211_param param, void *adv_stats)
+{
+    struct ieee80211com *ic = NULL;
+    ol_txrx_soc_handle soc_txrx_handle = NULL;
+    struct cdp_txrx_stats_req req = {0,};
+    struct wlan_objmgr_psoc *psoc = NULL;
+    int ret = 0;
+	uint8_t vdev_id;
+    uint8_t pdev_id = 0;
+    if (vap == NULL)
+       return -1;
+
+    ic = vap->iv_ic;
+    if (ic == NULL)
+       return -1;
+
+    psoc = wlan_pdev_get_psoc(ic->ic_pdev_obj);
+    if (psoc == NULL)
+        return -1;
+
+    soc_txrx_handle = wlan_psoc_get_dp_handle(psoc);
+    if (soc_txrx_handle == NULL)
+        return -1;
+
+    vdev_id = wlan_vdev_get_id(vap->vdev_obj);
+    pdev_id = wlan_objmgr_pdev_get_pdev_id(ic->ic_pdev_obj);
+
+    switch (param) {
+        case IEEE80211_CONFIG_GET_ADV_STATS:
+
+            ret = cdp_get_vdev_txrx_adv_stats(soc_txrx_handle, vdev_id, (void *)adv_stats);
+            req.stats = 0xFFFF;
+            cdp_txrx_stats_request(soc_txrx_handle, vdev_id, &req);
+            if (pdev_id < MAX_NUM_MACS) {
+                cdp_bss_collision_counter(soc_txrx_handle, pdev_id);
+                cdp_bss_collision_color(soc_txrx_handle, pdev_id);
+            }
+            return ret;
+		case IEEE80211_CONFIG_GET_REV_TXRX_STATS:
+			ret = cdp_get_vdev_basic_txrx_stats(soc_txrx_handle, vdev_id, (void *)adv_stats);
+			return ret;
+        default:
+            break;
+    }
+    return 0;
+}
+
+static int ol_ath_vap_get_rx_ru_values(struct wlan_objmgr_pdev *pdev, int pdev_id, void *ru_rx_stats)
+{
+    ol_txrx_soc_handle soc_txrx_handle = NULL;
+    struct wlan_objmgr_psoc *psoc = NULL;
+
+    psoc = wlan_pdev_get_psoc(pdev);
+    if (psoc == NULL)
+        return -1;
+
+    soc_txrx_handle = wlan_psoc_get_dp_handle(psoc);
+    if (soc_txrx_handle == NULL)
+        return -1;
+
+    return cdp_get_vdev_rx_ru_values(soc_txrx_handle, pdev_id, (void *)ru_rx_stats);
+}
+
+int ol_ath_calculate_rate(ol_txrx_soc_handle soc_txrx_handle, uint8_t vdev_id, uint8_t direction)
+{
+    int ratembps = 0;
+    int8_t mcs;
+    int8_t nss;
+    int8_t pkt_type;
+    int8_t bw;
+    int8_t sgi;
+    uint32_t ratekbps = 0;
+	struct iv_vdev_rev_txrx_stats *txrx_stats;
+	int retVal = 0;
+
+	txrx_stats = (struct iv_vdev_rev_txrx_stats *)kmalloc(sizeof(struct iv_vdev_rev_txrx_stats), GFP_KERNEL);
+	if (txrx_stats != NULL) {
+		memset(txrx_stats, 0, sizeof(struct iv_vdev_rev_txrx_stats));
+		retVal = cdp_get_vdev_basic_txrx_stats(soc_txrx_handle, vdev_id, (void *)txrx_stats);
+		if (retVal != -1) {
+			if( direction == IEEE80211_STATS_TX ) {
+				mcs = txrx_stats->rev_txrx.tx_mcs;
+				nss = txrx_stats->rev_txrx.tx_nss;
+				pkt_type = txrx_stats->rev_txrx.tx_pkt_type;
+				bw = txrx_stats->rev_txrx.tx_bw;
+				sgi = txrx_stats->rev_txrx.tx_sgi;
+			} else {
+				mcs = txrx_stats->rev_txrx.rx_mcs;
+				nss = txrx_stats->rev_txrx.rx_nss;
+				pkt_type = txrx_stats->rev_txrx.rx_pkt_type;
+				bw = txrx_stats->rev_txrx.rx_bw;
+				sgi = txrx_stats->rev_txrx.rx_sgi;
+			}
+
+			ratekbps = ol_if_getrateindex_with_sgi(mcs, nss, pkt_type, bw, sgi);
+			ratembps = ratekbps/1000;
+		}
+		kfree(txrx_stats);
+	}
+    return ratembps;
+}
+#endif
 static int
 ol_ath_vap_set_ratemask(struct ieee80211vap *vap, u_int8_t preamble,
                         u_int32_t mask_lower32, u_int32_t mask_higher32,
@@ -4876,6 +5016,7 @@ static void ol_ath_vap_iter_vap_create(void *arg, wlan_if_t vap)
 
     struct ieee80211com *ic = vap->iv_ic;
     u_int32_t *pid_mask = (u_int32_t *) arg;
+
     u_int8_t myaddr[QDF_MAC_ADDR_SIZE];
     u_int8_t id = 0;
 #if ATH_SUPPORT_WRAP
@@ -5228,6 +5369,9 @@ ol_ath_vap_create_pre_init(struct vdev_mlme_obj *vdev_mlme, int flags)
     target_resource_config *tgt_cfg;
     uint32_t target_type;
     uint8_t vlimit_exceeded = false;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    uint32_t pdev_id;
+#endif
     enum QDF_OPMODE opmode;
     void *osifp_handle;
     struct vdev_osif_priv *vdev_osifp = NULL;
@@ -5349,8 +5493,24 @@ ol_ath_vap_create_pre_init(struct vdev_mlme_obj *vdev_mlme, int flags)
     vap = &avn->av_vap;
 
 #if ATH_SUPPORT_WRAP
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    pdev_id = lmac_get_pdev_idx(scn->sc_pdev);
+    if ((opmode == QDF_STA_MODE) && (((main_proxy_flag0 == 0) && (pdev_id == 0)) || ((main_proxy_flag1 == 0) && (pdev_id == 1))|| ((main_proxy_flag2 == 0) && (pdev_id == 2)))) {
+#else
     if ((opmode == QDF_STA_MODE) && (flags & IEEE80211_CLONE_MACADDR)) {
+#endif
         if (!(flags & IEEE80211_WRAP_NON_MAIN_STA)) {
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+            if (pdev_id == 0) {
+                main_proxy_flag0 = 1;
+            }
+            if (pdev_id == 1) {
+                main_proxy_flag1 = 1;
+            }
+            if (pdev_id == 2) {
+                main_proxy_flag2 = 1;
+            } 
+#endif
             qdf_spin_lock_bh(&scn->sc_mpsta_vap_lock);
             scn->sc_mcast_recv_vap = vap;
             qdf_spin_unlock_bh(&scn->sc_mpsta_vap_lock);
@@ -5595,10 +5755,27 @@ static void ol_ath_vap_post_delete(struct ieee80211vap *vap)
 {
     struct ieee80211com *ic = vap->iv_ic;
     struct ol_ath_softc_net80211 *scn = OL_ATH_SOFTC_NET80211(ic);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    uint32_t pdev_id;
+#endif
 
     if(ieee80211vap_get_opmode(vap) == IEEE80211_M_STA) {
         qdf_atomic_inc(&scn->peer_count);
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    if (vap->iv_mpsta || (!vap->iv_mpsta && !vap->iv_psta)) {
+        pdev_id = lmac_get_pdev_idx(scn->sc_pdev);
+            if (pdev_id == 0) {
+                main_proxy_flag0 = 0;
+            }
+            if (pdev_id == 1) {
+                main_proxy_flag1 = 0;
+            }
+            if (pdev_id == 2) {
+                main_proxy_flag2 = 0;
+            }
+    }
+#endif
 
     if(vap->iv_special_vap_mode) {
         vap->iv_special_vap_mode = 0;
@@ -5811,6 +5988,10 @@ ol_ath_vap_attach(struct ieee80211com *ic)
     ic->ic_vap_dyn_bw_rts = ol_ath_vap_dyn_bw_rts;
     ic->ic_ol_net80211_set_mu_whtlist = ol_net80211_set_mu_whtlist;
     ic->ic_vap_get_param = ol_ath_vap_get_param;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    ic->ic_vap_get_adv_stats = ol_ath_vap_get_adv_stats;
+    ic->ic_vap_get_rx_ru_values= ol_ath_vap_get_rx_ru_values;
+#endif
     ic->ic_vap_set_qdepth_thresh = ol_ath_vap_set_qdepth_thresh;
 #if ATH_SUPPORT_WRAP
     ic->ic_get_qwrap_num_vdevs = ol_ath_get_qwrap_num_vdevs;

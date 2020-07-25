@@ -16,7 +16,11 @@
 #include <ieee80211_defines.h>
 #include <wlan_objmgr_peer_obj.h>
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define WLAN_VDEV_ID_MAP_DWORDS     3
+#else
 #define WLAN_VDEV_ID_MAP_DWORDS     2
+#endif
 #define WLAN_VDEV_PDEV_MAP_MAX     64
 
 void wlan_ic_psoc_set_flag(struct ieee80211com *ic, uint32_t flag);

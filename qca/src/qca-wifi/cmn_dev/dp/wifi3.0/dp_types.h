@@ -58,6 +58,9 @@
 #include "dp_tx_capture.h"
 #endif
 
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+#include <spirent.h>
+#endif
 #define REPT_MU_MIMO 1
 #define REPT_MU_OFDMA_MIMO 3
 #define DP_VO_TID 6
@@ -77,6 +80,13 @@
 #define MAX_PDEV_CNT 1
 #else
 #define MAX_PDEV_CNT 3
+#endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+/* Enable support for deferred Rx processing using Workqueues */
+#ifndef SPIRENT_AP_EMULATION
+#define SPIRENT_HK_DP_RX_WQ 1
+#endif
+#define MAX_NSS        8
 #endif
 
 /* Max no. of VDEV per PSOC */
@@ -1781,6 +1791,14 @@ struct dp_pdev {
 		uint32_t mgmt_buf_len; /* Len of mgmt. payload in ppdu stats */
 		uint32_t ppdu_id;
 	} mgmtctrl_frm_info;
+#if SPIRENT_HK_DP_RX_WQ
+        qdf_workqueue_t *dp_rx_work_queue;
+#endif
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+#define WAL_CCA_CNTR_HIST_LEN       10
+       uint8_t curr_cca_counter_index;
+       pdev_stats_cca_counters cca_counters[WAL_CCA_CNTR_HIST_LEN];
+#endif
 
 	/* Current noise-floor reading for the pdev channel */
 	int16_t chan_noise_floor;
@@ -1873,7 +1891,10 @@ struct dp_pdev {
 #endif /* WLAN_SUPPORT_DATA_STALL */
 
 	struct dp_mon_filter **filter;	/* Monitor Filter pointer */
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        uint16_t collision_count;
+        uint16_t collision_color;
+#endif	
 #ifdef QCA_SUPPORT_FULL_MON
 	/* List to maintain all MPDUs for a PPDU in monitor mode */
 	TAILQ_HEAD(, dp_mon_mpdu) mon_mpdu_q;
@@ -2095,6 +2116,10 @@ struct dp_vdev {
 	TAILQ_HEAD(, dp_peer) mpass_peer_list;
 	DP_MUTEX_TYPE mpass_peer_mutex;
 #endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	struct dp_vdev_rev_stats rev_stats;
+	struct dp_peer_rate_stats_tlv adv_stats;
+#endif	
 	/* Extended data path handle */
 	struct cdp_ext_vdev *vdev_dp_ext_handle;
 #ifdef VDEV_PEER_PROTOCOL_COUNT

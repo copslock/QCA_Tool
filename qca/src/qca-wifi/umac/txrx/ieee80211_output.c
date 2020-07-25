@@ -17,6 +17,11 @@
 #include <ieee80211_objmgr_priv.h>
 #include <wlan_son_pub.h>
 #include <wlan_mlme_dp_dispatcher.h>
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+#include <wlan_objmgr_pdev_obj.h>
+#endif
+
 #if 0
 #include "if_upperproto.h"
 #include <if_llc.h>
@@ -179,6 +184,13 @@ void ieee80211_kick_node(struct ieee80211_node *ni)
 #else
         if(ni->ni_associd == 0) {
 #endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+            /**
+            *   For noise generator mode: Do not kick the node if NG is enable
+            *   @ng_channel: NG is enable if ng_channel is not zero
+            */
+            if(!CHK_NG_ENABLE(ni->ni_ic->ic_pdev_obj))
+#endif
             IEEE80211_DELIVER_EVENT_MLME_DEAUTH_INDICATION(ni->ni_vap, ni->ni_macaddr, associd, IEEE80211_REASON_DISASSOC_LOW_ACK);
         }
     }
@@ -284,7 +296,33 @@ ieee80211_complete_wbuf(wbuf_t wbuf, struct ieee80211_tx_status *ts )
             result = ic->ic_delba_tx_completion(ni, delba_sent->dl_delbaparamset.tid,
             ts->ts_flags);
         }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+        /* For fast bss over ds, authentication will happen in action frame
+           Note authentication request time */
+        if (ia->ia_category == IEEE80211_ACTION_CAT_FST) {
+            ni->ni_vap->ftstats.type = FBT_TYPE_ODS;
+            ni->ni_vap->ftstats.state = FBT_REQ_SENT;
+            ni->ni_vap->ftstats.latest_req_ts = jiffies;
+        }
+#endif
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    /* For fast bss over the air, ft authentication algorithm is used.
+       Note authentication request time */
+    if (type == IEEE80211_FC0_TYPE_MGT && subtype == IEEE80211_FC0_SUBTYPE_AUTH) {
+        u_int8_t *action_frame_algo = NULL;
+        u_int16_t algo = 0;
+
+        action_frame_algo  = (u_int8_t *)&wh[1];
+        algo = le16toh(*(u_int16_t *)action_frame_algo);
+
+        if (algo == IEEE80211_AUTH_ALG_FT) {
+            ni->ni_vap->ftstats.type = FBT_TYPE_OTA;
+            ni->ni_vap->ftstats.state = FBT_REQ_SENT;
+            ni->ni_vap->ftstats.latest_req_ts = jiffies;
+        }
+    }
+#endif
     /* Check SmartNet feature. Only support Windows and STA mode from now on */
     if ((ni->ni_vap) && IEEE80211_VAP_IS_SEND_80211_ENABLED(ni->ni_vap) &&
         (ni->ni_vap->iv_opmode == IEEE80211_M_STA)) {

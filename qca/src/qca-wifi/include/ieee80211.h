@@ -6907,6 +6907,35 @@ struct ieee80211_ie_wide_bw_switch {
 #define IEEE80211_RATECODE_RX 5
 #define IEEE80211_RATEFLAGS_TX 6
 #define IEEE80211_RATEFLAGS_RX 7
+#if SPIRENT_AP_EMULATION
+#define IEEE80211_MCS_TX 8
+#define IEEE80211_MCS_RX 9
+#define IEEE80211_PPDUTYPE_TX 10
+#define IEEE80211_PPDUTYPE_RX 11
+#define IEEE80211_ADVSTAT_MCS_TX 12
+#define IEEE80211_ADVSTAT_MCS_RX 13
+#define IEEE80211_ADVSTAT_GI_TX 14
+#define IEEE80211_ADVSTAT_GI_RX 15
+#define IEEE80211_ADVSTAT_SS_TX 16
+#define IEEE80211_ADVSTAT_SS_RX 17
+#define IEEE80211_ADVSTAT_BW_TX 18
+#define IEEE80211_ADVSTAT_BW_RX 19
+#define IEEE80211_ADVSTAT_RULOC_TX 20
+#define IEEE80211_ADVSTAT_RULOC_RX 21
+#define IEEE80211_TX_RU_TYPE 22
+#define IEEE80211_TX_RU_INDEX 23
+#define IEEE80211_RX_RU_TYPE 24
+#define IEEE80211_RX_RU_INDEX 25
+
+/* the following macros are referring to 
+ * definition in cdp_txrx_stats_struct.h */
+#define MAX_GI_ (4+1)
+#define SS_COUNT_ 8
+#define MAX_BW_  7
+#define MAX_MCS_ (12+1)
+#define MAX_RU_LOCATIONS_ 6
+
+#endif
 
 #define IEEE80211_MAX_RATE_PER_CLIENT 10
 /* Define for the P2P Wildcard SSID */
@@ -7004,6 +7033,25 @@ struct ieee80211req_sta_info {
     u_int8_t isi_tx_rate_flags;
     u_int8_t isi_rx_rate_mcs;
     u_int8_t isi_rx_rate_flags;
+#endif
+#if SPIRENT_AP_EMULATION
+    u_int32_t isi_tx_ppdu_type;
+    u_int32_t isi_rx_ppdu_type;
+    u_int8_t isi_tx_ru_type;
+    u_int8_t isi_rx_ru_type;
+    u_int16_t isi_tx_ru_index;
+    u_int16_t isi_rx_ru_index;
+    /* advanced stats */
+    u_int32_t isi_tx_gi_count[MAX_GI_];
+    u_int32_t isi_tx_nss_count[SS_COUNT_];
+    u_int32_t isi_tx_bw_count[MAX_BW_];
+    u_int32_t isi_tx_mcs_count[MAX_MCS_];
+    u_int32_t isi_rx_gi_count[MAX_GI_];
+    u_int32_t isi_rx_nss_count[SS_COUNT_];
+    u_int32_t isi_rx_bw_count[MAX_BW_];
+    u_int32_t isi_rx_mcs_count[MAX_MCS_];
+    u_int32_t isi_tx_ruloc_count[MAX_RU_LOCATIONS_];
+    u_int32_t isi_rx_ruloc_count[MAX_RU_LOCATIONS_];
 #endif
     u_int8_t isi_rrm_caps[RRM_CAPS_LEN];    /* RRM capabilities */
     u_int8_t isi_curr_op_class;

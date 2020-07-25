@@ -142,6 +142,21 @@
 #define IW_PRIV_TYPE_FILTER \
         IW_PRIV_TYPE_BYTE | sizeof(struct ieee80211req_set_filter)
 #define IW_PRIV_TYPE_ACLMACLIST  (IW_PRIV_TYPE_ADDR | 256)
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+#define MAX_MCS_INDX_7      7
+#define MAX_MCS_INDX_9      9
+#define MAX_MCS_INDX_11     11
+#define MCS_INDX_BITS       2
+#define MCS_INDX_VALUE      3
+#define MAX_NUM_NSS         8
+enum {
+    HE_OPER_CHNWIDTH_20M = 0,
+    HE_OPER_CHNWIDTH_40M,
+    HE_OPER_CHNWIDTH_80M,
+    HE_OPER_CHNWIDTH_160M,
+    HE_OPER_CHNWIDTH_80_80M
+};
+#endif
 
 struct ioctl_name_tbl
 {
@@ -737,6 +752,10 @@ static const struct iw_priv_args ieee80211_priv_args[] = {
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "get_extprotspac" },
     { IEEE80211_PARAM_CWM_ENABLE,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "cwmenable" },
+#ifdef PORT_SPIRENT_HK
+    { IEEE80211_PARAM_FWDEBUG,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "fwdebug" },
+#endif
     { IEEE80211_PARAM_CWM_ENABLE,0,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "get_cwmenable" },
     { IEEE80211_PARAM_CWM_EXTBUSYTHRESHOLD,
@@ -2167,6 +2186,72 @@ static const struct iw_priv_args ieee80211_priv_args[] = {
     0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_he_dlofdma_bf" },
     { IEEE80211_PARAM_SEND_PROBE_REQ,
       IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "sendprobereq" },
+#ifdef PORT_SPIRENT_HK
+    { IEEE80211_PARAM_HTCAP,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_ht_cap" },
+    { IEEE80211_PARAM_VHTCAP,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_vht_cap" },
+    { IEEE80211_PARAM_STA_STATE,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_sta_state"},
+    { IEEE80211_PARAM_RX_MCS,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_mcs"   },
+    { IEEE80211_PARAM_TX_MCS,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_tx_mcs"   },
+    { IEEE80211_PARAM_HE_MAC_LOW,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_hemac_low" },
+    { IEEE80211_PARAM_HE_MAC_HIGH,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_hemac_high" },
+    { IEEE80211_PARAM_HE_PHY_0,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_hephy_0" },
+    { IEEE80211_PARAM_HE_PHY_1,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_hephy_1" },
+    { IEEE80211_PARAM_HE_PHY_2,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_hephy_2" },
+    { IEEE80211_PARAM_RX_NSS,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_nss"   },
+    { IEEE80211_PARAM_TX_NSS,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_tx_nss"   },
+    { IEEE80211_PARAM_RX_REC_TYPE,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_rec_type"   },
+    { IEEE80211_PARAM_NSS_VAL,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_nss_val" },
+    { IEEE80211_PARAM_RX_RATE,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_rate" },
+    { IEEE80211_PARAM_TX_RATE,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_tx_rate" },
+    { IEEE80211_PARAM_TX_BW,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_tx_bw" },
+    { IEEE80211_PARAM_RX_BW,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_bw" },
+    { IEEE80211_PARAM_TX_GI,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_tx_gi" },
+    { IEEE80211_PARAM_RX_GI,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_rx_gi" },
+    { IEEE80211_PARAM_ADV_STATS,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_adv_stats" },
+    { IEEE80211_PARAM_RX_SU_OFDMA_PKT,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_su_ofdma_pkt" },
+    { IEEE80211_PARAM_RX_MU_OFDMA_PKT,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_mu_ofdma_pkt" },
+    { IEEE80211_PARAM_RX_MU_MIMO_PKT,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_mu_mimo_pkt" },
+    { IEEE80211_PARAM_RX_MU_MIMO_OFDMA_PKT,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_mumimo_ofdma" },
+    { IEEE80211_PARAM_CAPTURE_MODE_SET,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,0, "set_cap_mode" },
+    {IEEE80211_PARAM_BSS_SET_STATE,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,0, "he_bssstate" },
+    { IEEE80211_PARAM_FTDELAY,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_ft_delay" },
+    { IEEE80211_PARAM_VHT_MCS_10_11_SUPP,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "vhtmcs_q1011" },
+    { IEEE80211_PARAM_VHT_MCS_10_11_SUPP,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_vhtmcs_q1011" },
+    { IEEE80211_PARAM_VHT_MCS_10_11_NQ2Q_PEER_SUPP,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "vhtmcs_nq1011" },
+    { IEEE80211_PARAM_VHT_MCS_10_11_NQ2Q_PEER_SUPP,
+    0,IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "g_vhtmcs_nq1011" },
+#endif
 };
 
 
@@ -2202,7 +2287,21 @@ set_quality(void *quality, u_int rssi, int16_t chan_nf)
     else
         iq->qual = 0 ;
 
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    /* Noise floor value is received as 0xFF(junk) in some cases and this results in the
+    low value of signal strength than actual value. 0xA1 is the value received to
+    calculate signal strength during scan. Hence using that value as reference*/
+    if (((chan_nf >> 8) & 0xFFFFFF) || (chan_nf == 0)) 
+    {
+        iq->noise = 0xa1;
+    }
+    else
+    {
+        iq->noise = chan_nf;
+    }
+#else
     iq->noise = chan_nf;
+#endif
     iq->level = iq->noise + rssi ;
     iq->updated = 0xf;
 }
@@ -3834,7 +3933,358 @@ static void copy_phymode( u_int32_t se_phymode, char* buf, u_int32_t buf_len) {
 
 }
 
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+static uint32_t get_mcs_max_index(const __u8 *mcs)
+{
+    int mcs_bit, prev_bit = -2, prev_cont = 0;
+    int max_mcs_index;
 
+    for (mcs_bit = 0; mcs_bit <= 76; mcs_bit++) {
+        unsigned int mcs_octet = mcs_bit/8;
+        unsigned int mcs_rate_bit = 1 << mcs_bit % 8;
+        bool mcs_rate_idx_set;
+        mcs_rate_idx_set = !!(mcs[mcs_octet] & mcs_rate_bit);
+        if (!mcs_rate_idx_set)
+            continue;
+            if (prev_bit != mcs_bit - 1) {
+                max_mcs_index = prev_bit;
+                prev_cont = 0;
+            } else if (!prev_cont) {
+                       prev_cont = 1;
+            }
+              prev_bit = mcs_bit;
+    }
+    if (prev_cont)
+        max_mcs_index = prev_bit;
+    return max_mcs_index;
+}
+static void parse_vht_mcs(const u_int16_t mcs, u_int32_t* max_mcs_index, u_int32_t* nss)
+{
+    int i;
+    *max_mcs_index = 0;
+    *nss = 0;
+    for (i = 1; i <= 8; i++) {
+        switch ((mcs >> ((i-1)*2) ) & 3) {
+        case 0:
+            if(*max_mcs_index < 7)
+                *max_mcs_index = 7;
+            (*nss)++;
+            break;
+        case 1:
+            if(*max_mcs_index < 8)
+                *max_mcs_index = 8;
+            (*nss)++;
+            break;
+        case 2:
+            if(*max_mcs_index < 9)
+                *max_mcs_index = 9;
+            (*nss)++;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+/* Calculate maximum mcs index and nss based on rxmcsnssmap given as input parameter
+   Reffered doc :Wireless LAN Access Point (Driver Version 11.0) Command
+   Reference Guide (Preliminary).pdf Page:174, 183 */
+static void parse_he_mcs(u_int16_t mcs, u_int32_t* max_mcs_index, u_int32_t* nss)
+{
+    int i;
+
+    *max_mcs_index = 0;
+    *nss = 0;
+
+    for (i = 1; i <= MAX_NUM_NSS; i++) {
+        /* shift every 2 digit then & with 3 to find index value
+            00 - 7, 01 - 9, 10 - 11 */
+        switch ((mcs >> ((i-1)* MCS_INDX_BITS) ) & MCS_INDX_VALUE) {
+        case 0:
+            if(*max_mcs_index < MAX_MCS_INDX_7)
+                *max_mcs_index = MAX_MCS_INDX_7;
+            (*nss)++;
+            break;
+        case 1:
+            if(*max_mcs_index < MAX_MCS_INDX_9)
+                *max_mcs_index = MAX_MCS_INDX_9;
+            (*nss)++;
+            break;
+        case 2:
+            if(*max_mcs_index < MAX_MCS_INDX_11)
+                *max_mcs_index = MAX_MCS_INDX_11;
+            (*nss)++;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+uint32_t calculate_ht_phyrate(const u_int8_t *mcs, bool ht40, bool sgi)
+{
+    unsigned int tx_max_num_spatial_streams, max_rx_supp_data_rate;
+    bool tx_mcs_set_defined, tx_mcs_set_equal, tx_unequal_modulation;
+    int modulation, bitrate;
+    uint32_t max_mcs_index;
+    max_rx_supp_data_rate = (mcs[10] | ((mcs[11] & 0x3) << 8));
+    tx_mcs_set_defined = !!(mcs[12] & (1 << 0));
+    tx_mcs_set_equal = !(mcs[12] & (1 << 1));
+    tx_max_num_spatial_streams = ((mcs[12] >> 2) & 3) + 1;
+    tx_unequal_modulation = !!(mcs[12] & (1 << 4));
+
+    if (max_rx_supp_data_rate)
+       return max_rx_supp_data_rate;
+
+    if(tx_mcs_set_defined && !tx_mcs_set_equal)
+       return 150*tx_max_num_spatial_streams;
+
+    max_mcs_index = get_mcs_max_index(mcs);
+    tx_max_num_spatial_streams = (max_mcs_index >> 3) + 1;
+    bitrate = ht40 ?  13500000 : 6500000;
+    modulation =  max_mcs_index & 7;
+
+    if (modulation < 4)
+        bitrate *= (modulation + 1);
+    else if (modulation == 4)
+        bitrate *= (modulation + 2);
+    else
+        bitrate *= (modulation + 3);
+
+    bitrate *= tx_max_num_spatial_streams;
+    if(sgi)
+        bitrate = (bitrate / 9) * 10;
+
+    bitrate = (bitrate + 500000) / 1000000;
+    return bitrate;
+}
+u_int32_t calculate_vht_phyrate(u_int32_t mcs, u_int32_t bw, u_int32_t nss, bool sgi)
+{
+    static const u_int32_t base[4][10] = {
+       {   6500000,
+           13000000,
+           19500000,
+           26000000,
+           39000000,
+           52000000,
+           58500000,
+           65000000,
+           78000000,
+           86500000,
+        },
+        {  13500000,
+           27000000,
+           40500000,
+           54000000,
+           81000000,
+          108000000,
+          121500000,
+          135000000,
+          162000000,
+          180000000,
+        },
+        {  29300000,
+           58500000,
+           87800000,
+          117000000,
+          175500000,
+          234000000,
+          263300000,
+          292500000,
+          351000000,
+          390000000,
+        },
+        {  58500000,
+          117000000,
+          175500000,
+          234000000,
+          351000000,
+          468000000,
+          526500000,
+          585000000,
+          702000000,
+          780000000,
+        },
+    };
+    u_int32_t bitrate;
+    int idx = 0;
+
+    if (mcs > 9)
+        return 0;
+    switch(bw) {
+        case 3: // 80_80M
+        case 2: // 160M
+            idx = 3;
+            break;
+        case 1: // 80M
+            idx = 2;
+            break;
+        case 0:
+            idx = 1;
+            break;
+    }
+
+    bitrate = base[idx][mcs];
+    bitrate *= nss;
+    if(sgi)
+        bitrate = (bitrate / 9) * 10;
+
+    return (bitrate + 500000) / 1000000;
+}
+enum {
+    VHT_OPER_CHNWIDTH_20_40M = 0,
+    VHT_OPER_CHNWIDTH_80M,
+    VHT_OPER_CHNWIDTH_160M,
+    VHT_OPER_CHNWIDTH_80_80M
+};
+
+/* Calculate phy rate based on mcsindex, channel bw, nss, and guard interval */
+u_int32_t calculate_he_phyrate(u_int32_t mcs, u_int32_t bw, u_int32_t nss, bool gi_800_supported)
+{
+    /* mcs array table for 1600ns, channel width 20, 40, 80, 160 and mcs index 11 */
+    static const long long base_rate_1600_gi[4][12] = {
+       {     4000000,
+            16000000,
+            24000000,
+            33000000,
+            49000000,
+            65000000,
+            73000000,
+            81000000,
+            98000000,
+           108000000,
+           122000000,
+           135000000,
+        },
+        {    8000000,
+            33000000,
+            49000000,
+            65000000,
+            98000000,
+           130000000,
+           146000000,
+           163000000,
+           195000000,
+           217000000,
+           244000000,
+           271000000,
+        },
+        {  17000000,
+           68000000,
+          102000000,
+          136000000,
+          204000000,
+          272000000,
+          306000000,
+          340000000,
+          408000000,
+          453000000,
+          510000000,
+          567000000,
+        },
+        {   34000000,
+           136000000,
+           204000000,
+           272000000,
+           408000000,
+           544000000,
+           613000000,
+           681000000,
+           817000000,
+           907000000,
+          1021000000,
+          1134000000,
+        },
+    };
+    /* mcs array table for 800ns, channel width 20, 40, 80, 160 and mcs index 11 */
+    static const long long base_rate_800_gi[4][12] = {
+       {     4000000,
+            17000000,
+            26000000,
+            34000000,
+            52000000,
+            69000000,
+            77000000,
+            88000000,
+           103000000,
+           115000000,
+           129000000,
+           143000000,
+        },
+        {    9000000,
+            34000000,
+            52000000,
+            69000000,
+           103000000,
+           138000000,
+           155000000,
+           172000000,
+           207000000,
+           229000000,
+           258000000,
+           287000000,
+        },
+        {  18000000,
+           72000000,
+          108000000,
+          144000000,
+          216000000,
+          288000000,
+          324000000,
+          360000000,
+          432000000,
+          480000000,
+          540000000,
+          600000000,
+        },
+        {   36000000,
+           144000000,
+           216000000,
+           282000000,
+           432000000,
+           576000000,
+           649000000,
+           721000000,
+           865000000,
+           961000000,
+          1081000000,
+          1201000000,
+        },
+    };
+    long long bitrate;
+    int idx = 0;
+
+    if (mcs > MAX_MCS_INDX_11)
+        return 0;
+    switch(bw) {
+        case HE_OPER_CHNWIDTH_80_80M: // 80_80M
+        case HE_OPER_CHNWIDTH_160M: // 160M
+            idx = HE_OPER_CHNWIDTH_160M;
+            break;
+        case HE_OPER_CHNWIDTH_80M: // 80M
+            idx = HE_OPER_CHNWIDTH_80M;
+            break;
+        case HE_OPER_CHNWIDTH_40M: // 40M
+            idx = HE_OPER_CHNWIDTH_40M;
+            break;
+        case HE_OPER_CHNWIDTH_20M: // 20M
+            idx = HE_OPER_CHNWIDTH_20M;
+            break;
+    }
+
+    /* Get default bit rate for single ss */
+    if(gi_800_supported)
+       bitrate = base_rate_800_gi[idx][mcs];
+    else
+       bitrate = base_rate_1600_gi[idx][mcs];
+
+    /* calculate bitrate based on nss */
+    bitrate *= nss;
+
+    /* calculate bitrate in Mbps */
+    return (bitrate + 500000) / 1000000;
+}
+#endif // #if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
 static QDF_STATUS
 giwscan_cb(void *arg, wlan_scan_entry_t se)
 {
@@ -3842,6 +4292,9 @@ giwscan_cb(void *arg, wlan_scan_entry_t se)
     struct net_device *dev = req->dev;
     osif_dev *osifp = ath_netdev_priv(dev);
     wlan_if_t vap = osifp->os_if;
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    int heflag = 2;
+#endif
     char *current_ev = req->current_ev;
     char *end_buf = req->end_buf;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (2,6,27)
@@ -3906,6 +4359,52 @@ giwscan_cb(void *arg, wlan_scan_entry_t se)
     u_int8_t *se_heop = util_scan_entry_heop(se);
     u_int8_t *se_srp = util_scan_entry_spatial_reuse_parameter(se);
     u_int32_t se_phymode = util_scan_entry_phymode(se);
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    struct ieee80211_ie_htcap_cmn *htcap;
+    struct ieee80211_ie_vhtcap *vhtcap;
+    struct ieee80211_ie_hecap *hecap;
+    uint32_t gi_val;
+    u_int8_t  *hecap_phyinfo;
+    u_int8_t  *hecap_txrx;
+    u_int8_t *se_htcap;
+    u_int8_t *se_vhtcap;
+    u_int8_t support_gi_20;
+    u_int8_t support_gi_40;
+    u_int8_t support_gi_80;
+    u_int8_t support_gi_160;
+    char *short_gi_support[2] =  {
+                "supported",
+                "not Supported",
+    };
+    u_int8_t index;
+    char *bandwidth[5] ={
+                "20MHz",
+                "40MHz",
+                "80MHz",
+                "80+80MHz",
+                "160MHz",
+    };
+    u_int16_t ht_cap_beacon=0;
+    u_int32_t vht_cap_beacon=0;
+    u_int32_t mmcs_index;
+    u_int32_t nss;
+    u_int32_t phyrate;
+    bool sgi;
+    u_int32_t vht_chnwidth;
+    u_int32_t bw;
+    bool ht_40;
+    bool ht_sgi;
+    u_int8_t ht_mcs[16];
+    u_int16_t sublen, subtype;
+    u_int8_t len;
+    u_int8_t *manufacture;
+    u_int8_t *model_name;
+    u_int8_t manu_sublen;
+    u_int8_t mod_sublen;
+    bool gi_800_supported = 0;
+    u_int16_t temp_rxmcsnssmap;
+    u_int32_t he_chnwidth;
+#endif
 
 #if QCA_LTEU_SUPPORT
     OS_MEMSET(se_tsf_timestamp,0,8);
@@ -4316,8 +4815,448 @@ giwscan_cb(void *arg, wlan_scan_entry_t se)
         if (ie_buf_len)
             OS_FREE(ie_buf);
 
-
 #endif /* ATH_SUPPORT_P2P */
+
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
+    se_htcap = util_scan_entry_htcap(se);
+    if (se_htcap != NULL) {
+       /* get sgi support for 20 and 40 Mhz from ht capabilities info */
+        htcap = (struct ieee80211_ie_htcap_cmn *)se_htcap;
+
+       /* check whether sgi is supported for 20 Mhz */
+        support_gi_20 = ((htcap->hc_cap & IEEE80211_HTCAP_C_SHORTGI20) >> 5);
+
+        /* check whether sgi is supported for 40 Mhz */
+        support_gi_40 = ((htcap->hc_cap & IEEE80211_HTCAP_C_SHORTGI40) >> 6);
+    } else {
+        support_gi_20 = 0;
+        support_gi_40 = 0;
+    }
+
+    OS_MEMZERO(&iwe, sizeof(iwe));
+    last_ev = current_ev;
+    iwe.cmd = IWEVCUSTOM;
+    snprintf(buf, sizeof(buf), "sgi(20 MHz)=%s", (support_gi_20 == 1) ?
+             short_gi_support[0] : short_gi_support[1]);
+    iwe.u.data.length = strlen(buf);
+    current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+    if (last_ev == current_ev) {
+        return E2BIG;
+    }
+
+    OS_MEMZERO(&iwe, sizeof(iwe));
+    last_ev = current_ev;
+    iwe.cmd = IWEVCUSTOM;
+    snprintf(buf, sizeof(buf), "sgi(40 MHz)=%s", (support_gi_40 == 1) ?
+             short_gi_support[0] : short_gi_support[1]);
+    iwe.u.data.length = strlen(buf);
+    current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+    if (last_ev == current_ev) {
+        return E2BIG;
+    }
+    se_vhtcap = util_scan_entry_vhtcap(se);
+    if (se_vhtcap != NULL) {
+       /* get sgi support for 80 and 80+80/160 Mhz from vht capabilities info */
+        vhtcap = (struct ieee80211_ie_vhtcap *)se_vhtcap;
+        /* check whether sgi is supported for 80 Mhz */
+        support_gi_80 = ((vhtcap->vht_cap_info & IEEE80211_VHTCAP_SHORTGI_80 ) >> 5);
+
+        /* check whether sgi is supported for 160/80+80 Mhz */
+        support_gi_160 = ((vhtcap->vht_cap_info & IEEE80211_VHTCAP_SHORTGI_80) >> 6);
+    } else {
+        support_gi_80 = 0;
+        support_gi_160 = 0;
+    }
+
+    OS_MEMZERO(&iwe, sizeof(iwe));
+    last_ev = current_ev;
+    iwe.cmd = IWEVCUSTOM;
+    snprintf(buf, sizeof(buf), "sgi(80 MHz)=%s", (support_gi_80 == 1) ?
+             short_gi_support[0] : short_gi_support[1]);
+    iwe.u.data.length = strlen(buf);
+    current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+    if (last_ev == current_ev) {
+          return E2BIG;
+    }
+
+    OS_MEMZERO(&iwe, sizeof(iwe));
+    last_ev = current_ev;
+    iwe.cmd = IWEVCUSTOM;
+    snprintf(buf, sizeof(buf), "sgi(160 MHz and 80 + 80 MHz)=%s",
+            (support_gi_160 == 1) ? short_gi_support[0] : short_gi_support[1]);
+    iwe.u.data.length = strlen(buf);
+    current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+    if (last_ev == current_ev) {
+        return E2BIG;
+    }
+
+    switch (se_phymode)
+    {
+        case IEEE80211_MODE_11NA_HT20:
+        case IEEE80211_MODE_11NG_HT20:
+        case IEEE80211_MODE_11AC_VHT20:
+        case IEEE80211_MODE_11AXA_HE20:
+        case IEEE80211_MODE_11AXG_HE20:
+            index = 0;
+            break;
+        case IEEE80211_MODE_11NA_HT40PLUS:
+        case IEEE80211_MODE_11NA_HT40MINUS:
+        case IEEE80211_MODE_11NG_HT40PLUS:
+        case IEEE80211_MODE_11NG_HT40MINUS:
+        case IEEE80211_MODE_11NG_HT40:
+        case IEEE80211_MODE_11NA_HT40:
+        case IEEE80211_MODE_11AC_VHT40PLUS:
+        case IEEE80211_MODE_11AC_VHT40MINUS:
+        case IEEE80211_MODE_11AC_VHT40:
+        case IEEE80211_MODE_11AXA_HE40PLUS:
+        case IEEE80211_MODE_11AXA_HE40MINUS:
+        case IEEE80211_MODE_11AXG_HE40PLUS:
+        case IEEE80211_MODE_11AXG_HE40MINUS:
+        case IEEE80211_MODE_11AXA_HE40:
+        case IEEE80211_MODE_11AXG_HE40:
+            index = 1;
+            break;
+        case IEEE80211_MODE_11AC_VHT80:
+        case IEEE80211_MODE_11AXA_HE80:
+            index = 2;
+            break;
+        case IEEE80211_MODE_11AC_VHT80_80:
+        case IEEE80211_MODE_11AXA_HE80_80:
+            index = 3;
+            break;
+        case IEEE80211_MODE_11AC_VHT160:
+        case IEEE80211_MODE_11AXA_HE160:
+            index = 4;
+            break;
+        default:
+            index = 0;
+            break;
+    }
+    OS_MEMZERO(&iwe, sizeof(iwe));
+    last_ev = current_ev;
+    iwe.cmd = IWEVCUSTOM;
+    snprintf(buf, sizeof(buf), "channel bandwidth:%s",bandwidth[index]);
+    iwe.u.data.length = strlen(buf);
+    current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+    if (last_ev == current_ev) {
+          return E2BIG;
+     }
+
+    se_htcap = util_scan_entry_htcap(se);
+    if (se_htcap !=NULL) {
+        htcap = (struct ieee80211_ie_htcap_cmn *)se_htcap;
+        switch(se_phymode)
+        {
+            case IEEE80211_MODE_11NA_HT20:
+            case IEEE80211_MODE_11NG_HT20:
+            case IEEE80211_MODE_11NA_HT40PLUS:
+            case IEEE80211_MODE_11NA_HT40MINUS:
+            case IEEE80211_MODE_11NG_HT40PLUS:
+            case IEEE80211_MODE_11NG_HT40MINUS:
+            case IEEE80211_MODE_11NG_HT40:
+            case IEEE80211_MODE_11NA_HT40:
+            case IEEE80211_MODE_11AC_VHT20:
+            case IEEE80211_MODE_11AC_VHT40PLUS:
+            case IEEE80211_MODE_11AC_VHT40MINUS:
+            case IEEE80211_MODE_11AC_VHT40:
+            case IEEE80211_MODE_11AC_VHT80:
+            case IEEE80211_MODE_11AC_VHT80_80:
+            case IEEE80211_MODE_11AC_VHT160:
+            case IEEE80211_MODE_11AXA_HE20:
+            case IEEE80211_MODE_11AXG_HE20:
+            case IEEE80211_MODE_11AXA_HE40PLUS:
+            case IEEE80211_MODE_11AXA_HE40MINUS:
+            case IEEE80211_MODE_11AXG_HE40PLUS:
+            case IEEE80211_MODE_11AXG_HE40MINUS:
+            case IEEE80211_MODE_11AXA_HE40:
+            case IEEE80211_MODE_11AXG_HE40:
+            case IEEE80211_MODE_11AXA_HE80:
+            case IEEE80211_MODE_11AXA_HE160:
+            case IEEE80211_MODE_11AXA_HE80_80:
+                ht_cap_beacon = htcap->hc_cap;
+                break;
+        }
+    }
+   /* displays HT capabilities from beacon frame*/
+   OS_MEMZERO(&iwe, sizeof(iwe));
+   last_ev = current_ev;
+   iwe.cmd = IWEVCUSTOM;
+   snprintf(buf, sizeof(buf), "HT capabilities:%x",ht_cap_beacon);
+   iwe.u.data.length = strlen(buf);
+   current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+   if (last_ev == current_ev) {
+         return E2BIG;
+   }
+
+   se_vhtcap = util_scan_entry_vhtcap(se);
+   if (se_vhtcap !=NULL) {
+       vhtcap = (struct ieee80211_ie_vhtcap *)se_vhtcap;
+       switch (se_phymode)
+       {
+           case IEEE80211_MODE_11AC_VHT20:
+           case IEEE80211_MODE_11AC_VHT40PLUS:
+           case IEEE80211_MODE_11AC_VHT40MINUS:
+           case IEEE80211_MODE_11AC_VHT40:
+           case IEEE80211_MODE_11AC_VHT80:
+           case IEEE80211_MODE_11AC_VHT80_80:
+           case IEEE80211_MODE_11AC_VHT160:
+           case IEEE80211_MODE_11AXA_HE20:
+           case IEEE80211_MODE_11AXA_HE40PLUS:
+           case IEEE80211_MODE_11AXA_HE40MINUS:
+           case IEEE80211_MODE_11AXA_HE40:
+           case IEEE80211_MODE_11AXA_HE80:
+           case IEEE80211_MODE_11AXA_HE160:
+           case IEEE80211_MODE_11AXA_HE80_80:
+               vht_cap_beacon = vhtcap->vht_cap_info;
+               break;
+       }
+   }
+   /* displays VHT capabilities from beacon frame*/
+   OS_MEMZERO(&iwe, sizeof(iwe));
+   last_ev = current_ev;
+   iwe.cmd = IWEVCUSTOM;
+   snprintf(buf, sizeof(buf), "VHT capabilities:%x",vht_cap_beacon);
+   iwe.u.data.length = strlen(buf);
+   current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+   if (last_ev == current_ev) {
+         return E2BIG;
+   }
+
+   se_hecap = util_scan_entry_hecap(se);
+   if (se_hecap !=NULL) {
+      hecap = (struct ieee80211_ie_hecap *)se_hecap;
+      while(heflag) {
+         switch (se_phymode)
+         {
+            case IEEE80211_MODE_11AXA_HE20:
+            case IEEE80211_MODE_11AXG_HE20:
+            case IEEE80211_MODE_11AXA_HE40PLUS:
+            case IEEE80211_MODE_11AXA_HE40MINUS:
+            case IEEE80211_MODE_11AXG_HE40PLUS:
+            case IEEE80211_MODE_11AXG_HE40MINUS:
+            case IEEE80211_MODE_11AXA_HE40:
+            case IEEE80211_MODE_11AXG_HE40:
+            case IEEE80211_MODE_11AXA_HE80:
+            case IEEE80211_MODE_11AXA_HE80_80:
+            case IEEE80211_MODE_11AXA_HE160:
+               if (heflag == 2) {
+#if SUPPORT_11AX_D3
+                  sprintf(buf,"HE capabilities: Mac Info: 0x%02x%02x%02x%02x%02x%02x",hecap->hecap_macinfo[5],hecap->hecap_macinfo[4],hecap->hecap_macinfo[3],hecap->hecap_macinfo[2],hecap->hecap_macinfo[1],hecap->hecap_macinfo[0]);
+#else
+                  sprintf(buf,"HE capabilities: Mac Info: 0x%02x%02x%02x%02x%02x",hecap->hecap_macinfo[4],hecap->hecap_macinfo[3],hecap->hecap_macinfo[2],hecap->hecap_macinfo[1],hecap->hecap_macinfo[0]);
+#endif
+               } else {
+#if SUPPORT_11AX_D3
+                  sprintf(buf,"HE capabilities: Phy Info: 0x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",hecap->hecap_phyinfo[10],hecap->hecap_phyinfo[9],hecap->hecap_phyinfo[8],hecap->hecap_phyinfo[7],hecap->hecap_phyinfo[6],hecap->hecap_phyinfo[5],hecap->hecap_phyinfo[4],hecap->hecap_phyinfo[3],hecap->hecap_phyinfo[2],hecap->hecap_phyinfo[1],hecap->hecap_phyinfo[0]);
+#else
+                  sprintf(buf,"HE capabilities: Phy Info: 0x%02x%02x%02x%02x%02x%02x%02x%02x%02x",hecap->hecap_phyinfo[8],hecap->hecap_phyinfo[7],hecap->hecap_phyinfo[6],hecap->hecap_phyinfo[5],hecap->hecap_phyinfo[4],hecap->hecap_phyinfo[3],hecap->hecap_phyinfo[2],hecap->hecap_phyinfo[1],hecap->hecap_phyinfo[0]);
+#endif
+               }
+               heflag--;
+               break;
+         }
+         /* displays HE capabilities from beacon frame*/
+         OS_MEMZERO(&iwe, sizeof(iwe));
+         last_ev = current_ev;
+         iwe.cmd = IWEVCUSTOM;
+         iwe.u.data.length = strlen(buf);
+         current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+         if (last_ev == current_ev) {
+            return E2BIG;
+         }
+      }
+   }
+
+   if (se_phymode >= IEEE80211_MODE_11AC_VHT20 && se_phymode <= IEEE80211_MODE_11AC_VHT80_80) {
+       se_vhtcap = util_scan_entry_vhtcap(se);
+       if (se_vhtcap != NULL) {
+           vhtcap = (struct ieee80211_ie_vhtcap *)se_vhtcap;
+
+           parse_vht_mcs(vhtcap->rx_mcs_map , &mmcs_index, &nss);
+
+           if (se_phymode == IEEE80211_MODE_11AC_VHT80 ) {
+               sgi = ((vhtcap->vht_cap_info & IEEE80211_VHTCAP_SHORTGI_80 ) >> 5);
+               vht_chnwidth = VHT_OPER_CHNWIDTH_80M;
+               bw = 80;
+           }
+
+           if (se_phymode == IEEE80211_MODE_11AC_VHT160 ) {
+               sgi = ((vhtcap->vht_cap_info & IEEE80211_VHTCAP_SHORTGI_160) >> 6);
+               vht_chnwidth = VHT_OPER_CHNWIDTH_160M;
+               bw = 160;
+           }
+
+           if (se_phymode == IEEE80211_MODE_11AC_VHT80_80) {
+               sgi = ((vhtcap->vht_cap_info & IEEE80211_VHTCAP_SHORTGI_160) >> 6);
+               vht_chnwidth = VHT_OPER_CHNWIDTH_80_80M;
+               bw = 160;
+           }
+
+           phyrate = calculate_vht_phyrate(mmcs_index, vht_chnwidth, nss, sgi);
+       }
+   }
+   if (se_phymode >= IEEE80211_MODE_11NA_HT20 && se_phymode <= IEEE80211_MODE_11NA_HT40) {
+       se_htcap = util_scan_entry_htcap(se);
+       if (se_htcap != NULL) {
+           htcap = (struct ieee80211_ie_htcap_cmn *)se_htcap;
+           ht_40 = ((htcap->hc_cap & IEEE80211_HTCAP_C_CHWIDTH40) >> 1);
+           ht_sgi = ht_40 ?
+           ((htcap->hc_cap & IEEE80211_HTCAP_C_SHORTGI40)>>6):
+           ((htcap->hc_cap & IEEE80211_HTCAP_C_SHORTGI20)>>5);
+           for (index = 0;index<15;index++) {
+                ht_mcs[index] = htcap->hc_mcsset[index];
+           }
+
+           phyrate = calculate_ht_phyrate(ht_mcs, ht_40, ht_sgi);
+       }
+   }
+
+   if (se_phymode >= IEEE80211_MODE_11AXA_HE20 && se_phymode <= IEEE80211_MODE_11AXA_HE80_80) {
+       /* reset the index, bw, nss, phyrate */
+       mmcs_index = 0;
+       nss = 0;
+       bw = 0;
+       phyrate = 0;
+
+       /* Get hecap capability info from scan entry */
+       se_hecap = util_scan_entry_hecap(se);
+       if (se_hecap != NULL) {
+           hecap = (struct ieee80211_ie_hecap *)se_hecap;
+           /* Get phy capability info */
+           hecap_phyinfo  = hecap->hecap_phyinfo;
+           /* Get txmcsnssmap and rxmcsnssmap info from he capability */
+           hecap_txrx = hecap->hecap_txrx;
+
+           /* GI will get from 14th bit of phy capabilitites */
+           gi_val = HECAP_PHY_SU_1XLTFAND800NSECSGI_GET_FROM_IE(&hecap_phyinfo);     //HECAP_PHY_LTFGIFORHE_GET_FROM_IE(&hecap_phyinfo);
+
+           if(gi_val == 1)
+               gi_800_supported = 1;
+           else
+               gi_800_supported = 0;
+
+           memset(&temp_rxmcsnssmap, 0, sizeof(temp_rxmcsnssmap));
+
+           /* rxmcsnssmap[0,1] - <=80, rxmcsnssmap[2,3] - 160, 80_80 */
+           if (se_phymode >= IEEE80211_MODE_11AXA_HE20 && se_phymode <= IEEE80211_MODE_11AXA_HE80) {
+               temp_rxmcsnssmap = (hecap_txrx[1] << 8) + hecap_txrx[0];
+           } else if (se_phymode == IEEE80211_MODE_11AXA_HE160) {
+               temp_rxmcsnssmap = (hecap_txrx[3] << 8) + hecap_txrx[2];
+           } else if (se_phymode == IEEE80211_MODE_11AXA_HE80_80) {
+               temp_rxmcsnssmap = (hecap_txrx[5] << 8) + hecap_txrx[4];
+           } else {
+               printk("\n Invalide phy mode for he target\n");
+           }
+          /* Get max mcs index and nss from rxmcsnssmap */
+           parse_he_mcs(temp_rxmcsnssmap, &mmcs_index, &nss);
+
+           if ((se_phymode == IEEE80211_MODE_11AXA_HE20 ) || (se_phymode == IEEE80211_MODE_11AXG_HE20)) {
+               he_chnwidth = HE_OPER_CHNWIDTH_20M;
+               bw = 20;
+           }
+
+           if ((se_phymode >= IEEE80211_MODE_11AXA_HE40PLUS) && (se_phymode <= IEEE80211_MODE_11AXA_HE40)) {
+               he_chnwidth = HE_OPER_CHNWIDTH_40M;
+               bw = 40;
+          }
+
+           if (se_phymode == IEEE80211_MODE_11AXA_HE80 ) {
+               he_chnwidth = HE_OPER_CHNWIDTH_80M;
+               bw = 80;
+           }
+
+           if (se_phymode == IEEE80211_MODE_11AXA_HE160 ) {
+               he_chnwidth = HE_OPER_CHNWIDTH_160M;
+               bw = 160;
+           }
+
+           if (se_phymode == IEEE80211_MODE_11AXA_HE80_80 ) {
+               he_chnwidth = HE_OPER_CHNWIDTH_80_80M;
+               bw = 160;
+           }
+           /* calculate phyrate in Mpbs */
+           phyrate = calculate_he_phyrate(mmcs_index, he_chnwidth, nss, gi_800_supported);
+       }
+   }
+
+   OS_MEMZERO(&iwe, sizeof(iwe));
+   last_ev = current_ev;
+   iwe.cmd = IWEVCUSTOM;
+   snprintf(buf, sizeof(buf), "phyrate=%d Mbps",phyrate);
+   iwe.u.data.length = strlen(buf);
+   current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+   if (last_ev == current_ev) {
+       return E2BIG;
+   }
+
+   /*Logic implemented to get manufacture and model name.
+    *New variable manu_sublen and mod_sublen has been added
+    *to seperate the length of  manufacturer and model*/
+
+    if (se_wps_ie != NULL) {
+        if (se_wps_ie[0] == 221) {
+            len = se_wps_ie[1];
+            se_wps_ie = se_wps_ie + 6;
+            len = len - 6 ;
+            manufacture = NULL;
+            model_name = NULL;
+            while (len >=4) {
+                subtype = (se_wps_ie[0] << 8) + se_wps_ie[1];
+                sublen = (se_wps_ie[2] << 8) + se_wps_ie[3];
+                switch (subtype)
+                {
+                    case 0x1021:
+                        manufacture = (u_int8_t *)se_wps_ie + 4;
+                        manu_sublen =  sublen;
+                        break;
+                    case 0x1023:
+                        model_name = (u_int8_t *)se_wps_ie + 4;
+                        mod_sublen =  sublen;
+                        break;
+               }
+               se_wps_ie += sublen + 4;
+               len -= sublen + 4;
+            }
+        }
+       OS_MEMZERO(&iwe, sizeof(iwe));
+       last_ev = current_ev;
+       iwe.cmd = IWEVCUSTOM;
+       if(manufacture == NULL)
+           snprintf(buf, sizeof(buf), "Manufacturer=null");
+       else
+           snprintf(buf, sizeof(buf), "Manufacturer=%.*s",manu_sublen,manufacture);
+       iwe.u.data.length = strlen(buf);
+       current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+       if (last_ev == current_ev) {
+          return E2BIG;
+       }
+
+       OS_MEMZERO(&iwe, sizeof(iwe));
+       last_ev = current_ev;
+       iwe.cmd = IWEVCUSTOM;
+       if(model_name== NULL)
+           snprintf(buf, sizeof(buf), "Model name=null");
+       else
+           snprintf(buf, sizeof(buf), "Model Name=%.*s",mod_sublen,model_name);
+       iwe.u.data.length = strlen(buf);
+       current_ev = iwe_stream_add_point(CURRENT_EV, end_buf, &iwe, buf);
+
+       if (last_ev == current_ev) {
+          return E2BIG;
+       }
+    }
+
+#endif // #if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
 
         /* Send these IEs only if configured to to do */
         if (vap->iv_send_additional_ies) {

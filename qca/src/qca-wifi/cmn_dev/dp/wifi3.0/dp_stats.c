@@ -876,6 +876,34 @@ static inline void dp_print_peer_details_tlv(uint32_t *tag_buf)
 		       dp_stats_buf->qpeer_flags);
 }
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/*
+ * dp_update_tx_peer_rate_stats_tlv: update htt_tx_peer_rate_stats_tlv
+ * @tag_buf: buffer containing the tlv htt_tx_peer_rate_stats_tlv
+ * @pdev: DP_PDEV handle
+ *
+ * return:void
+ */
+static inline void dp_update_tx_peer_rate_stats_tlv(struct dp_pdev *pdev, uint32_t *tag_buf)
+{
+        htt_tx_peer_rate_stats_tlv *dp_stats_buf =
+                (htt_tx_peer_rate_stats_tlv *)tag_buf;
+        uint32_t vdev_id = dp_stats_buf->vdev_id;
+       int8_t vdev_ok = 0;
+        struct dp_vdev *vdev = NULL;
+
+        TAILQ_FOREACH(vdev, &pdev->vdev_list, vdev_list_elem) {
+            if (vdev->vdev_id == vdev_id) {
+               vdev_ok = 1;
+                 break;
+            }
+        }
+
+        if(vdev_ok == 1) {
+           A_MEMCPY(&vdev->adv_stats.tx_stats, dp_stats_buf, sizeof(htt_tx_peer_rate_stats_tlv));
+        }
+}
+#endif // defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
 /*
  * dp_print_tx_peer_rate_stats_tlv: display htt_tx_peer_rate_stats_tlv
  * @tag_buf: buffer containing the tlv htt_tx_peer_rate_stats_tlv
@@ -2706,6 +2734,41 @@ static inline void dp_print_sring_cmn_tlv(uint32_t *tag_buf)
 		       dp_stats_buf->num_records);
 }
 
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+/*
+ * dp_print_rx_pdev_rate_stats_tlv: display htt_rx_pdev_rate_stats_tlv
+ * @tag_buf: buffer containing the tlv htt_rx_pdev_rate_stats_tlv
+ *
+ * return:void
+ */
+static void dp_print_pdev_cca_1sec_hist_tlv(struct dp_pdev *pdev,
+					    uint32_t *tag_buf)
+{
+    pdev->curr_cca_counter_index = 0;
+}
+static void dp_print_pdev_cca_counters_tlv(struct dp_pdev *pdev,
+					    uint32_t *tag_buf)
+{
+    htt_pdev_stats_cca_counters_tlv *cca_cntr_tlv = 
+    		(htt_pdev_stats_cca_counters_tlv *)tag_buf;
+    pdev_stats_cca_counters *cca_cntr;
+    if (pdev->curr_cca_counter_index >= WAL_CCA_CNTR_HIST_LEN)
+    {
+        qdf_print ("cca counters index invalid: %d\n",
+                                pdev->curr_cca_counter_index);
+        return;
+    }
+    cca_cntr = &pdev->cca_counters[pdev->curr_cca_counter_index];
+    pdev->curr_cca_counter_index++;
+    cca_cntr->tx_frame_usec = cca_cntr_tlv->tx_frame_usec;
+    cca_cntr->rx_frame_usec = cca_cntr_tlv->rx_frame_usec;
+    cca_cntr->rx_clear_usec = cca_cntr_tlv->rx_clear_usec;
+    cca_cntr->usec_cnt = cca_cntr_tlv->usec_cnt;    
+    cca_cntr->my_rx_frame_usec = cca_cntr_tlv->my_rx_frame_usec;
+    cca_cntr->med_rx_idle_usec = cca_cntr_tlv->med_rx_idle_usec;
+    cca_cntr->cca_obss_usec = cca_cntr_tlv->cca_obss_usec;    
+}
+#endif // PORT_SPIRENT_HK
 /*
  * dp_print_tx_pdev_rate_stats_tlv: display htt_tx_pdev_rate_stats_tlv
  * @tag_buf: buffer containing the tlv htt_tx_pdev_rate_stats_tlv
@@ -3210,8 +3273,12 @@ fail1:
  *
  * return:void
  */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+static void dp_print_rx_pdev_rate_stats_tlv(struct dp_pdev *pdev, uint32_t *tag_buf)
+#else
 static void dp_print_rx_pdev_rate_stats_tlv(struct dp_pdev *pdev,
 					    uint32_t *tag_buf)
+#endif
 {
 	htt_rx_pdev_rate_stats_tlv *dp_stats_buf =
 		(htt_rx_pdev_rate_stats_tlv *)tag_buf;
@@ -3249,6 +3316,7 @@ static void dp_print_rx_pdev_rate_stats_tlv(struct dp_pdev *pdev,
 		}
 	}
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
 	DP_PRINT_STATS("ul_ofdma_data_rx_ppdu = %d",
 		       pdev->stats.ul_ofdma.data_rx_ppdu);
 
@@ -3276,6 +3344,7 @@ static void dp_print_rx_pdev_rate_stats_tlv(struct dp_pdev *pdev,
 			pdev->stats.ul_ofdma.nondata_rx_ru_size[i]);
 	}
 	DP_PRINT_STATS("ul_ofdma_nondata_rx_ru_size= %s", str_buf);
+#endif // PORT_SPIRENT_HK
 
 	DP_PRINT_STATS("HTT_RX_PDEV_RATE_STATS_TLV:");
 	DP_PRINT_STATS("mac_id__word = %u",
@@ -3944,8 +4013,12 @@ static inline void dp_print_rx_pdev_fw_stats_phy_err_tlv(uint32_t *tag_buf)
  *
  * return: void
  */
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+void dp_htt_stats_print_tag(struct dp_pdev *pdev, uint8_t tag_type, uint32_t *tag_buf)
+#else
 void dp_htt_stats_print_tag(struct dp_pdev *pdev,
 			    uint8_t tag_type, uint32_t *tag_buf)
+#endif
 {
 	switch (tag_type) {
 	case HTT_STATS_TX_PDEV_CMN_TAG:
@@ -4085,7 +4158,6 @@ void dp_htt_stats_print_tag(struct dp_pdev *pdev,
 	case HTT_STATS_TX_PDEV_RATE_STATS_TAG:
 		dp_print_tx_pdev_rate_stats_tlv(tag_buf);
 		break;
-
 	case HTT_STATS_RX_PDEV_RATE_STATS_TAG:
 		dp_print_rx_pdev_rate_stats_tlv(pdev, tag_buf);
 		break;
@@ -4233,6 +4305,15 @@ void dp_htt_stats_print_tag(struct dp_pdev *pdev,
 	case HTT_STATS_RX_PDEV_FW_STATS_PHY_ERR_TAG:
 		dp_print_rx_pdev_fw_stats_phy_err_tlv(tag_buf);
 		break;
+
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+	case HTT_STATS_PDEV_CCA_1SEC_HIST_TAG:
+		dp_print_pdev_cca_1sec_hist_tlv(pdev, tag_buf);
+		break;
+	case HTT_STATS_PDEV_CCA_COUNTERS_TAG:
+		dp_print_pdev_cca_counters_tlv(pdev, tag_buf);    
+		break;
+#endif
 
 	default:
 		break;
@@ -5221,9 +5302,145 @@ dp_print_ring_stats(struct dp_pdev *pdev)
 					    [lmac_id],
 					    RXDMA_DST);
 	}
-	hif_pm_runtime_put(pdev->soc->hif_handle,
-			   RTPM_ID_DP_PRINT_RING_STATS);
 }
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+void dp_update_txrx_rates(struct dp_pdev *pdev, struct dp_vdev *vdev)
+{
+       uint8_t mcs, pkt_type, sgi;
+       uint8_t nss, bw;
+       uint8_t index = 0;
+       uint32_t countVal_tx = 0;
+       uint32_t countVal_rx = 0;
+       uint8_t recep_type_rurx = 0;
+       uint32_t bw_rurx = 0;
+       uint32_t he_rurx = 0;
+       for (mcs = 0; mcs < MAX_MCS; mcs++) {
+               for (pkt_type = 0; pkt_type < DOT11_MAX; pkt_type++) {
+                       if (!dp_rate_string[pkt_type][mcs].valid)
+                               continue;
+                       countVal_rx += vdev->stats.rx.pkt_type[pkt_type].mcs_count[mcs];
+		       countVal_tx += vdev->stats.tx.pkt_type[pkt_type].mcs_count[mcs];
+               }
+               vdev->adv_stats.rx_stats.rx_mcs[mcs] = countVal_rx;
+	       vdev->adv_stats.tx_stats.tx_mcs[mcs] = countVal_tx;
+               countVal_rx = 0;
+	       countVal_tx = 0;
+       }
+       for (index = 0; index < SS_COUNT; index++) {
+               vdev->adv_stats.rx_stats.rx_nss[index] = vdev->stats.rx.nss[index];
+	       vdev->adv_stats.tx_stats.tx_nss[index] = vdev->stats.tx.nss[index];
+       }
+       for (index = 0; index < 4; index++) {
+               vdev->adv_stats.rx_stats.rx_bw[index] = vdev->stats.rx.bw[index];
+	       vdev->adv_stats.tx_stats.tx_bw[index] = vdev->stats.tx.bw[index];
+       }
+	for (sgi = 0; sgi < 4; sgi++) {
+               for (mcs = 0; mcs < 12; mcs++) {
+                       vdev->adv_stats.rx_stats.rx_gi[sgi][mcs] = vdev->rev_stats.cstats.sgi_mcs[sgi][mcs];
+               }
+       }
+       memcpy(vdev->adv_stats.tx_stats.sgi_count, vdev->stats.tx.sgi_count, ((MAX_GI-1) * sizeof(uint32_t)));
+       for (bw = 0; bw < 4; bw++) {
+               for (nss = 0; nss < SS_COUNT; nss++) {
+                       vdev->adv_stats.rx_stats.rssi_chain[bw][nss] = vdev->pdev->ppdu_info.rx_status.rssi_chain[nss][bw];
+               }       
+       }
+       vdev->adv_stats.rx_stats.rxofdmamode = 0;
+       vdev->adv_stats.rx_stats.rxloruindex = 0;
+       vdev->adv_stats.rx_stats.rxhiruindex = 0;
+       recep_type_rurx = pdev->ppdu_info.rx_status.reception_type;
+       he_rurx = pdev->ppdu_info.rx_status.he_RU[0];
+       bw_rurx = pdev->ppdu_info.rx_status.bw;
+       if (recep_type_rurx != 2) {
+               vdev->adv_stats.rx_stats.rxofdmapkt = vdev->stats.rx.reception_type[2];
+               vdev->adv_stats.rx_stats.rxruassignmentindex = -1;
+               vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_NA;
+       } else {
+               vdev->adv_stats.rx_stats.rxofdmapkt = vdev->stats.rx.reception_type[recep_type_rurx];
+               vdev->adv_stats.rx_stats.rxruassignmentindex = he_rurx;
+               switch (bw_rurx) {
+                           case 0:  /* HAL_FULL_RX_BW_20 */
+                                   if (he_rurx == 0) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_26;
+                                   } else if (he_rurx == 112) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_52;
+                                   } else if (he_rurx == 96) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_106;
+                                   } else if (he_rurx == 192) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_242;
+                                   } else {
+                                           vdev->adv_stats.rx_stats.rxrutype= OL_ATH_RU_TYPE_NA;
+                                   }
+                                   break;
+			    case 1:  /* HAL_FULL_RX_BW_40 */
+                                   if (he_rurx == 0) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_26;
+                                   } else if (he_rurx == 112) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_52;
+                                   } else if (he_rurx == 96) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_106;
+                                   } else if (he_rurx == 192) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_242;
+                                   } else if (he_rurx == 200) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_484;
+                                   } else {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_NA;
+                                   }
+                                   break;
+                             case 2:  /* HAL_FULL_RX_BW_80 */
+                                   if (he_rurx == 0) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_26;
+                                   } else if (he_rurx == 112) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_52;
+                                   } else if (he_rurx == 96) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_106;
+                                   } else if (he_rurx == 192) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_242;
+                                   } else if (he_rurx == 200) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_484;
+                                   } else if (he_rurx == 208) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_996;
+                                   } else {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_NA;
+                                   }
+                                   break;
+                             case 3:  /* HAL_FULL_RX_BW_160*/
+                                   if (he_rurx == 0) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_26;
+                                   } else if (he_rurx == 112) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_52;
+                                   } else if (he_rurx == 96) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_106;
+                                   } else if (he_rurx == 192) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_242;
+                                   } else if (he_rurx == 200) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_484;
+                                   } else if (he_rurx == 208) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_996;
+                                   } else if (he_rurx == 216) {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_2X996;
+                                   } else {
+                                           vdev->adv_stats.rx_stats.rxrutype = OL_ATH_RU_TYPE_NA;
+                                   }
+                                   break;
+                           default:
+                                   break;
+       }
+       }
+       vdev->adv_stats.tx_stats.txofdmamode = 0;
+       vdev->adv_stats.tx_stats.txrutype = 0;
+       vdev->adv_stats.tx_stats.txruassignmentindex = 0;
+       vdev->adv_stats.tx_stats.txloruindex = 0;
+       vdev->adv_stats.tx_stats.txhiruindex = 0;
+       vdev->adv_stats.tx_stats.txofdmapkt = 0;
+       vdev->adv_stats.tx_stats.bss_color_count = pdev->collision_count;
+       vdev->adv_stats.tx_stats.bss_collision_color = pdev->collision_color;
+#ifdef ADVANCE_STATS_DEBUG_V1
+       printk("dp_update_txrx_rates: collision_count=%d color=%d id=%d\n", pdev->collision_count, pdev->collision_color, pdev->pdev_id);
+#endif
+}
+#endif // defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
 
 /**
  * dp_print_common_rates_info(): Print common rate for tx or rx
@@ -5303,11 +5520,71 @@ dp_print_mu_ppdu_rates_info(struct cdp_rx_mu *rx_mu)
 
 void dp_print_rx_rates(struct dp_vdev *vdev)
 {
-	struct dp_pdev *pdev = (struct dp_pdev *)vdev->pdev;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/* Advance stats prints enabled */
+        /* Commenting advanced stats changes needs for ofdma stats
+          Need to enable ADVANCE_STATS_DEBUG_V1 if advanced stats is needed to print */
+	uint8_t mcs, pkt_type;
+#else	
+	struct dp_pdev *pdev = (struct dp_pdev *)vdev->pdev;	
+#endif
 	uint8_t i;
 	uint8_t index = 0;
 	char nss[DP_NSS_LENGTH];
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+       DP_PRINT_STATS("VDEV Rx Rate Info-%d:\n", vdev->vdev_id);
+       for (pkt_type = 0; pkt_type < DOT11_MAX; pkt_type++) {
+               index = 0;
+               for (mcs = 0; mcs < MAX_MCS; mcs++) {
+                       if (!dp_rate_string[pkt_type][mcs].valid)
+                               continue;
+                       DP_PRINT_STATS("        %s = %d",
+                                       dp_rate_string[pkt_type][mcs].mcs_type,
+                                       vdev->stats.rx.pkt_type[pkt_type].
+                                       mcs_count[mcs]);
+               }
+               DP_PRINT_STATS("\n");
+       }
+       index = 0;
+       for (i = 0; i < SS_COUNT; i++) {
+               index += qdf_snprint(&nss[index], DP_NSS_LENGTH - index,
+                               " %d", vdev->stats.rx.nss[i]);
+       }
+       DP_PRINT_STATS("NSS(1-8) = %s",
+                       nss);
+       DP_PRINT_STATS("SGI ="
+                       " 0.8us %d,"
+                       " 0.4us %d,"
+                       " 1.6us %d,"
+                       " 3.2us %d,",
+                       vdev->stats.rx.sgi_count[0],
+                       vdev->stats.rx.sgi_count[1],
+                       vdev->stats.rx.sgi_count[2],
+                       vdev->stats.rx.sgi_count[3]);
+       DP_PRINT_STATS("BW Counts = 20MHZ %d, 40MHZ %d, 80MHZ %d, 160MHZ %d",
+                       vdev->stats.rx.bw[0], vdev->stats.rx.bw[1],
+                       vdev->stats.rx.bw[2], vdev->stats.rx.bw[3]);
+       DP_PRINT_STATS("Reception Type ="
+                       " SU: %d,"
+                       " MU_MIMO:%d,"
+                       " MU_OFDMA:%d,"
+                       " MU_OFDMA_MIMO:%d\n",
+                       vdev->stats.rx.reception_type[0],
+                       vdev->stats.rx.reception_type[1],
+                       vdev->stats.rx.reception_type[2],
+                       vdev->stats.rx.reception_type[3]);
+       DP_PRINT_STATS("Aggregation:\n");
+       DP_PRINT_STATS("Number of Msdu's Part of Ampdus = %d",
+                       vdev->stats.rx.ampdu_cnt);
+       DP_PRINT_STATS("Number of Msdu's With No Mpdu Level Aggregation : %d",
+                       vdev->stats.rx.non_ampdu_cnt);
+       DP_PRINT_STATS("Number of Msdu's Part of Amsdu: %d",
+                       vdev->stats.rx.amsdu_cnt);
+       DP_PRINT_STATS("Number of Msdu's With No Msdu Level Aggregation: %d",
+                       vdev->stats.rx.non_amsdu_cnt);
+#else
+/* Advance stats prints enabled */
 	DP_PRINT_STATS("Rx Rate Info:\n");
 	dp_print_common_rates_info(pdev->stats.rx.pkt_type);
 
@@ -5342,6 +5619,7 @@ void dp_print_rx_rates(struct dp_vdev *vdev)
 		       pdev->stats.rx.amsdu_cnt);
 	DP_PRINT_STATS("Number of Msdu's With No Msdu Level Aggregation: %d",
 		       pdev->stats.rx.non_amsdu_cnt);
+#endif			   
 }
 
 void dp_print_tx_rates(struct dp_vdev *vdev)

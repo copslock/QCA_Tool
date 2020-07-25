@@ -124,6 +124,17 @@ static const uint32_t pdev_param_tlv[] = {
 				WMI_PDEV_PARAM_RESMGR_OFFCHAN_MODE,
 	[wmi_pdev_param_protection_mode] = WMI_PDEV_PARAM_PROTECTION_MODE,
 	[wmi_pdev_param_dynamic_bw] = WMI_PDEV_PARAM_DYNAMIC_BW,
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+	[wmi_pdev_param_fwdebug] = WMI_PDEV_PARAM_FWDEBUG,
+#endif
+#ifdef SPT_BSS
+	[wmi_pdev_param_ofadaptive_cca] = WMI_PDEV_PARAM_ADAPTIVE_CCA,
+#endif
+#ifdef SPT_NG
+	[wmi_pdev_param_noisegen] = WMI_PDEV_PARAM_NOISEGEN,
+#endif	
+#endif
 	[wmi_pdev_param_non_agg_sw_retry_th] =
 				WMI_PDEV_PARAM_NON_AGG_SW_RETRY_TH,
 	[wmi_pdev_param_agg_sw_retry_th] = WMI_PDEV_PARAM_AGG_SW_RETRY_TH,

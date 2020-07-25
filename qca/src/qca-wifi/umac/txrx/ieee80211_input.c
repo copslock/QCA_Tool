@@ -593,9 +593,14 @@ ieee80211_input(struct ieee80211_node *ni, wbuf_t wbuf, struct ieee80211_rx_stat
 {
 #define QOS_NULL   (IEEE80211_FC0_TYPE_DATA | IEEE80211_FC0_SUBTYPE_QOS_NULL)
 #define HAS_SEQ(type, subtype)   (((type & 0x4) == 0) && ((type | subtype) != QOS_NULL))
+#ifdef PORT_SPIRENT_HK
+    struct ieee80211com *ic;
+    struct ieee80211vap *vap;
+#else
     struct ieee80211com *ic = ni->ni_ic;
-    struct ieee80211_frame *wh;
     struct ieee80211vap *vap = ni->ni_vap;
+#endif
+    struct ieee80211_frame *wh;
     struct ieee80211_phy_stats *phy_stats;
     int type = -1, subtype, dir;
 #if UMAC_SUPPORT_WNM
@@ -604,6 +609,14 @@ ieee80211_input(struct ieee80211_node *ni, wbuf_t wbuf, struct ieee80211_rx_stat
     u_int16_t rxseq =0;
     u_int8_t *bssid;
     bool rssi_update = true;
+
+#ifdef PORT_SPIRENT_HK
+    if(!ni || !ni->ni_ic || !ni->ni_vap)
+        return type;
+    
+    ic = ni->ni_ic;
+    vap = ni->ni_vap;
+#endif
 
     KASSERT((wbuf_get_pktlen(wbuf) >= ic->ic_minframesize),
             ("frame length too short: %u", wbuf_get_pktlen(wbuf)));

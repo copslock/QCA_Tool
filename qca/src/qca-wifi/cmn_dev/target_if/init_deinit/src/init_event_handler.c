@@ -359,6 +359,15 @@ static int init_deinit_service_ext_ready_event_handler(ol_scn_t scn_handle,
 
 	target_if_set_twt_ap_pdev_count(info, tgt_hdl);
 
+#ifdef PORT_SPIRENT_HK
+/**
+ * Set the total number of Vdevs to WLAN_UMAC_PSOC_MAX_VDEVS,
+ * Instead of (number of Pdevs * CFG_TGT_NUM_VDEV_QCA8074).
+ * Now, "wlan_res_cfg.num_vdevs" gets same number of Vdev for
+ * three radio and two radio mode.
+ */
+	info->wlan_res_cfg.num_vdevs = WLAN_UMAC_PSOC_MAX_VDEVS;
+#endif
 	info->wlan_res_cfg.max_bssid_indicator =
 				info->service_ext_param.max_bssid_indicator;
 

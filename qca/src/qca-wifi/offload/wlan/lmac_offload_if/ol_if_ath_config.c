@@ -80,6 +80,9 @@
 
 #include "cfg_ucfg_api.h"
 #include "pld_common.h"
+#ifdef PORT_SPIRENT_HK
+#include <qdf_nbuf.h>
+#endif
 
 #if ATH_SUPPORT_HYFI_ENHANCEMENTS || ATH_SUPPORT_DSCP_OVERRIDE
 /* Do we need to move these to some appropriate header */
@@ -1122,6 +1125,18 @@ ol_ath_set_config_param(struct ol_ath_softc_net80211 *scn,
         }
         break;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_BSS_COLOR)
+        case OL_ATH_PARAM_ADAPTIVE_CCA_THR:
+        {
+           retval = ol_ath_pdev_set_param(scn,
+                      wmi_pdev_param_ofadaptive_cca, value);
+           if (retval != EOK) {
+              qdf_err("Error at OL_ATH_PARAM_ADAPTIVE_CCA_THR\n");
+           }
+
+        }
+        break;
+#endif
         case OL_ATH_PARAM_DCS:
             {
                 value &= OL_ATH_CAP_DCS_MASK;
@@ -3295,6 +3310,7 @@ low_power_config:
         break;
         case OL_ATH_PARAM_OPCLASS_TBL:
             return ol_ath_set_opclass_tbl(ic, value);
+		break;
 #ifdef QCA_SUPPORT_ADFS_RCAC
         case OL_ATH_PARAM_ROLLING_CAC_ENABLE:
             if (dfs_rx_ops && dfs_rx_ops->dfs_set_rcac_enable) {
@@ -3316,7 +3332,44 @@ low_power_config:
                 wlan_objmgr_pdev_release_ref(pdev, WLAN_DFS_ID);
             }
             break;
-#endif
+#endif			
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+        case OL_ATH_PARAM_SET_FW_DEBUG:
+        {
+
+            retval = ol_ath_pdev_set_param(scn,
+                                  wmi_pdev_param_fwdebug, value);
+            if (retval == EOK) {
+                qdf_info("enable FW DEBUG: value %d wmi_status %d", value, retval );
+            } else {
+                qdf_info("enable FW DEBUG: wmi_failed: wmi_status %d", retval );
+            }
+        }
+        break;
+#endif // SPT_ADV_STATS
+#ifdef SPT_NG
+        case OL_ATH_PARAM_NG_CH:
+        {
+            retval = EOK;
+            retval = ol_ath_pdev_set_param(scn,
+                                  wmi_pdev_param_noisegen, value);
+            if (retval == EOK) {
+                qdf_info("WMI send for enable noise generator with channel: %d", value);
+                pdev->ng_channel = (uint8_t)value;
+                qdf_print("NG_PRINT: NG channel is set : ng_channel=%d",pdev->ng_channel);
+                if (!CHK_NG_SCAN_ENTRY_IS_NULL(pdev)) {
+                    qdf_print("NG_PRINT : Free NG scan entry");
+                    qdf_mem_free(pdev->ng_scan_entry);
+                    pdev->ng_scan_entry = NULL;
+                }
+            } else {
+                qdf_err("WMI send for set noise generator failed wmi_status: %d", retval);
+            }
+        }
+        break;
+#endif // SPT_NG
+#endif // PORT_SPIRENT_HK
 #if ATH_SUPPORT_DFS
         case OL_ATH_SCAN_OVER_CAC:
             ic->ic_scan_over_cac = !!value;
@@ -3356,6 +3409,11 @@ ol_ath_get_config_param(struct ol_ath_softc_net80211 *scn, enum _ol_ath_param_t 
     bool bw_reduce = false;
 #if QCA_AIRTIME_FAIRNESS
     int atf_sched = 0;
+#endif
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    struct target_psoc_info *tgt_hdl;
+    target_resource_config *tgt_cfg;
+    struct dp_rx_ru_stats *v2_ru_status = NULL;
 #endif
     struct wlan_lmac_if_dfs_rx_ops *dfs_rx_ops;
 #if ATH_SUPPORT_ZERO_CAC_DFS
@@ -3400,7 +3458,10 @@ ol_ath_get_config_param(struct ol_ath_softc_net80211 *scn, enum _ol_ath_param_t 
 #endif
     reg_cap = ucfg_reg_get_hal_reg_cap(psoc);
     pdev_idx = lmac_get_pdev_idx(pdev);
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    tgt_hdl = (struct target_psoc_info *)wlan_psoc_get_tgt_if_handle(psoc);
+    tgt_cfg = &tgt_hdl->info.wlan_res_cfg;
+#endif
     switch(param)
     {
         case OL_ATH_PARAM_GET_IF_ID:
@@ -4365,6 +4426,116 @@ ol_ath_get_config_param(struct ol_ath_softc_net80211 *scn, enum _ol_ath_param_t 
         case OL_ATH_PARAM_NXT_RDR_FREQ:
             *(int *)buff = ic->ic_radar_next_usr_freq;
             break;
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_ADV_STATS
+        /* Num_vdev has been calculated for SOC (i.e two radios).
+           To separate it for single radio, division by 2 is applied.*/
+        case OL_ATH_PARAM_MAX_STA:
+            *(int *)buff = tgt_cfg->num_vdevs/2;
+            break;
+        case OL_ATH_PARAM_HE_RU_INDEX:
+            v2_ru_status = (struct dp_rx_ru_stats *)kmalloc(sizeof(struct dp_rx_ru_stats), GFP_KERNEL);
+           if (v2_ru_status != NULL) {
+                   memset(v2_ru_status, 0, sizeof(struct dp_rx_ru_stats));
+                   retval = ic->ic_vap_get_rx_ru_values(pdev, pdev->pdev_objmgr.wlan_pdev_id, (void *)v2_ru_status);
+                   if (v2_ru_status->reception_type != 2) {
+                           *(int *)buff = -1;
+                   } else {
+                           *(int *)buff = v2_ru_status->he_RU[0];
+                   }
+                   kfree(v2_ru_status); 
+	    }
+	    break;
+        case OL_ATH_PARAM_HE_RU_TYPE:
+           v2_ru_status = (struct dp_rx_ru_stats *)kmalloc(sizeof(struct dp_rx_ru_stats), GFP_KERNEL);
+           if (v2_ru_status != NULL) {
+                memset(v2_ru_status, 0, sizeof(struct dp_rx_ru_stats));
+                retval = ic->ic_vap_get_rx_ru_values(pdev, pdev->pdev_objmgr.wlan_pdev_id, (void *)v2_ru_status);
+                /* reception_type: 0=SU, 1=MU_MIMO, 2=MU_OFDMA, 3=MU_MIMO_OFDMA*/
+                if (v2_ru_status->reception_type != 2) {
+                    *(int *)buff = OL_ATH_RU_TYPE_NA;
+                    kfree(v2_ru_status);
+                    break; 
+                }
+            
+                switch (v2_ru_status->bw) {
+                    case 0:  /* HAL_FULL_RX_BW_20 */
+                        if (v2_ru_status->he_RU[0] == 0) {
+                            *(int *)buff = OL_ATH_RU_TYPE_26;
+                        } else if (v2_ru_status->he_RU[0] == 112) {
+                            *(int *)buff = OL_ATH_RU_TYPE_52;
+                        } else if (v2_ru_status->he_RU[0] == 96) {
+                            *(int *)buff = OL_ATH_RU_TYPE_106;
+                        } else if (v2_ru_status->he_RU[0] == 192) {
+                            *(int *)buff = OL_ATH_RU_TYPE_242;
+                        } else {
+                            *(int *)buff = OL_ATH_RU_TYPE_NA;
+                        }
+                        break;
+                    case 1:  /* HAL_FULL_RX_BW_40 */
+                        if (v2_ru_status->he_RU[0] == 0) {
+                            *(int *)buff = OL_ATH_RU_TYPE_26;
+                        } else if (v2_ru_status->he_RU[0] == 112) {
+                            *(int *)buff = OL_ATH_RU_TYPE_52;
+                        } else if (v2_ru_status->he_RU[0] == 96) {
+                            *(int *)buff = OL_ATH_RU_TYPE_106;
+                        } else if (v2_ru_status->he_RU[0] == 192) {
+                            *(int *)buff = OL_ATH_RU_TYPE_242;
+                        } else if (v2_ru_status->he_RU[0] == 200) {
+                            *(int *)buff = OL_ATH_RU_TYPE_484;
+                        } else {
+                            *(int *)buff = OL_ATH_RU_TYPE_NA;
+                        }
+                        break;                   
+                    case 2:  /* HAL_FULL_RX_BW_80 */
+                        if (v2_ru_status->he_RU[0] == 0) {
+                            *(int *)buff = OL_ATH_RU_TYPE_26;
+                        } else if (v2_ru_status->he_RU[0] == 112) {
+                            *(int *)buff = OL_ATH_RU_TYPE_52;
+                        } else if (v2_ru_status->he_RU[0] == 96) {
+                            *(int *)buff = OL_ATH_RU_TYPE_106;
+                        } else if (v2_ru_status->he_RU[0] == 192) {
+                            *(int *)buff = OL_ATH_RU_TYPE_242;
+                        } else if (v2_ru_status->he_RU[0] == 200) {
+                            *(int *)buff = OL_ATH_RU_TYPE_484;
+                        } else if (v2_ru_status->he_RU[0] == 208) {
+                            *(int *)buff = OL_ATH_RU_TYPE_996;
+                        } else {
+                            *(int *)buff = OL_ATH_RU_TYPE_NA;
+                        }
+                        break;
+                    case 3:  /* HAL_FULL_RX_BW_160*/
+                        if (v2_ru_status->he_RU[0] == 0) {
+                            *(int *)buff = OL_ATH_RU_TYPE_26;
+                        } else if (v2_ru_status->he_RU[0] == 112) {
+                            *(int *)buff = OL_ATH_RU_TYPE_52;
+                        } else if (v2_ru_status->he_RU[0] == 96) {
+                            *(int *)buff = OL_ATH_RU_TYPE_106;
+                        } else if (v2_ru_status->he_RU[0] == 192) {
+                            *(int *)buff = OL_ATH_RU_TYPE_242;
+                        } else if (v2_ru_status->he_RU[0] == 200) {
+                            *(int *)buff = OL_ATH_RU_TYPE_484;
+                        } else if (v2_ru_status->he_RU[0] == 208) {
+                            *(int *)buff = OL_ATH_RU_TYPE_996;
+                        } else if (v2_ru_status->he_RU[0] == 216) {
+                            *(int *)buff = OL_ATH_RU_TYPE_2X996;
+                        } else {
+                            *(int *)buff = OL_ATH_RU_TYPE_NA;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                kfree(v2_ru_status);
+           }
+           break;
+#endif // SPT_ADV_STATS
+#ifdef SPT_NG
+        case OL_ATH_PARAM_NG_CH:
+            *(int *)buff = pdev->ng_channel;
+            break;
+#endif // SPT_NG
+#endif			
         default:
             return (-1);
     }

@@ -663,7 +663,11 @@ typedef u_int32_t IEEE80211_PRIORITY_MAPPING[IEEE80211_SCAN_PRIORITY_COUNT];
 #ifdef CONFIG_WIFI_EMULATION_WIFI_3_0
 #define BAD_AP_TIMEOUT   0
 #else
+#ifdef PORT_SPIRENT_HK
+#define BAD_AP_TIMEOUT   0xFFFFFFFF  // Disabling bad AP timeout
+#else
 #define BAD_AP_TIMEOUT   6000   // In milli seconds
+#endif
 #endif
 /*
  * To disable BAD_AP status check on any scan entry
@@ -685,7 +689,11 @@ typedef u_int32_t IEEE80211_PRIORITY_MAPPING[IEEE80211_SCAN_PRIORITY_COUNT];
 /*
  * Entries in the scan list are considered obsolete after 75 seconds.
  */
+#ifdef PORT_SPIRENT_HK
+#define IEEE80211_SCAN_ENTRY_EXPIRE_TIME           75000*3
+#else
 #define IEEE80211_SCAN_ENTRY_EXPIRE_TIME           75000
+#endif
 
 #define TIME_UNIT_TO_MICROSEC   1024    /* 1 TU equals 1024 microsecs */
 
@@ -860,6 +868,11 @@ typedef struct _ieee80211_rate_info {
     u_int8_t               mcs;      /* mcs index . is valid if rate type is MCS20 or MCS40 */
     u_int32_t              maxrate_per_client;
     u_int8_t               flags;
+#if SPIRENT_AP_EMULATION
+    uint32_t               last_ppdu_type;
+    uint8_t                last_ru_type;
+    uint16_t               last_ru_index;
+#endif
 } ieee80211_rate_info;
 
 typedef enum _ieee80211_node_param_type {
@@ -1115,6 +1128,9 @@ typedef enum _ieee80211_device_param {
     IEEE80211_DEVICE_PWRTARGET,
     IEEE80211_DEVICE_OFF_CHANNEL_SUPPORT,
     IEEE80211_DEVICE_GREEN_AP_ENABLE_PRINT,
+#ifdef PORT_SPIRENT_HK	
+    IEEE80211_DEVICE_FWDEBUG,
+#endif	
 } ieee80211_device_param;
 
 typedef enum _ieee80211_param {
@@ -1585,6 +1601,29 @@ typedef enum _ieee80211_param {
     IEEE80211_STATS_UPDATE_PERIOD,            /* Set stats update period in legacy devices */
     IEEE80211_CONFIG_HE_DL_MU_OFDMA_BFER,     /* HE DL MU OFDMA_BFER */
     IEEE80211_CONFIG_ASSOC_MIN_RSSI,          /* Set minimum required RSSI level in a assoc_req */
+#ifdef PORT_SPIRENT_HK
+    IEEE80211_CONFIG_GET_RX_MCS,              /* Get RX MCS */
+    IEEE80211_CONFIG_GET_TX_MCS,              /* Get TX MCS */
+    IEEE80211_CONFIG_GET_RX_NSS,              /* Get RX NSS */
+    IEEE80211_CONFIG_GET_TX_NSS,              /* Get TX NSS */
+    IEEE80211_CONFIG_GET_RX_REC_TYPE,         /* Get RX REC TYPE */
+    IEEE80211_CONFIG_GET_RX_RATE,             /* Get RX RATE */
+    IEEE80211_CONFIG_GET_TX_RATE,             /* Get TX RATE */
+    IEEE80211_CONFIG_GET_RX_BW,               /* Get RX BW */
+    IEEE80211_CONFIG_GET_TX_BW,               /* Get TX BW */
+    IEEE80211_CONFIG_GET_RX_GI,               /* Get RX Guard Interval */
+    IEEE80211_CONFIG_GET_TX_GI,               /* Get TX Guard Interval */
+    IEEE80211_CONFIG_GET_ADV_STATS,          /* Get Advance Stats */
+    IEEE80211_CONFIG_GET_RX_SU_OFDMA_PKT,     /* Get SU OFDMA PKT Count */
+    IEEE80211_CONFIG_GET_RX_MU_OFDMA_PKT,     /* Get MU OFDMA PKT Count */
+    IEEE80211_CONFIG_GET_RX_MU_MIMO_PKT,     /* Get MU MIMO PKT Count */
+    IEEE80211_CONFIG_GET_RX_MU_MIMO_OFDMA_PKT,     /* Get MU MIMO OFDMA PKT Count */
+    IEEE80211_CONFIG_CAPTURE_MODE_SET,     /* Set the capture mode */
+    IEEE80211_CONFIG_BSS_COLOR_STATE_SET,     /* Set BSS Color State to Enable/Disable*/
+    IEEE80211_CONFIG_BSS_COLLISION_COUNTER,   /* BSS Color Collision Count */
+    IEEE80211_CONFIG_BSS_COLOR_REQUEST,       /*BSS Color Get*/
+    IEEE80211_CONFIG_GET_REV_TXRX_STATS,      /* Get revanche basic txrx Stats */
+#endif
 } ieee80211_param;
 
 #define MIN_20TU_INTVAL    20 /* Minimum 20TU probe response interval */
@@ -1681,6 +1720,33 @@ struct ieee80211req_fils_aad {
     u_int8_t    kek[IEEE80211_MAX_WPA_KEK_LEN];
     u_int32_t   kek_len;
 } __packed;
+#if defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION) || defined(SPIRENT_PORT)
+#define IES_STR_LEN 200
+
+/* ft_ies information for driver */
+struct ieee80211update_ft_ies {
+	u_int16_t md;
+	const u_int8_t *ie;
+	size_t ie_len;
+};
+
+/**
+ * struct ieee80211ft_event_params - FT Information Elements
+ * @ies: FT IEs
+ * @ies_len: length of the FT IE in bytes
+ * @target_ap: target AP's MAC address
+ * @ric_ies: RIC IE
+ * @ric_ies_len: length of the RIC IE in bytes
+ */
+struct ieee80211ft_event_params {
+        u_int8_t ies[IES_STR_LEN];
+        size_t ies_len;
+        int ft_action;
+        u_int8_t target_ap[IEEE80211_ADDR_LEN];
+        const u_int8_t *ric_ies;
+        size_t ric_ies_len;
+};
+#endif // defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)
 
 typedef struct _ieee80211_keyval {
     ieee80211_cipher_type   keytype;
@@ -2280,6 +2346,12 @@ enum _ieee80211_qos_frame_direction {
     IEEE80211_TX_COMPLETE_QOS_FRAME = 2
 };
 
+#ifdef PORT_SPIRENT_HK
+enum _ieee80211_stats {
+    IEEE80211_STATS_RX = 0,
+    IEEE80211_STATS_TX = 1,
+};
+#endif
 #define IEEE80211_MAX_QOS_UP_RANGE       8
 #define IEEE80211_MAX_QOS_DSCP_EXCEPT    21
 

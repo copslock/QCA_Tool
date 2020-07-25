@@ -32,6 +32,10 @@
 #ifdef FEATURE_WDS
 #include "dp_txrx_wds.h"
 #endif
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+#include <linux/workqueue.h>
+static int wq_count = 0;
+#endif
 
 #ifdef ATH_RX_PRI_SAVE
 #define DP_RX_TID_SAVE(_nbuf, _tid) \
@@ -320,6 +324,35 @@ free_descs:
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+typedef struct {
+       qdf_work_t dp_rx_work;
+       struct dp_vdev *vdev;
+       struct dp_peer *peer;
+       qdf_nbuf_t deliver_list_head;
+       qdf_nbuf_t deliver_list_tail;
+} dp_rx_work_t;
+
+static void dp_rx_work_handler(void *arg)
+{
+       dp_rx_work_t *rx_deliver = arg;
+       struct dp_vdev *vdev = rx_deliver->vdev;
+       struct dp_peer *peer = rx_deliver->peer;
+
+       if (qdf_unlikely(vdev->rx_decap_type == htt_cmn_pkt_type_raw) ||
+                       (vdev->rx_decap_type == htt_cmn_pkt_type_native_wifi)) {
+               vdev->osif_rsim_rx_decap(vdev->osif_vdev,
+                               &rx_deliver->deliver_list_head,
+                               &rx_deliver->deliver_list_tail,
+                               peer->mac_addr.raw);
+       }
+
+       vdev->osif_rx(vdev->osif_vdev, rx_deliver->deliver_list_head);
+
+       qdf_mem_free(rx_deliver);
+}
+#endif
 
 /*
  * dp_rx_deliver_raw() - process RAW mode pkts and hand over the
@@ -1151,6 +1184,10 @@ qdf_nbuf_t dp_rx_sg_create(qdf_nbuf_t nbuf)
 	 * associated to the parent nbuf. We iterate through the frag_list
 	 * till we hit the last_nbuf of the list.
 	 */
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+     if (nbuf == NULL)
+         return NULL;
+#endif
 	do {
 		last_nbuf = dp_rx_adjust_nbuf_len(nbuf, &mpdu_len);
 		qdf_nbuf_pull_head(nbuf, RX_PKT_TLVS_LEN);
@@ -1439,8 +1476,11 @@ void dp_rx_deliver_to_stack(struct dp_soc *soc,
 			    qdf_nbuf_t nbuf_head,
 			    qdf_nbuf_t nbuf_tail)
 {
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+    struct dp_pdev *pdev = vdev->pdev;
+    dp_rx_work_t *rx_deliver;
+#endif
 	int num_nbuf = 0;
-
 	if (qdf_unlikely(!vdev || vdev->delete.pending)) {
 		num_nbuf = dp_rx_drop_nbuf_list(NULL, nbuf_head);
 		/*
@@ -1467,6 +1507,19 @@ void dp_rx_deliver_to_stack(struct dp_soc *soc,
 		return;
 	}
 
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+    rx_deliver = (dp_rx_work_t *) qdf_mem_malloc(sizeof(dp_rx_work_t));
+    if (rx_deliver) {
+        rx_deliver->vdev = vdev;
+        rx_deliver->peer = peer;
+        rx_deliver->deliver_list_head = nbuf_head;
+        rx_deliver->deliver_list_tail = nbuf_tail;
+        qdf_create_work(0, &rx_deliver->dp_rx_work,
+                               dp_rx_work_handler, rx_deliver);
+        qdf_queue_work(0, pdev->dp_rx_work_queue,
+                               &rx_deliver->dp_rx_work);
+    } else {
+#endif
 	if (qdf_unlikely(vdev->rx_decap_type == htt_cmn_pkt_type_raw) ||
 			(vdev->rx_decap_type == htt_cmn_pkt_type_native_wifi)) {
 		vdev->osif_rsim_rx_decap(vdev->osif_vdev, &nbuf_head,
@@ -1474,6 +1527,9 @@ void dp_rx_deliver_to_stack(struct dp_soc *soc,
 	}
 
 	dp_rx_check_delivery_to_stack(soc, vdev, peer, nbuf_head);
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+   }
+#endif
 }
 
 /**
@@ -1573,6 +1629,60 @@ static void dp_rx_msdu_stats_update(struct dp_soc *soc,
 		}
 	}
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	sgi = hal_rx_msdu_start_sgi_get(rx_tlv_hdr);
+	mcs = hal_rx_msdu_start_rate_mcs_get(rx_tlv_hdr);
+	tid = hal_rx_mpdu_start_tid_get(soc->hal_soc, rx_tlv_hdr);
+	bw = hal_rx_msdu_start_bw_get(rx_tlv_hdr);
+	reception_type = hal_rx_msdu_start_reception_type_get(soc->hal_soc, rx_tlv_hdr);
+	nss = hal_rx_msdu_start_nss_get(soc->hal_soc, rx_tlv_hdr);
+	nss = (nss == 0)? 8 : nss;
+	pkt_type = hal_rx_msdu_start_get_pkt_type(rx_tlv_hdr);
+	DP_STATS_INC(peer, rx.sgi_count[sgi], 1);
+	DP_STATS_INC(peer, rx.bw[bw], 1);
+	DP_STATS_INC(peer, rx.nss[nss-1], 1);
+	DP_STATS_INC(peer, rx.reception_type[reception_type], 1);
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[MAX_MCS-1], 1,
+			((mcs >= MAX_MCS_11A) && (pkt_type
+				== DOT11_A)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[mcs], 1,
+			((mcs <= MAX_MCS_11A) && (pkt_type
+				== DOT11_A)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[MAX_MCS-1], 1,
+			((mcs >= MAX_MCS_11B)
+			 && (pkt_type == DOT11_B)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[mcs], 1,
+			((mcs <= MAX_MCS_11B)
+			 && (pkt_type == DOT11_B)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[MAX_MCS-1], 1,
+			((mcs >= MAX_MCS_11A)
+			 && (pkt_type == DOT11_N)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[mcs], 1,
+			((mcs <= MAX_MCS_11A)
+			 && (pkt_type == DOT11_N)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[MAX_MCS-1], 1,
+			((mcs >= MAX_MCS_11AC)
+			 && (pkt_type == DOT11_AC)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[mcs], 1,
+			((mcs <= MAX_MCS_11AC)
+			 && (pkt_type == DOT11_AC)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[MAX_MCS-1], 1,
+			((mcs >= MAX_MCS)
+			 && (pkt_type == DOT11_AX)));
+	DP_STATS_INCC(peer, rx.pkt_type[pkt_type].
+			mcs_count[mcs], 1,
+			((mcs < MAX_MCS)
+			 && (pkt_type == DOT11_AX)));
+#endif // #if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
 	/*
 	 * currently we can return from here as we have similar stats
 	 * updated at per ppdu level instead of msdu level
@@ -1920,6 +2030,9 @@ uint32_t dp_rx_process(struct dp_intr *int_ctx, hal_ring_handle_t hal_ring_hdl,
 	struct rx_desc_pool *rx_desc_pool;
 	struct dp_soc *soc = int_ctx->soc;
 	uint8_t ring_id = 0;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+	uint32_t nss = 0;
+#endif
 	uint8_t core_id = 0;
 	struct cdp_tid_rx_stats *tid_stats;
 	qdf_nbuf_t nbuf_head;
@@ -2326,6 +2439,10 @@ done:
 		} else if (qdf_nbuf_is_rx_chfrag_cont(nbuf)) {
 			msdu_len = QDF_NBUF_CB_RX_PKT_LEN(nbuf);
 			nbuf = dp_rx_sg_create(nbuf);
+#if defined(PORT_SPIRENT_HK)  && defined(SPT_DATA_PATH)
+            if (nbuf == NULL)
+                continue;
+#endif			
 			next = nbuf->next;
 
 			if (qdf_nbuf_is_raw_frame(nbuf)) {
@@ -2392,6 +2509,16 @@ done:
 
 		if (soc->process_rx_status)
 			dp_rx_cksum_offload(vdev->pdev, nbuf, rx_tlv_hdr);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+		vdev->rev_stats.rev_txrx.rx_mcs = hal_rx_msdu_start_rate_mcs_get(rx_tlv_hdr);
+                nss = hal_rx_msdu_start_nss_get(soc->hal_soc, rx_tlv_hdr);
+                vdev->rev_stats.rev_txrx.rx_nss = (nss == 0)? 8 : nss;
+                vdev->rev_stats.rev_txrx.rx_rec_type = hal_rx_msdu_start_reception_type_get(soc->hal_soc, rx_tlv_hdr);
+                vdev->rev_stats.rev_txrx.rx_bw = hal_rx_msdu_start_bw_get(rx_tlv_hdr);
+                vdev->rev_stats.rev_txrx.rx_sgi = hal_rx_msdu_start_sgi_get(rx_tlv_hdr);
+                vdev->rev_stats.rev_txrx.rx_pkt_type = hal_rx_msdu_start_get_pkt_type(rx_tlv_hdr);
+		vdev->rev_stats.cstats.sgi_mcs[vdev->rev_stats.rev_txrx.rx_sgi][vdev->rev_stats.rev_txrx.rx_mcs] += 1;
+#endif
 
 		/* Update the protocol tag in SKB based on CCE metadata */
 		dp_rx_update_protocol_tag(soc, vdev, nbuf, rx_tlv_hdr,
@@ -2742,7 +2869,7 @@ dp_pdev_rx_buffers_attach(struct dp_soc *dp_soc, uint32_t mac_id,
  * Return: QDF_STATUS - QDF_STATUS_SUCCESS
  *			QDF_STATUS_E_NOMEM
  */
-QDF_STATUS
+QDF_STATUS 
 dp_rx_pdev_desc_pool_alloc(struct dp_pdev *pdev)
 {
 	struct dp_soc *soc = pdev->soc;
@@ -2769,6 +2896,22 @@ dp_rx_pdev_desc_pool_alloc(struct dp_pdev *pdev)
 	status = dp_rx_desc_pool_alloc(soc,
 				       rx_sw_desc_weight * rxdma_entries,
 				       rx_desc_pool);
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+    pdev->dp_rx_work_queue = alloc_workqueue("dp_rx_work_queue%d",
+                                        WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS,
+                                        0, wq_count++);
+
+    if (NULL == pdev->dp_rx_work_queue) {
+        qdf_print ("%s failed to create dp_rx_work_queue%d\n",
+                                __func__, wq_count);
+        if (rx_desc_pool->pool_size != 0) 
+			dp_rx_desc_pool_free(soc, rx_desc_pool);
+        return QDF_STATUS_E_NOMEM;
+    }
+    qdf_debug ("%s dp_rx_work_queue%d created\n", __func__, wq_count);
+#endif
+				       
 	if (status != QDF_STATUS_SUCCESS)
 		return status;
 
@@ -2789,6 +2932,12 @@ void dp_rx_pdev_desc_pool_free(struct dp_pdev *pdev)
 	rx_desc_pool = &soc->rx_desc_buf[mac_for_pdev];
 
 	dp_rx_desc_pool_free(soc, rx_desc_pool);
+	
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+    qdf_flush_workqueue(0, pdev->dp_rx_work_queue);
+    qdf_destroy_workqueue(0, pdev->dp_rx_work_queue);
+    wq_count--;
+#endif	
 }
 
 /*

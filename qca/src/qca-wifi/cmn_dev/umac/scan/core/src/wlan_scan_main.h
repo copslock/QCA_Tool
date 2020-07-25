@@ -71,9 +71,21 @@
 #define scm_hex_dump(level, data, buf_len) \
 		qdf_trace_hex_dump(QDF_MODULE_ID_SCAN, level, data, buf_len)
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+/*  With 300 value, QDF ASSERT takes place in
+ *  "ucfg_scan_register_event_handler" function. So its
+ *  value is increased to 500
+ */
+#define MAX_SCAN_EVENT_HANDLERS_PER_PDEV   500
+#else
 #define MAX_SCAN_EVENT_HANDLERS_PER_PDEV   100
+#endif
 #define WLAN_MAX_MODULE_NAME    40
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define WLAN_MAX_REQUESTORS     500
+#else
 #define WLAN_MAX_REQUESTORS     200
+#endif
 #define WLAN_SCAN_ID_MASK 0x00000FFF
 #define WLAN_HOST_SCAN_REQ_ID_PREFIX 0x0000A000
 #define SCAN_NPROBES_DEFAULT 2

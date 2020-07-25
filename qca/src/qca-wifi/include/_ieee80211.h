@@ -142,6 +142,9 @@ enum ieee80211_phymode {
 static inline u_int8_t is_phymode_2G(enum ieee80211_phymode mode)
 {
     switch (mode) {
+#ifdef PORT_SPIRENT_HK
+        case IEEE80211_MODE_AUTO:
+#endif
         case IEEE80211_MODE_11B:
         case IEEE80211_MODE_11G:
         case IEEE80211_MODE_FH:
@@ -165,6 +168,9 @@ static inline u_int8_t is_phymode_2G(enum ieee80211_phymode mode)
 static inline u_int8_t is_phymode_5G_or_6G(enum ieee80211_phymode mode)
 {
     switch (mode) {
+#ifdef PORT_SPIRENT_HK
+        case IEEE80211_MODE_AUTO:
+#endif
         case IEEE80211_MODE_11A:
         case IEEE80211_MODE_TURBO_A:
         case IEEE80211_MODE_11NA_HT20:

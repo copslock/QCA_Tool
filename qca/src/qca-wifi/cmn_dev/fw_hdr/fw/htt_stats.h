@@ -357,6 +357,22 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STA_11AX_UL_STATS = 33,
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    /* HTT_DBG_EXT_CAPTURE_STATUS
+     * PARAMS:
+     *   - config_param0
+     * RESP MSG:
+     *   - No Params
+     */
+    HTT_DBG_EXT_CAPTURE_STATUS = 34,
+ 
+    /* For BSS Color State Set */
+    HTT_DBG_EXT_BSS_STATUS = 35,
+    /* For BSS Colision Count */
+    HTT_DBG_EXT_BSS_COLLISION_COUNTER = 36,
+    /* For BSS Color Request */
+    HTT_DBG_EXT_BSS_COLOR_REQUEST = 37,
+#endif
     /* keep this last */
     HTT_DBG_NUM_EXT_STATS = 256,
 };
@@ -1342,6 +1358,10 @@ typedef enum {
 typedef struct _htt_tx_peer_rate_stats_tlv {
     htt_tlv_hdr_t tlv_hdr;
 
+#ifdef PORT_SPIRENT_HK
+    A_UINT32 vdev_id;
+#endif
+
     /* Number of tx ldpc packets */
     A_UINT32 tx_ldpc;
     /* Number of tx rts packets */
@@ -1349,7 +1369,11 @@ typedef struct _htt_tx_peer_rate_stats_tlv {
     /* RSSI value of last ack packet (units = dB above noise floor) */
     A_UINT32 ack_rssi;
 
+#ifdef PORT_SPIRENT_HK
+    A_UINT32 tx_mcs[HTT_TX_PEER_STATS_NUM_MCS_COUNTERS+1];
+#else
     A_UINT32 tx_mcs[HTT_TX_PEER_STATS_NUM_MCS_COUNTERS];
+#endif    
     A_UINT32 tx_su_mcs[HTT_TX_PEER_STATS_NUM_MCS_COUNTERS];
     A_UINT32 tx_mu_mcs[HTT_TX_PEER_STATS_NUM_MCS_COUNTERS];
     A_UINT32 tx_nss[HTT_TX_PEER_STATS_NUM_SPATIAL_STREAMS]; /* element 0,1, ...7 -> NSS 1,2, ...8 */
@@ -1357,8 +1381,12 @@ typedef struct _htt_tx_peer_rate_stats_tlv {
     A_UINT32 tx_stbc[HTT_TX_PEER_STATS_NUM_MCS_COUNTERS];
     A_UINT32 tx_pream[HTT_TX_PEER_STATS_NUM_PREAMBLE_TYPES];
 
+#ifdef PORT_SPIRENT_HK
+    A_UINT32 tx_gi[HTT_TX_PEER_STATS_NUM_GI_COUNTERS+1][HTT_TX_PEER_STATS_NUM_MCS_COUNTERS+1];
+#else
     /* Counters to track number of tx packets in each GI (400us, 800us, 1600us & 3200us) in each mcs (0-11) */
     A_UINT32 tx_gi[HTT_TX_PEER_STATS_NUM_GI_COUNTERS][HTT_TX_PEER_STATS_NUM_MCS_COUNTERS];
+#endif    
 
     /* Counters to track packets in dcm mcs (MCS 0, 1, 3, 4) */
     A_UINT32 tx_dcm[HTT_TX_PEER_STATS_NUM_DCM_COUNTERS];

@@ -189,6 +189,11 @@
 #include <net/cnss2.h>
 #endif
 #include <target_if_vdev_mgr_rx_ops.h>
+#if defined(PORT_SPIRENT_HK) && defined(SPT_CAPTURE)
+#define HTT_HDR_LEN 26
+#define PRECEDENCE_SHIFT 5
+#define PRECEDENCE_MASK 0x7
+#endif
 
 static int ath_device_event(struct notifier_block *unused, unsigned long event, void *ptr);
 
@@ -3946,6 +3951,23 @@ ol_ath_net80211_is_macreq_enabled(struct ieee80211com *ic)
     return ((scn->macreq_enabled == 1) ? TRUE : FALSE);
 }
 
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+static void
+ol_ath_get_cca_stats(struct ieee80211com *ic, void *cca_stats)
+{
+    struct ol_ath_softc_net80211 *scn = OL_ATH_SOFTC_NET80211(ic);
+    ol_txrx_soc_handle soc_txrx_handle;
+
+    soc_txrx_handle = wlan_psoc_get_dp_handle(scn->soc->psoc_obj);
+    if (!soc_txrx_handle) {
+        QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+                "%s : %d : soc_txrx_handle is NULL", __func__, __LINE__);
+        return;
+    }
+
+    cdp_get_cca_stats(soc_txrx_handle, wlan_objmgr_pdev_get_pdev_id(scn->sc_pdev), cca_stats);    
+}
+#endif
 static u_int32_t
 ol_ath_net80211_get_mac_prealloc_idmask(struct ieee80211com *ic)
 {
@@ -5974,6 +5996,9 @@ ol_ath_dev_attach(struct ol_ath_softc_net80211 *scn,
 #endif
     ic->ic_set_stats_update_period = ol_ath_set_stats_update_period;
     ic->ic_assemble_ratecode = ol_ath_assemble_ratecode;
+#if (defined(PORT_SPIRENT_HK) || defined(SPIRENT_AP_EMULATION)) && defined(SPT_ADV_STATS)
+    ic->ic_get_cca_stats = ol_ath_get_cca_stats;
+#endif
     return EOK;
 }
 
@@ -6829,12 +6854,22 @@ static QDF_STATUS ol_setkey(struct wlan_objmgr_vdev *vdev,
     }
 #if ATH_SUPPORT_WRAP
     avn = OL_ATH_VAP_NET80211(vap);
+    /* MPSTA is fake associated,keys will not install for mpsta. so install group key for first proxy station
+     * and group key is periodically renewed by AP */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MAIN_PROXY_REMOVAL)
+    if (avn->av_is_psta && !(avn->av_is_mpsta) && (key->flags & WLAN_CRYPTO_KEY_GROUP) && memcmp(pdev->pdev_objmgr.group_keyvalue,key->keyval,WLAN_CRYPTO_KEYBUF_SIZE + WLAN_CRYPTO_MICBUF_SIZE) == 0) {
+#else
     if (avn->av_is_psta && !(avn->av_is_mpsta) && (key->flags & WLAN_CRYPTO_KEY_GROUP)) {
+#endif
         qdf_info("%s:Ignore set group key for psta",__func__);
         return QDF_STATUS_SUCCESS;
     }
 #endif
-
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MAIN_PROXY_REMOVAL)
+    if (key->flags & WLAN_CRYPTO_KEY_GROUP && avn->av_is_psta) {
+        memcpy(pdev->pdev_objmgr.group_keyvalue,key->keyval,WLAN_CRYPTO_KEYBUF_SIZE + WLAN_CRYPTO_MICBUF_SIZE);
+    }
+#endif
     ol_ath_vdev_install_key_send(vap, scn, wlan_vdev_get_id(vdev), key,
                macaddr, (key->flags & WLAN_CRYPTO_KEY_DEFAULT), 0, keytype);
     return QDF_STATUS_SUCCESS;
@@ -8138,6 +8173,9 @@ static void ol_ath_update_phymode_caps(struct ieee80211com *ic, enum ieee80211_p
         struct ieee80211_he_handle *ic_he;
 
         ic_he = &ic->ic_he;
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        if ((mac_phy_cap->supported_bands & WMI_HOST_WLAN_2G_CAPABILITY)) {
+#endif
         if (is_phymode_2G(mode)) {
             ieee80211com_clear_htcap(ic, -1);
             ieee80211com_clear_vhtcap(ic, -1);
@@ -8148,7 +8186,16 @@ static void ol_ath_update_phymode_caps(struct ieee80211com *ic, enum ieee80211_p
                     &mac_phy_cap->he_supp_mcs_2G,
                     mac_phy_cap->he_cap_phy_info_2G, sizeof(mac_phy_cap->he_cap_phy_info_2G),
                     &mac_phy_cap->he_ppet2G, &mac_phy_cap->he_cap_info_internal);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+           } else {
+                QDF_PRINT_INFO(QDF_PRINT_IDX_SHARED, QDF_MODULE_ID_ANY, QDF_TRACE_LEVEL_INFO,
+                               "%s: Error Mode %d not 2G\n", __func__, mode);
+           }
+        } else if ((mac_phy_cap->supported_bands & WMI_HOST_WLAN_5G_CAPABILITY)) {
+        if (is_phymode_5G_or_6G(mode)) {
+#else
         } else if (is_phymode_5G_or_6G(mode)) {
+#endif		
             /*
              * 6GHz: no separate 6G handling required as 6G phy will not
              * report ht_cap_info_5G, vht_cap_info_5G.
@@ -8162,9 +8209,17 @@ static void ol_ath_update_phymode_caps(struct ieee80211com *ic, enum ieee80211_p
                     &mac_phy_cap->he_supp_mcs_5G,
                     mac_phy_cap->he_cap_phy_info_5G, sizeof(mac_phy_cap->he_cap_phy_info_5G),
                     &mac_phy_cap->he_ppet5G, &mac_phy_cap->he_cap_info_internal);
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+        } else {
+                QDF_PRINT_INFO(QDF_PRINT_IDX_SHARED, QDF_MODULE_ID_ANY, QDF_TRACE_LEVEL_INFO,
+                               "%s: Error Mode %d not 5G\n", __func__, mode);
+        }
+    }
+#else
         } else {
             qdf_debug("Error Mode %d not 2G or 5G", mode);
         }
+#endif
     }
 }
 
@@ -9933,6 +9988,24 @@ int ol_ath_pdev_attach(struct ol_ath_softc_net80211 *scn,
     if (scn->nss_radio.nss_rctx)
         ic->nss_vops->ic_osif_nss_wifi_monitor_set_filter(ic, MON_FILTER_ALL_DISABLE);
 #endif
+#ifdef SPIRENT_TBD
+// No configuration code in new code version
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+    /* Set max vaps supported for each PDEV */
+    wlan_pdev_set_max_vdev_count(scn->sc_pdev,
+                                  (tgt_cfg->num_vdevs));
+    /* Set max peers supported for each PDEV */
+    wlan_pdev_set_max_peer_count(scn->sc_pdev,
+            wlan_psoc_get_max_peer_count(psoc));
+#else
+    /* Set max vaps supported for each PDEV */
+    wlan_pdev_set_max_vdev_count(scn->sc_pdev,
+                                  (tgt_cfg->num_vdevs/num_radios));
+    /* Set max peers supported for each PDEV */
+    wlan_pdev_set_max_peer_count(scn->sc_pdev,
+            wlan_psoc_get_max_peer_count(psoc)/num_radios);
+#endif
+#endif // SPIRENT_TBD
 
     ol_ath_twt_enable_command(scn);
 #ifdef QVIT

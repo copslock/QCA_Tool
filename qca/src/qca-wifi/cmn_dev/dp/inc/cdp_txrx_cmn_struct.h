@@ -2023,6 +2023,9 @@ struct cdp_rx_stats_ppdu_user {
 	uint32_t mpdu_err_byte_count;
 	uint32_t retries;
 	uint8_t  mac_addr[QDF_MAC_ADDR_SIZE];
+#if defined(SPIRENT_AP_EMULATION) && defined(SPT_ADV_STATS)
+	uint32_t data_rx_ru_size[OFDMA_NUM_RU_SIZE];
+#endif
 };
 
 /**

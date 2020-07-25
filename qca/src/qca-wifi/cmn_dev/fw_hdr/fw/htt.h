@@ -6919,8 +6919,12 @@ enum htt_t2h_msg_type {
      */
     HTT_T2H_MSG_TYPE_TX_OFFLOAD_DELIVER_IND   = 0x25,
     HTT_T2H_MSG_TYPE_CHAN_CALDATA             = 0x26,
+    HTT_T2H_MSG_TYPE_TEST                     = 0x27,
 
-    HTT_T2H_MSG_TYPE_TEST,
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+    HTT_T2H_MSG_BSS_COUNT                     = 0x28,
+    HTT_T2H_MSG_BSS_COLOR_UPDATE              = 0x29,
+#endif 
     /* keep this last */
     HTT_T2H_NUM_MSGS
 };
@@ -13695,6 +13699,46 @@ enum HTT_UL_OFDMA_TRIG_TYPE {
     HTT_UL_OFDMA_USER_INFO_V0_TRIG_TYPE_BSR,
 };
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+/* BSS COLLISION COUNTER */
+#define HTT_STATS_CONF_COUNT_M      0x00ffff00
+#define HTT_STATS_CONF_COUNT_S      8
+#define HTT_STATS_CONF_ID_M         0xff000000
+#define HTT_STATS_CONF_ID_S         24
+#define HTT_STATS_COLOR_CONF_M      0x00ffff00
+#define HTT_STATS_COLOR_CONF_S      8
+#define HTT_STATS_COLOR_ID_M        0xff000000
+#define HTT_STATS_COLOR_ID_S        24
+
+/*BSS Collision Counter*/
+#define HTT_STATS_CONF_COUNT_SET(word,value)                               \
+    do {                                                                   \
+        HTT_CHECK_SET_VAL(HTT_STATS_CONF_COUNT, value);                    \
+        (word) |= (value) << HTT_STATS_CONF_COUNT_S;                       \
+    } while (0)
+
+#define HTT_STATS_CONF_COUNT_GET(word)                                     \
+    (((word) & HTT_STATS_CONF_COUNT_M) >> HTT_STATS_CONF_COUNT_S)
+
+#define HTT_STATS_CONF_ID_SET(word,value)                                  \
+    do {                                                                   \
+        HTT_CHECK_SET_VAL(HTT_STATS_CONF_ID, value);                       \
+        (word) |= (value) << HTT_STATS_CONF_ID_S;                          \
+    } while (0)
+
+#define HTT_STATS_CONF_ID_GET(word)                                        \
+    (((word) & HTT_STATS_CONF_ID_M) >> HTT_STATS_CONF_ID_S)
+
+#define HTT_STATS_CONF_BYTES 4
+
+/*BSS Color Update*/
+#define HTT_STATS_CONF_BSSCOLOR_GET(word)                                 \
+    (((word) & HTT_STATS_COLOR_CONF_M) >> HTT_STATS_COLOR_CONF_S)
+
+#define HTT_STATS_CONF_BSSCOLOR_ID_GET(word)                              \
+    (((word) & HTT_STATS_COLOR_ID_M) >> HTT_STATS_COLOR_ID_S)
+
+#endif /*PORT_SPIRENT_HK*/
 
 #define HTT_UL_OFDMA_USER_INFO_V0_SZ        (sizeof(struct htt_ul_ofdma_user_info_v0))
 

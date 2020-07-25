@@ -19,6 +19,10 @@
 #include <wlan_utility.h>
 #include <wlan_lmac_if_api.h>
 #include <ieee80211_ev.h>
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+#define ASSOC_FAIL_REASON_CODE 3
+#define ASSOC_ID               1111 /*event handler is not using assoc id so we are sending dummy assoc id*/
+#endif
 
 static int mlme_assoc_reassoc_request(wlan_if_t vaphandle,
                                       int       reassoc,
@@ -340,6 +344,10 @@ void ieee80211_mlme_join_infra_continue(struct ieee80211vap *vap, int32_t status
     u_int32_t                     join_timeout_ms;
 
     if (mlme_priv->im_request_type != MLME_REQ_JOIN_INFRA) {
+        /*passing reason code to the wpa supplicant */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_MULTI_CLIENTS)
+	IEEE80211_DELIVER_EVENT_MLME_DEAUTH_INDICATION(vap,ic->ic_myaddr,ASSOC_ID,ASSOC_FAIL_REASON_CODE);
+#endif
         IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "%s : im_request_type != JOIN_INFRA\n",
             __func__);
         return;
@@ -396,8 +404,32 @@ void ieee80211_mlme_join_infra_continue(struct ieee80211vap *vap, int32_t status
        When iv_wps_mode is set, probe request has to be sent as it is required for
        WPS-Push button exchange*/
 
+#ifdef PORT_SPIRENT_HK
+#ifdef SPT_MAIN_PROXY_REMOVAL
+    /* mpsta: fake association,moving the mpsta station from join init to join complete */
+    if (unlikely(vap->iv_mpsta) && ic->ic_npstavaps > IEEE80211_NO_OF_STATIONS_CREATED) {
+        mlme_priv->im_request_type = MLME_REQ_NONE;
+        IEEE80211_DELIVER_EVENT_MLME_JOIN_COMPLETE_INFRA(vap, IEEE80211_STATUS_SUCCESS);
+        return;
+    }
+#endif // SPT_MAIN_PROXY_REMOVAL
+    /* As per 80211r standard, client should not probe request. iv_roaming condition
+       is added to send JOIN_COMPLETE success status instead of sending probe request
+       during roaming. As per 80211r standard, client should not probe request. */
+
+    /* Also Send JOIN_COMPLETE status for Noise generation mode*/
+    if (((ic->ic_strict_pscan_enable && IEEE80211_IS_CHAN_PASSIVE(ic->ic_curchan)) && !vap->iv_wps_mode)
+#ifdef SPT_ROAMING
+        || (vap->iv_roam.iv_roaming)
+#endif // SPT_ROAMING
+#ifdef SPT_NG
+        || ( CHK_NG_ENABLE(ic->ic_pdev_obj) && !CHK_NG_SCAN_ENTRY_IS_NULL(ic->ic_pdev_obj))
+#endif // SPT_NG
+    ) {
+#else
     if ((ic->ic_strict_pscan_enable && IEEE80211_IS_CHAN_PASSIVE(ic->ic_curchan))
                                                             && !vap->iv_wps_mode) {
+#endif
         mlme_priv->im_request_type = MLME_REQ_NONE;
         IEEE80211_DELIVER_EVENT_MLME_JOIN_COMPLETE_INFRA(vap, IEEE80211_STATUS_SUCCESS);
         return;
@@ -649,6 +681,46 @@ void ieee80211_mlme_recv_assoc_response(struct ieee80211_node *ni,
         status_code = IEEE80211_STATUS_UNSPECIFIED;
         goto complete;
     }
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ROAMING)
+    /* Fast roaming stats calculation is referred from psylocke code */
+    /* if subtype is reassoc response, check roaming state whether it is set to FBT_REQ_SENT or not.*/
+    if(subtype == IEEE80211_FC0_SUBTYPE_REASSOC_RESP) {
+        struct fbt_stats *roaming_stats;
+
+        roaming_stats = &vap->ftstats;
+        if(roaming_stats->state == FBT_REQ_SENT) {
+            if(status_code == IEEE80211_STATUS_SUCCESS) {
+                u_int64_t tmp = 0;
+                /* if reassoc response is successfully received, set the state as FBT_RESP_RCVD */
+                roaming_stats->success++;
+                roaming_stats->state = FBT_RESP_RCVD;
+                /* latest_delay  - fast roaming timing is time between ft authentication/action frame successfully sent from host
+                   and reassoc response received by host */
+                roaming_stats->latest_delay = jiffies_to_msecs(roaming_stats->latest_resp_ts - roaming_stats->latest_req_ts);
+                /* BTM delay from Query to Auth Req is added */
+                roaming_stats->latest_delay += (u_int32_t)(vap->btm_counter.v_delay/1000);
+                vap->btm_counter.v_delay=0;
+                /* calculate ft delays based on latest_delay */
+                if(roaming_stats->latest_delay < roaming_stats->min_delay ||
+                        roaming_stats->min_delay == 0)
+                    roaming_stats->min_delay = roaming_stats->latest_delay;
+                if(roaming_stats->latest_delay > roaming_stats->max_delay)
+                    roaming_stats->max_delay = roaming_stats->latest_delay;
+                roaming_stats->total_delay += roaming_stats->latest_delay;
+                tmp = roaming_stats->total_delay;
+                do_div(tmp, roaming_stats->success);
+                roaming_stats->avg_delay = tmp;
+            }
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming min delay:%lu\n",roaming_stats->min_delay);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming max delay:%lu\n",roaming_stats->max_delay);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming avg delay:%lu\n",roaming_stats->avg_delay);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming success:%llu\n",roaming_stats->success);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming fail:%llu\n",roaming_stats->fail);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming state:%u\n",roaming_stats->state);
+            IEEE80211_DPRINTF(vap, IEEE80211_MSG_MLME, "Roaming ft delay:%llu\n",roaming_stats->latest_delay);
+        }
+    }
+#endif
 
     /* Association successful */
 
@@ -1305,6 +1377,39 @@ static void mlme_calculate_11n_connection_speed(struct ieee80211_node *ni, u_int
     }
 }
 
+#ifdef PORT_SPIRENT_HK
+/* This function is used to get the negotiated nss value after
+   association -> iwpriv <staname> g_nss_val */
+static void mlme_get_nss(struct ieee80211com *ic, struct ieee80211_node *ni)
+{
+    struct ieee80211vap *vap = ni->ni_vap;
+    uint8_t curr_phy_mode = wlan_get_current_phymode(vap);
+    struct ieee80211_bwnss_map nssmap;
+    uint8_t *nss_bw_160 = &nssmap.bw_nss_160;
+    uint8_t tx_chainmask  = ieee80211com_get_tx_chainmask(ic);
+    uint8_t nss = ni->ni_streams;
+    uint8_t nss_160 = 0;
+
+    if((curr_phy_mode == IEEE80211_MODE_11AC_VHT160) ||
+            (curr_phy_mode == IEEE80211_MODE_11AC_VHT80_80) ||
+            (curr_phy_mode == IEEE80211_MODE_11AXA_HE160) ||
+            (curr_phy_mode == IEEE80211_MODE_11AXA_HE80_80)) {
+
+        if(ic->ic_get_bw_nss_mapping) {
+            if(ic->ic_get_bw_nss_mapping(vap, &nssmap, tx_chainmask)) {
+                nss_160 = 0;
+            } else {
+                nss_160 = *nss_bw_160;
+            }
+        }
+
+        if(nss_160 <= nss) {
+            nss = nss_160;
+        }
+    }
+    vap->nss_val = nss;
+}
+#endif
 void
 mlme_get_linkrate(struct ieee80211_node *ni, u_int32_t* rxlinkspeed, u_int32_t* txlinkspeed)
 {
@@ -1340,6 +1445,10 @@ mlme_get_linkrate(struct ieee80211_node *ni, u_int32_t* rxlinkspeed, u_int32_t* 
         ht_rates_allowed = ((IEEE80211_IS_CHAN_11AC(ic->ic_curchan) ||
                             IEEE80211_IS_CHAN_11N(ic->ic_curchan)) &&
                             ieee80211vap_htallowed(vap));
+
+#ifdef PORT_SPIRENT_HK
+        mlme_get_nss(ic, ni);
+#endif
 
         if (ni->ni_htrates.rs_nrates &&
             ht_rates_allowed) {
@@ -1605,6 +1714,10 @@ ieee80211_vap_iter_beacon_miss(void *arg, wlan_if_t vap)
     struct ieee80211_mlme_priv    *mlme_priv = vap->iv_mlme_priv;
     ieee80211_mlme_event   event;
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+	struct wlan_objmgr_pdev *pdev;
+#endif
+
     IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
                       "%s: %s iv_bmiss_count=%d reset=%d max=%d arg=%08p swbmiss=%d\n",
                       __func__,
@@ -1739,6 +1852,15 @@ ieee80211_vap_iter_beacon_miss(void *arg, wlan_if_t vap)
 
     IEEE80211_DPRINTF(vap, IEEE80211_MSG_ANY, "%s: Beacon miss, will indicate to OS!!\n", __func__);
     /* indicate beacon miss */
+#if defined(PORT_SPIRENT_HK) && defined(SPT_NG)
+    /**
+    *  Noise generation:
+    *       Do not deliver beacon miss event when NG is enable.
+    *       There might not be a beacon coming in if ng bssid does not match with any of the scanned APs
+    */
+    pdev = wlan_vdev_get_pdev(vap->vdev_obj);
+    if (!(CHK_NG_ENABLE(pdev)))
+#endif
     IEEE80211_DELIVER_EVENT_BEACON_MISS(vap);
 }
 

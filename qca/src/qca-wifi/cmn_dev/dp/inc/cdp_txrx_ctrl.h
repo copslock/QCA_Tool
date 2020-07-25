@@ -97,7 +97,50 @@ cdp_update_filter_neighbour_peers(ol_txrx_soc_handle soc,
 	return soc->ops->ctrl_ops->txrx_update_filter_neighbour_peers
 			(soc, vdev_id, cmd, macaddr);
 }
+
 #endif /* ATH_SUPPORT_NAC || ATH_SUPPORT_NAC_RSSI*/
+
+#if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
+static inline int cdp_get_vdev_txrx_adv_stats
+(ol_txrx_soc_handle soc, uint8_t vdev_id, void *adv_stats)
+{
+       if (!soc || !soc->ops) {
+                 QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance:", __func__);
+                 QDF_BUG(0);
+                 return 0;
+        }
+
+       if (!soc->ops->ctrl_ops ||
+            !soc->ops->ctrl_ops->txrx_get_vdev_adv_stats)
+                return 0;
+
+        return soc->ops->ctrl_ops->txrx_get_vdev_adv_stats(soc, vdev_id, (struct dp_peer_rate_stats_tlv *)adv_stats);
+}
+
+static inline int cdp_get_vdev_basic_txrx_stats
+(ol_txrx_soc_handle soc, uint8_t vdev_id, void *adv_stats)
+{
+       if (!soc || !soc->ops) {
+                 QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+                                "%s: Invalid Instance:", __func__);
+                 QDF_BUG(0);
+                 return 0;
+        }
+
+       if (!soc->ops->ctrl_ops ||
+            !soc->ops->ctrl_ops->txrx_get_vdev_basic_stats)
+                return 0;
+
+        return soc->ops->ctrl_ops->txrx_get_vdev_basic_stats(soc, vdev_id, (struct dp_vdev_rev_stats *)adv_stats);
+}
+
+static inline int cdp_get_vdev_rx_ru_values(ol_txrx_soc_handle soc, int pdev_id, void *rx_ru_stats)
+{
+        return soc->ops->ctrl_ops->txrx_get_vdev_rx_ru_values((void *)soc, pdev_id, (void *)rx_ru_stats);
+}
+
+#endif // defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
 
 /**
  * @brief set the Reo Destination ring for the pdev
