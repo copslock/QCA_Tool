@@ -24,6 +24,7 @@ endif
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -I$(abspath ../src)
 CFLAGS += -I$(abspath ../src/utils)
+CFLAGS += -DSPIRENT_PORT
 
 export BINDIR ?= /usr/local/bin/
 

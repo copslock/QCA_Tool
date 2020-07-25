@@ -732,12 +732,22 @@ driver_atheros_event_wireless_custom(struct driver_atheros_data *drv,
 		os_memcpy(&params, spos, sizeof(struct ev_sta_external_auth_params));
 
 		data.external_auth.action = params.action;
+#ifdef SPIRENT_PORT
+		//FIX-CIPRVH-231: using assignment instead of memcpy in QCOM base code to avoid segmentation fault.
+		data.external_auth.bssid = params.bssid;
+#else
 		os_memcpy((uint8_t *)(data.external_auth.bssid), params.bssid, ETH_LEN);
+#endif /* SPIRENT_PORT */
 		data.external_auth.ssid_len = params.ssid_len;
 
 		if ( data.external_auth.ssid_len < SSID_MAX_LEN) {
+#ifdef SPIRENT_PORT
+			//FIX-CIPRVH-231: using assignment instead of memcpy in QCOM base code to avoid segmentation fault.
+			data.external_auth.ssid = params.ssid;
+#else
 			os_memcpy((uint8_t *)(data.external_auth.ssid), params.ssid,
 					data.external_auth.ssid_len);
+#endif /* SPIRENT_PORT */
 		} else {
 			wpa_printf(MSG_DEBUG, "WEXT: Exceeding SSID "
 							"Max Length");
@@ -1267,6 +1277,16 @@ driver_atheros_event_wireless_p2p_custom(struct driver_atheros_data *drv,
                 }
                 break;
         }
+#ifdef SPIRENT_PORT
+	case IEEE80211_EV_DEAUTH_IND_STA: {
+		struct event_msg *p_ev = (struct event_msg *)buf; /*reason code update from driver */
+		wpa_printf(MSG_DEBUG, "EV_DEAUTH_IND_STA, AP=" MACSTR ", reason=%d ", MAC2STR(p_ev->addr), p_ev->reason);
+		os_memset(&event, 0, sizeof(event));
+		event.deauth_info.reason_code = p_ev->reason;
+		wpa_supplicant_event(drv->ctx, EVENT_DEAUTH, &event);
+		break;
+        }
+#endif
 	default:
 		break;
 	}
@@ -1387,8 +1407,17 @@ static void driver_atheros_event_wireless(struct driver_atheros_data *drv,
 			os_memcpy(dpos, pos + IW_EV_LCP_LEN,
 				  sizeof(struct iw_event) - dlen);
 		} else {
+#ifdef SPIRENT_PORT
+			/* Since compat header is skipped during sending ft information,
+			Skipped removed compat header for IWEVFTEVENT.
+			Refer comment given in qca/src/linux-4.4/net/wireless/wext-core.c */
+			if (iwe->cmd != IWEVFTEVENT) {
+#endif
 			os_memcpy(&iwe_buf, pos, sizeof(struct iw_event));
 			custom += IW_EV_POINT_OFF;
+#ifdef SPIRENT_PORT
+			}
+#endif
 		}
 
 		switch (iwe->cmd) {
@@ -1508,6 +1537,28 @@ static void driver_atheros_event_wireless(struct driver_atheros_data *drv,
 				athr_ibss_event(drv,
 						(u8 *) iwe->u.ap_addr.sa_data);
 			break;
+#ifdef SPIRENT_PORT
+		case IWEVFTEVENT:
+                {
+			union wpa_event_data ft_data;
+			struct ieee80211ft_event_params *ft_event = NULL;
+
+			wpa_printf(MSG_DEBUG, "Wireless event: FT Response event: ");
+
+			os_memset(&ft_data, 0, sizeof(ft_data));
+			ft_event = (struct ieee80211ft_event_params *) custom;
+			ft_data.ft_ies.ies_len = ft_event->ies_len;
+			ft_data.ft_ies.ies = ft_event->ies;
+
+			os_memcpy(ft_data.ft_ies.target_ap, ft_event->target_ap, ETH_ALEN);
+
+			wpa_printf(MSG_DEBUG, "athr: FT event target_ap " MACSTR,
+				MAC2STR(ft_data.ft_ies.target_ap));
+
+			wpa_supplicant_event(drv->ctx, EVENT_FT_RESPONSE, &ft_data);
+		}
+		break;
+#endif
 		default:
 			wpa_printf(MSG_DEBUG, "WEXT: Unknown EVENT:%d",
 				   iwe->cmd);
@@ -4504,6 +4555,104 @@ static int athr_wnm_oper(void *priv, enum wnm_oper oper, const u8 *peer,
 }
 #endif /* CONFIG_IEEE80211V */
 
+#ifdef SPIRENT_PORT
+int driver_atheros_update_ft_ies(void *priv,
+                                  const u8 *md, const u8 *ies, size_t ies_len)
+{
+	struct driver_atheros_data *drv = priv;
+	struct ieee80211req_mlme mlme;
+	int ret = 0;
+
+	os_memset(&mlme, 0, sizeof(mlme));
+	mlme.im_op = IEEE80211_MLME_UPDATE_FT_IES;
+
+	mlme.update_ft_ies.md = 0;
+	mlme.update_ft_ies.ie = ies;
+	mlme.update_ft_ies.ie_len = ies_len;
+
+	wpa_printf(MSG_DEBUG, " %s: OP mode = %d", __func__, mlme.im_op);
+
+	if (set80211priv(drv, IEEE80211_IOCTL_SETMLME, &mlme,
+			 sizeof(mlme), 1) < 0) {
+		wpa_printf(MSG_DEBUG, "%s: SETMLME[UPDATE_FT_IES] failed", __func__);
+		ret = -1;
+	}
+
+	return ret;
+}
+
+static int driver_atheros_hold_unhold_bss(void *priv, u8 *bssid, int bss_flag)
+{
+	struct driver_atheros_data *drv = priv;
+	struct ieee80211req_mlme mlme;
+	int ret = 0;
+
+	/* check if bssid is valid */
+	if (bssid) {
+		os_memset(&mlme, 0, sizeof(mlme));
+		if (!bss_flag)
+			/* send mlme hold bss operation */
+			mlme.im_op = IEEE80211_MLME_HOLD_BSS;
+		else
+			/* send mlme unhold bss operation */
+			mlme.im_op = IEEE80211_MLME_UNHOLD_BSS;
+		os_memcpy(mlme.im_bssid, bssid, ETH_ALEN);
+		wpa_printf(MSG_DEBUG, " %s: OP mode = %d bssid" MACSTR, __func__, mlme.im_op, MAC2STR(bssid));
+		/* send bssid to driver to add/remove it via MLME IOCTL */
+		if (set80211priv(drv, IEEE80211_IOCTL_SETMLME, &mlme, sizeof(mlme), 1) < 0) {
+			wpa_printf(MSG_DEBUG, "%s: SETMLME failed", __func__);
+			ret = -1;
+		}
+	}
+	return ret;
+}
+
+static int driver_atheros_update_btm_stats(void *priv, u32 *counter)
+{
+	struct driver_atheros_data *drv = priv;
+	struct ieee80211req_mlme mlme;
+	int ret = 0;
+	struct __btm_counter{
+		u32 query;
+		u32 request;
+		u32 accept;
+		u32 deny;
+		u64 v_delay;
+	}btm_counter = {0,0,0,0,0};
+	memcpy(&btm_counter, counter, sizeof(btm_counter));
+
+	wpa_printf(MSG_DEBUG, "BTM_Counter=%d,%d,%d,%d,%lu",
+	btm_counter.query, btm_counter.request, btm_counter.accept, btm_counter.deny, btm_counter.v_delay);
+
+	os_memset(&mlme, 0, sizeof(mlme));
+	mlme.im_op = IEEE80211_MLME_SET_BTM_STATS;
+	os_memcpy(mlme.im_optie, &btm_counter, sizeof(btm_counter));
+	/* send BTM_Counter to driver to add/remove it via MLME IOCTL */
+	if (set80211priv(drv, IEEE80211_IOCTL_SETMLME, &mlme, sizeof(mlme), 1) < 0) {
+		wpa_printf(MSG_DEBUG, "%s: SETMLME failed", __func__);
+		ret = -1;
+	}
+
+	return ret;
+}
+
+int driver_atheros_update_ft_failure(void *priv)
+{
+	struct driver_atheros_data *drv = priv;
+	struct ieee80211req_mlme mlme;
+	int ret = 0;
+
+	os_memset(&mlme, 0, sizeof(mlme));
+	mlme.im_op = IEEE80211_MLME_UPDATE_FT_FAIL;
+	wpa_printf(MSG_DEBUG, " %s: OP mode = %d", __func__, mlme.im_op);
+	/* send ft failure notification to driver via MLME IOCTL */
+	if (set80211priv(drv, IEEE80211_IOCTL_SETMLME, &mlme, sizeof(mlme), 1) < 0) {
+		wpa_printf(MSG_DEBUG, "%s: SETMLME failed", __func__);
+		ret = -1;
+	}
+	return ret;
+}
+#endif
 
 const struct wpa_driver_ops wpa_driver_athr_ops = {
 	.name = "athr",
@@ -4554,4 +4703,10 @@ const struct wpa_driver_ops wpa_driver_athr_ops = {
 #ifdef CONFIG_IEEE80211V
 	.wnm_oper = athr_wnm_oper,
 #endif /* CONFIG_IEEE80211V */
+#ifdef SPIRENT_PORT
+	.update_ft_ies = driver_atheros_update_ft_ies,
+	.hold_unhold_bss = driver_atheros_hold_unhold_bss,
+	.update_btm_stats = driver_atheros_update_btm_stats,
+	.update_ft_failure = driver_atheros_update_ft_failure,
+#endif
 };

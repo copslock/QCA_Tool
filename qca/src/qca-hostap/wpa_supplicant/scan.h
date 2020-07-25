@@ -62,4 +62,10 @@ void scan_est_throughput(struct wpa_supplicant *wpa_s,
 			 struct wpa_scan_res *res);
 void wpa_supplicant_set_default_scan_ies(struct wpa_supplicant *wpa_s);
 
+#ifdef SPIRENT_PORT
+int wpa_scan_cache_ctl(struct wpa_global* global, char* cmd);
+struct wpa_scan_results *wpa_supplicant_scan_cache_get(struct wpa_supplicant *wpa_s);
+void wpa_supplicant_scan_cache_free(struct scan_result_cache *scan_cache);
+void wpa_supplicant_scan_cache_mark_invalid(struct wpa_supplicant *wpa_s);
+#endif
 #endif /* SCAN_H */

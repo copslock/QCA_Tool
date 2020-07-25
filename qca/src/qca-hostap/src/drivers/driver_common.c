@@ -17,6 +17,10 @@ void wpa_scan_results_free(struct wpa_scan_results *res)
 	if (res == NULL)
 		return;
 
+#ifdef SPIRENT_PORT
+       if (res->is_cache)
+               return;
+#endif
 	for (i = 0; i < res->num; i++)
 		os_free(res->res[i]);
 	os_free(res->res);

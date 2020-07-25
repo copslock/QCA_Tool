@@ -55,6 +55,7 @@ NEED_RADIOTAP=y
 NEED_LIBNL=y
 endif
 
+############### SPIRENT_PORT
 ifdef CONFIG_DRIVER_ATHR
 DRV_WPA_CFLAGS += -DCONFIG_DRIVER_ATHR
 DRV_WPA_OBJS += ../src/drivers/driver_athr.o

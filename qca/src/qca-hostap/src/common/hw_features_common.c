@@ -515,12 +515,18 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		break;
 	case CHANWIDTH_160MHZ:
 		data->bandwidth = 160;
-		if (!(vht_caps & (VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
+#ifndef SPIRENT_PORT
+		// for atheros driver, it did not define get_hw_feature_data,
+		// the current_mode is NULL, then the vht_caps is passed in as 0
+		// and it would error 160 MHz not supported
+		// but actually it did support 160 MHz so skip this
+        if (!(vht_caps & (VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
 				  VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ))) {
 			wpa_printf(MSG_ERROR,
 				   "160MHZ channel width is not supported!");
 			return -1;
 		}
+#endif
 		if (center_segment1)
 			return -1;
 		if (!sec_channel_offset)

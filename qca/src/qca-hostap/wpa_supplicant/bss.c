@@ -366,6 +366,16 @@ static int wpa_bss_known(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 	return 0;
 }
 
+#ifdef SPIRENT_PORT
+static int wpa_fbt_target_set(struct wpa_supplicant *wpa_s)
+{
+	/* check fbt target is set for current ssid */
+	if(wpa_s->current_ssid && wpa_s->current_ssid->fbt_target_set)
+		return 1;
+
+	return 0;
+}
+#endif
 
 static int wpa_bss_in_use(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 {
@@ -377,6 +387,12 @@ static int wpa_bss_in_use(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 	     os_memcmp(bss->ssid, wpa_s->current_bss->ssid,
 		       bss->ssid_len) != 0))
 		return 0; /* SSID has changed */
+#ifdef SPIRENT_PORT
+	/* keep all EBSS in use during fast roaming to avoid bss flush
+	due to aging. */
+	if(wpa_fbt_target_set(wpa_s))
+		return 1;
+#endif
 
 	return !is_zero_ether_addr(bss->bssid) &&
 		(os_memcmp(bss->bssid, wpa_s->bssid, ETH_ALEN) == 0 ||
@@ -923,7 +939,17 @@ void wpa_bss_flush_by_age(struct wpa_supplicant *wpa_s, int age)
 	struct wpa_bss *bss, *n;
 	struct os_reltime t;
 
+#ifdef SPIRENT_PORT
+/**
+ * CIPNCD-21945: During 200/240 association, Randomly one station is not
+ * getting associated, because of desired SSID is removed from
+ * the BSS list Due to "wpa_s->current_bss" as NULL. To avoid the
+ * scenario, added the condition check, if current bss is null, return.
+ */
+	if (dl_list_empty(&wpa_s->bss) || (!(wpa_s->current_bss)))
+#else
 	if (dl_list_empty(&wpa_s->bss))
+#endif
 		return;
 
 	os_get_reltime(&t);

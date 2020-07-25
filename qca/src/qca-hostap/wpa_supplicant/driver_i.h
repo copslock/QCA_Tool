@@ -1079,5 +1079,25 @@ static inline int wpa_drv_set_4addr_mode(struct wpa_supplicant *wpa_s, int val)
 	return wpa_s->driver->set_4addr_mode(wpa_s->drv_priv,
 					     wpa_s->bridge_ifname, val);
 }
+#ifdef SPIRENT_PORT
+static inline int wpa_drv_hold_unhold_bss(struct wpa_supplicant *wpa_s, u8 *bssid, int bss_flag)
+{
+	if(!wpa_s->driver->hold_unhold_bss)
+		return -1;
+	return wpa_s->driver->hold_unhold_bss(wpa_s->drv_priv, bssid, bss_flag);
+}
+static inline int wpa_drv_update_btm_stats(struct wpa_supplicant *wpa_s,  u32 *counter)
+{
+	if(!wpa_s->driver->update_btm_stats)
+		return -1;
+	wpa_s->driver->update_btm_stats(wpa_s->drv_priv, counter);
+}
 
+static inline int wpa_drv_update_ft_failure(struct wpa_supplicant *wpa_s)
+{
+	if(!wpa_s->driver->update_ft_failure)
+		return -1;
+	return wpa_s->driver->update_ft_failure(wpa_s->drv_priv);
+}
+#endif
 #endif /* DRIVER_I_H */

@@ -71,6 +71,52 @@ static int wpa_supplicant_global_iface_interfaces(struct wpa_global *global,
 static int * freq_range_to_channel_list(struct wpa_supplicant *wpa_s,
 					char *val);
 
+#ifdef SPIRENT_PORT
+
+/* Function: dot11k_condition_to_roam
+ * If 802.11K mode is enabled, this function checks if condition to roam is met and
+ * returns -1 if not.
+ */
+
+static int dot11k_condition_to_roam(struct wpa_supplicant *wpa_s, u8 *target_ap)
+{
+	struct wpa_bss *bss;
+
+	/* if K is disabled or if valid neighbor report count is zero,
+	 * then condition to roam for 802.11K is not checked.
+	 */
+	if (wpa_s->en_11vk != ENABLED_11K || !wpa_s->num_valid_dot11k_neigh_report)
+		return 0;
+
+	bss = wpa_bss_get(wpa_s,wpa_s->current_ssid->bssid,wpa_s->current_ssid->ssid,wpa_s->current_ssid->ssid_len);
+	if (!bss) {
+		wpa_printf(MSG_DEBUG, "%s: 11K : Current AP not found \n", __func__);
+		return -1;
+	}
+
+	/* copy BSSID of target AP from Neighbor report available */
+	os_memcpy(target_ap, wpa_s->dot11k_neigh_report[0].bssid, ETH_ALEN);
+
+	/* 11K Roaming is done, if the below 2 conditions are satisfied. Else, it remains associated with the current AP.
+	 * 1. RSSI(dBm) of neighbor_report_AP must be greater than the Roaming scan threshold set.
+	 * 2. Signal level(dB) of neighbor_report_AP must be greater than that of current AP by a value
+	 *    denoted by roaming decision threshold. */
+
+	if ((wpa_s->dot11k_neigh_report[0].rssi > wpa_s->roam_thold) &&
+		((wpa_s->dot11k_neigh_report[0].level - bss->level) > wpa_s->roam_decision_thold)) {
+		wpa_printf(MSG_DEBUG, "CTRL_IFACE FT_DS: condition to roam met. target_ap->rssi[%d], roam_thold[%d],"
+					"level diff[%d], roam_decision_thold[%d]\n", wpa_s->dot11k_neigh_report[0].rssi,
+					wpa_s->roam_thold, wpa_s->dot11k_neigh_report[0].level - bss->level,
+					wpa_s->roam_decision_thold);
+		return 0;
+	}
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE FT_DS: Roaming is discarded. target_ap->rssi[%d], roam_thold[%d],"
+				"level diff[%d], roam_decision_thold[%d]\n", wpa_s->dot11k_neigh_report[0].rssi,
+				wpa_s->roam_thold, wpa_s->dot11k_neigh_report[0].level - bss->level,
+				wpa_s->roam_decision_thold);
+	return -1;
+}
+#endif /* SPIRENT_PORT */
 
 static int set_bssid_filter(struct wpa_supplicant *wpa_s, char *val)
 {
@@ -1195,6 +1241,13 @@ static int wpa_supplicant_ctrl_iface_ft_ds(
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE FT_DS " MACSTR, MAC2STR(target_ap));
 
+#ifdef SPIRENT_PORT
+	/* Checks whether to do 802.11K roaming */
+	if (dot11k_condition_to_roam(wpa_s, target_ap) < 0) {
+		/* 11K Roaming is discarded*/
+		return -1;
+	}
+#endif /* SPIRENT_PORT */
 	bss = wpa_bss_get_bssid(wpa_s, target_ap);
 	if (bss)
 		mdie = wpa_bss_get_ie(bss, WLAN_EID_MOBILITY_DOMAIN);
@@ -2095,6 +2148,12 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 	wps = os_strcmp(params, "-WPS") == 0;
 	pos = buf;
 	end = buf + buflen;
+#ifdef SPIRENT_PORT
+	ret = os_snprintf(pos, end - pos, "reason_code = %d\n",wpa_s->assoc_fail_reason); /* Reason code update */
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+#endif
 	if (wpa_s->wpa_state >= WPA_ASSOCIATED) {
 		struct wpa_ssid *ssid = wpa_s->current_ssid;
 		ret = os_snprintf(pos, end - pos, "bssid=" MACSTR "\n",
@@ -2548,6 +2607,29 @@ static int wpa_supplicant_ctrl_iface_log_level(struct wpa_supplicant *wpa_s,
 	return 3;
 }
 
+#ifdef SPIRENT_PORT
+#define HOLD_BSS   0
+#define UNHOLD_BSS 1
+#define wpa_supplicant_ctrl_hold_bss(...) wpa_supplicant_ctrl_hold_unhold_bss(__VA_ARGS__, HOLD_BSS)
+#define wpa_supplicant_ctrl_unhold_bss(...) wpa_supplicant_ctrl_hold_unhold_bss(__VA_ARGS__, UNHOLD_BSS)
+
+static int wpa_supplicant_ctrl_hold_unhold_bss(struct wpa_global *global, char *addr, int bss_flag)
+{
+	u8 bssid[ETH_ALEN];
+
+	if(!global->ifaces)
+		return 0;
+
+	os_memset(bssid, 0, ETH_ALEN);
+	if (hwaddr_aton(addr, bssid)) {
+		wpa_printf(MSG_DEBUG, "HOLD_BSS: invalid address '%s'", addr);
+		return -1;
+	}
+	/* send bssid to unhold */
+	wpa_drv_hold_unhold_bss(global->ifaces, bssid, bss_flag);
+	return 0;
+}
+#endif
 
 static int wpa_supplicant_ctrl_iface_list_networks(
 	struct wpa_supplicant *wpa_s, char *cmd, char *buf, size_t buflen)
@@ -3043,7 +3125,69 @@ static int wpa_supplicant_ctrl_iface_scan_results(
 	return pos - buf;
 }
 
+#ifdef SPIRENT_PORT
 
+static int wpa_supplicant_ctrl_iface_get_neigh_report_stats(
+	struct wpa_supplicant *wpa_s, char *cmd, char *buf, size_t buflen)
+{
+	int index;
+
+	char *pos, *end;
+	int ret;
+
+	pos = buf;
+	end = buf + buflen;
+	/* cmd: "<network id> <variable name>" */
+	wpa_printf(MSG_EXCESSIVE, "CTRL_IFACE: GET_NEIGH_REPORT_STATS");
+	//11V mode
+	if(wpa_s->en_11vk == ENABLED_11V_11K || wpa_s->en_11vk ==  ENABLED_11V) {
+		//2. Number of Neighbor reports available/received.
+		ret = os_snprintf(pos, end - pos, "%u\n", wpa_s->wnm_num_neighbor_report_sel ); /* sta handle update */
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "SSID\tBSSID\tRSSI\n");
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		//3. SSID, BSSID, RSSI(dBm)
+		if (wpa_s->wnm_num_neighbor_report_sel > 0) {
+			for(index = 0; index < wpa_s->wnm_num_neighbor_report_sel; index++) {
+				ret = os_snprintf(pos, end - pos, "%s\t"MACSTR"\t%d\n",
+					wpa_s->neigh_rep[index].ssid, MAC2STR(wpa_s->neigh_rep[index].bssid), wpa_s->neigh_rep[index].rssi);
+				if (os_snprintf_error(end - pos, ret))
+					return pos - buf;
+				pos += ret;
+			}
+		}
+	} else if (wpa_s->en_11vk == ENABLED_11K) {
+		ret = os_snprintf(pos, end - pos, "%u\n",wpa_s->num_valid_dot11k_neigh_report); /* Updates Neighbor report count */
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "SSID\tBSSID\tRSSI\n");
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		for(index = 0; index < wpa_s->num_valid_dot11k_neigh_report; index++) {
+			ret = os_snprintf(pos, end - pos, "%s\t"MACSTR"\t%d\n",
+				wpa_ssid_txt(wpa_s->dot11k_neigh_report[index].ssid,
+				wpa_s->dot11k_neigh_report[index].ssid_len),
+				MAC2STR(wpa_s->dot11k_neigh_report[index].bssid),
+				wpa_s->dot11k_neigh_report[index].rssi);
+			if (os_snprintf_error(end - pos, ret))
+				return pos - buf;
+			pos += ret;
+		}
+	}
+	return pos - buf;
+}
+
+#endif
 #ifdef CONFIG_MESH
 
 static int wpa_supplicant_ctrl_iface_mesh_interface_add(
@@ -5336,6 +5480,13 @@ static int wpa_supplicant_ctrl_iface_roam(struct wpa_supplicant *wpa_s,
 			   "address '%s'", addr);
 		return -1;
 	}
+#ifdef SPIRENT_PORT
+	/* Checks whether to do 802.11K roaming */
+	if (dot11k_condition_to_roam(wpa_s, bssid) < 0) {
+		/* 11K Roaming is discarded*/
+		return -1;
+	}
+#endif /* SPIRENT_PORT */
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM " MACSTR, MAC2STR(bssid));
 
@@ -7661,7 +7812,47 @@ static int wpas_ctrl_iface_coloc_intf_report(struct wpa_supplicant *wpa_s,
 	wpabuf_free(elems);
 	return ret;
 }
+#ifdef SPIRENT_PORT
+static int wpas_ctrl_iface_enable_kv_roam(struct wpa_supplicant *wpa_s, char *cmd)
+{
+	int roam_thold =0, roam_decision_thold =0, en_11kv=0, ft_roam_type=0;
 
+	roam_thold = atoi(cmd);
+	cmd = os_strchr(cmd, ' ');
+	if (cmd) {
+		roam_decision_thold = atoi(cmd+1);
+	}
+	cmd = os_strchr(cmd+1, ' ');
+	if (cmd) {
+		en_11kv = atoi(cmd+1);
+		if(en_11kv == ENABLED_11V )
+			wpa_s->en_11vk  = ENABLED_11V;
+		else if(en_11kv == ENABLED_11K )
+			wpa_s->en_11vk  = ENABLED_11K;
+		else	/* Default 11v & 11k enabled */
+			wpa_s->en_11vk = ENABLED_11V_11K;
+	}
+
+	cmd = os_strchr(cmd+1, ' ');
+	if (cmd) {
+		/* Default FT_ROAM_OVER_AIR enabled */
+		ft_roam_type = atoi(cmd+1);
+		if(ft_roam_type == FT_ROAM_OVER_DS)
+			wpa_s->ft_roam_type = FT_ROAM_OVER_DS;
+		else if(ft_roam_type == FT_ROAM_OVER_AIR)
+			wpa_s->ft_roam_type = FT_ROAM_OVER_AIR;
+		else
+			wpa_s->ft_roam_type = FT_ROAM_NONE;
+	}
+
+	wpa_s->roam_thold = roam_thold;
+	wpa_s->roam_decision_thold = roam_decision_thold;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE: En-11v11k(%d), RSSI thresholds=%d,%d, ft_roam_type=%d",
+		wpa_s->en_11vk, roam_thold, roam_decision_thold, wpa_s->ft_roam_type);
+	return 0;
+}
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_WNM */
 
 
@@ -9494,12 +9685,131 @@ static int wpas_ctrl_vendor_elem_remove(struct wpa_supplicant *wpa_s, char *cmd)
 	return res;
 }
 
+#ifdef SPIRENT_PORT
+/* Function name : dot11k_neighbor_rep_filtering
+ * It removes Neighbor report entries that are of different bands(5G/2G)
+ * to that of the current AP and from different SSID by comparing
+ * against the recent scan result available.
+ */
+static void dot11k_neighbor_rep_filtering(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_bss* bss;
+	int index;
 
+	/* Initializing valid neighbor report count to 0 */
+	wpa_s->num_valid_dot11k_neigh_report = 0;
+
+	for (index = 0; index < wpa_s->num_dot11k_neigh_report; index++) {
+
+		bss = wpa_bss_get_bssid(wpa_s, wpa_s->dot11k_neigh_report[index].bssid);
+		if (!bss) {
+			 wpa_printf(MSG_DEBUG, "%s: removed neighbor report(due to different Band) BSSID:" MACSTR
+					" channel number: %d", __func__, MAC2STR(wpa_s->dot11k_neigh_report[index].bssid),
+					wpa_s->dot11k_neigh_report[index].channel_number);
+		} else {
+			/* Populates the neighbor report with additional values from recent scan results. */
+			wpa_s->dot11k_neigh_report[index].rssi = bss->level+(IS_5GHZ(bss->freq) ?
+									DEFAULT_NOISE_FLOOR_5GHZ :
+									DEFAULT_NOISE_FLOOR_2GHZ);
+			wpa_s->dot11k_neigh_report[index].level = bss->level;
+			wpa_s->dot11k_neigh_report[index].freq = bss->freq;
+			wpa_s->dot11k_neigh_report[index].ssid_len = bss->ssid_len;
+			wpa_s->dot11k_neigh_report[index].ssid = bss->ssid;
+
+			/* Checks SSID of Neighbor report. If it differs from current AP's SSID, then the report is rejected */
+			if (os_memcmp(wpa_s->dot11k_neigh_report[index].ssid,
+				wpa_s->current_ssid->ssid, wpa_s->dot11k_neigh_report[index].ssid_len)) {
+				wpa_printf(MSG_DEBUG, "%s: removed neighbor report(due to different SSID) BSSID:"
+					MACSTR " SSID: %s", __func__,MAC2STR(wpa_s->dot11k_neigh_report[index].bssid),
+					wpa_ssid_txt(wpa_s->dot11k_neigh_report[index].ssid, wpa_s->dot11k_neigh_report[index].ssid_len));
+			}
+			else {
+				/* indicates that this report is valid (same SSID & same Band as current AP)*/
+				wpa_s->dot11k_neigh_report[index].is_valid = 1;
+
+				/* valid report count is incremented */
+				wpa_s->num_valid_dot11k_neigh_report++;
+			}
+		}
+	}
+}
+
+#define RET_NO_SORTING	0
+#define RET_DO_SWAP 	1
+#define RET_SKIP_SWAP	-1
+
+/* Function: compare_neigh_rep_rssi
+ * Compares two values val1 & val2 for sorting in descending order based on RSSI
+ * Returns 0, if both val1 and val2 are equivalent.
+ * Returns 1, if val2 needs to be placed before val1
+ * Returns -1, if val1 needs to be placed before val2
+ */
+static int compare_neigh_rep_rssi(const void *report_1, const void *report_2)
+{
+        const struct dot11k_neighbor_report *nr_1 = report_1;
+        const struct dot11k_neighbor_report *nr_2 = report_2;
+
+        if (!nr_1->is_valid && !nr_2->is_valid) //both are invalid, hence no sorting.
+                return RET_NO_SORTING;
+        if (!nr_1->is_valid && nr_2->is_valid) //rep2 is valid & needs to be placed before report1, hence returns 1.
+                return RET_DO_SWAP;
+        if (nr_1->is_valid && !nr_2->is_valid) //rep1 is valid & needs to be placed before report2, hence returns -1.
+                return RET_SKIP_SWAP;
+        if (nr_2->rssi > nr_1->rssi) //rep2 RSSI is higher, hence needs to be placed before rep1
+                return RET_DO_SWAP;
+        if (nr_2->rssi < nr_1->rssi) //rep1 RSSI is higher & needs to be placed before rep2
+                return RET_SKIP_SWAP;
+        return RET_NO_SORTING;
+}
+
+static void dot11k_sort_11k_neigh_rep(struct wpa_supplicant *wpa_s)
+{
+	/* Skip sorting if no neighbor reports are available */
+	if (!wpa_s->dot11k_neigh_report || !wpa_s->num_dot11k_neigh_report)
+		return;
+
+	/* Quick sorting is used to sort the neighbor report array based on RSSI */
+	qsort(wpa_s->dot11k_neigh_report,
+              wpa_s->num_dot11k_neigh_report, sizeof(struct dot11k_neighbor_report),compare_neigh_rep_rssi);
+
+}
+
+static void dot11k_dump_11k_neigh_rep(struct wpa_supplicant *wpa_s)
+{
+	uint8_t index;
+
+	wpa_printf(MSG_DEBUG, "\nNeighbor Report after filter and sort\n");
+
+	/* If no report available, skip printing */
+	if (!wpa_s->dot11k_neigh_report)
+		return;
+
+	for (index = 0; index < wpa_s->num_dot11k_neigh_report; index++) {
+		if (wpa_s->dot11k_neigh_report[index].is_valid) {
+			wpa_printf(MSG_DEBUG, "%s: BSSID:" MACSTR " RSSI:%d LEVEL:%d FREQ:%d SSID %s\n"
+				, __func__, MAC2STR(wpa_s->dot11k_neigh_report[index].bssid),
+				wpa_s->dot11k_neigh_report[index].rssi, wpa_s->dot11k_neigh_report[index].level,
+				wpa_s->dot11k_neigh_report[index].freq, wpa_ssid_txt(wpa_s->dot11k_neigh_report[index].ssid,
+				wpa_s->dot11k_neigh_report[index].ssid_len));
+		}
+	}
+}
+#endif /* SPIRENT_PORT */
 static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 {
 	struct wpa_supplicant *wpa_s = ctx;
 	size_t len;
 	const u8 *data;
+#ifdef SPIRENT_PORT
+/* Tag Number [1 byte]
+ * Tag Length [1 byte] = NR_IE_MIN_LEN + optional IE length if any.
+ */
+#define NR_TAG_IE_LEN (1 + 1) // Tag Number + Tag Length
+#define NR_TAG_LEN_OFFSET 1 // Index of Tag Length field
+#define NR_CHN_NUM_OFFSET 5 // Index of Channel number
+
+	uint8_t index = 0;
+#endif /* SPIRENT_PORT */
 
 	/*
 	 * Neighbor Report element (IEEE P802.11-REVmc/D5.0)
@@ -9519,6 +9829,25 @@ static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 
 	data = wpabuf_head_u8(neighbor_rep);
 	len = wpabuf_len(neighbor_rep);
+#ifdef SPIRENT_PORT
+	/* Free if previous neighbor report available */
+	if (wpa_s->dot11k_neigh_report) {
+		wpa_s->num_dot11k_neigh_report = 0;
+		wpa_s->num_valid_dot11k_neigh_report = 0;
+		os_free(wpa_s->dot11k_neigh_report);
+	}
+
+	/* Length of Single NR = NR_TAG_IE_LEN + Tag length value
+	 * Total no. of NR = Total buf length /  Length of Single NR */
+
+	wpa_s->num_dot11k_neigh_report = len / (NR_TAG_IE_LEN + data[NR_TAG_LEN_OFFSET]);
+
+	/* Allocate memory for Neigbor reports */
+	wpa_s->dot11k_neigh_report = os_calloc(wpa_s->num_dot11k_neigh_report, sizeof(struct dot11k_neighbor_report));
+	if (!wpa_s->dot11k_neigh_report)
+		goto out;
+
+#endif /*SPIRENT_PORT */
 
 	while (len >= 2 + NR_IE_MIN_LEN) {
 		const u8 *nr;
@@ -9588,10 +9917,26 @@ static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 			nr[ETH_ALEN + 6],
 			lci[0] ? " lci=" : "", lci,
 			civic[0] ? " civic=" : "", civic);
+#ifdef SPIRENT_PORT
+		/* Populating 11K Neighbor report structure from NR buffer */
+		os_memcpy(wpa_s->dot11k_neigh_report[index].bssid, nr, ETH_ALEN);
+		wpa_s->dot11k_neigh_report[index].channel_number = nr[ETH_ALEN + NR_CHN_NUM_OFFSET];
+		index++;
+#endif /* SPIRENT_PORT */
 
 		data = end;
 		len -= 2 + nr_len;
 	}
+#ifdef SPIRENT_PORT
+	/* Filter the received Report off different Band/SSID entries */
+	dot11k_neighbor_rep_filtering(wpa_s);
+
+	/* Sort the filtered reports based on RSSI
+	   after sorting, the one with higher RSSI tops the list */
+	dot11k_sort_11k_neigh_rep(wpa_s);
+
+	dot11k_dump_11k_neigh_rep(wpa_s);
+#endif /* SPIRENT_PORT */
 
 out:
 	wpabuf_free(neighbor_rep);
@@ -9630,6 +9975,10 @@ static int wpas_ctrl_iface_send_neighbor_rep(struct wpa_supplicant *wpa_s,
 
 	if (cmd && os_strstr(cmd, "civic"))
 		civic = 1;
+#ifdef SPIRENT_PORT
+	/* rrm_used flag is set to indicate that client supports RRM(11K) */
+	wpa_s->rrm.rrm_used = 1;
+#endif /* SPIRENT_PORT */
 
 	ret = wpas_rrm_send_neighbor_rep_request(wpa_s, ssid_p, lci, civic,
 						 wpas_ctrl_neighbor_rep_cb,
@@ -10111,6 +10460,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "FT_DS ", 6) == 0) {
 		if (wpa_supplicant_ctrl_iface_ft_ds(wpa_s, buf + 6))
 			reply_len = -1;
+#ifdef SPIRENT_PORT
+		/* update ft failure */
+		if (reply_len == -1)
+			 wpa_drv_update_ft_failure(wpa_s);
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_IEEE80211R */
 #ifdef CONFIG_WPS
 	} else if (os_strcmp(buf, "WPS_PBC") == 0) {
@@ -10488,6 +10842,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "GET_NETWORK ", 12) == 0) {
 		reply_len = wpa_supplicant_ctrl_iface_get_network(
 			wpa_s, buf + 12, reply, reply_size);
+#ifdef SPIRENT_PORT
+	} else if (os_strncmp(buf, "GET_NEIGH_REPORT_STATS", 22) == 0) {
+			reply_len = wpa_supplicant_ctrl_iface_get_neigh_report_stats(
+			wpa_s, buf + 22, reply, reply_size);
+#endif
 	} else if (os_strncmp(buf, "DUP_NETWORK ", 12) == 0) {
 		if (wpa_supplicant_ctrl_iface_dup_network(wpa_s, buf + 12,
 							  wpa_s))
@@ -10564,6 +10923,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "ROAM ", 5) == 0) {
 		if (wpa_supplicant_ctrl_iface_roam(wpa_s, buf + 5))
 			reply_len = -1;
+#ifdef SPIRENT_PORT
+		/* update ft failure */
+		if (reply_len == -1)
+			 wpa_drv_update_ft_failure(wpa_s);
+#endif /* SPIRENT_PORT */
 	} else if (os_strncmp(buf, "STA_AUTOCONNECT ", 16) == 0) {
 		wpa_s->auto_reconnect_disabled = atoi(buf + 16) == 0;
 	} else if (os_strncmp(buf, "BSS_EXPIRE_AGE ", 15) == 0) {
@@ -10643,6 +11007,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "COLOC_INTF_REPORT ", 18) == 0) {
 		if (wpas_ctrl_iface_coloc_intf_report(wpa_s, buf + 18))
 			reply_len = -1;
+#ifdef SPIRENT_PORT
+	} else if (os_strncmp(buf, "ENABLE_KV_ROAM ", 15) == 0) {
+		if (wpas_ctrl_iface_enable_kv_roam(wpa_s, buf + 15))
+			reply_len = -1;
+#endif /* SPIRENT_PORT */
 #endif /* CONFIG_WNM */
 	} else if (os_strcmp(buf, "FLUSH") == 0) {
 		wpa_supplicant_ctrl_iface_flush(wpa_s);
@@ -11544,6 +11913,17 @@ char * wpa_supplicant_global_ctrl_iface_process(struct wpa_global *global,
 	} else if (os_strncmp(buf, "RELOG", 5) == 0) {
 		if (wpa_debug_reopen_file() < 0)
 			reply_len = -1;
+#ifdef SPIRENT_PORT
+       } else if (os_strncmp(buf, "SCAN_CACHE ", 11) == 0) {
+               if (wpa_scan_cache_ctl(global, buf + 11) < 0)
+                       reply_len = -1;
+	} else if (os_strncmp(buf, "HOLD_BSS ", 9) == 0) {
+		if(wpa_supplicant_ctrl_hold_bss(global, buf + 9))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "UNHOLD_BSS ", 11) == 0) {
+		if(wpa_supplicant_ctrl_unhold_bss(global, buf + 11))
+			reply_len = -1;
+#endif
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

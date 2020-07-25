@@ -1822,7 +1822,7 @@ else
 EXTRALIBS += WbemUuid.Lib
 endif
 endif
-
+CFLAGS += -DSPIRENT_PORT
 ifdef CONFIG_FST
 CFLAGS += -DCONFIG_FST
 ifdef CONFIG_FST_TEST

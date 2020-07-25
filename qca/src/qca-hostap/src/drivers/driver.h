@@ -102,6 +102,32 @@ enum reg_type {
 };
 
 /**
+enum reason_code - Reason code for association fail
+*/
+#ifdef SPIRENT_PORT
+enum reason_code{
+	WPA_RSN_PROTO_NOT_MATCH = 4,/*AP - Open Mode ,AP Profile in GUI  - Encryption mode */
+	PRIVACY_MISMATCH,   /*AP - Encryption Mode ,AP Profile in GUI  - Open Mode */
+	WPA_WPA2_MISMATCH,  /* Encryption type mismatch */
+	AP_MATCH_NOT_FOUND,  /*AP is not present */
+	ROAMING_FAIL,        /*Roaming association fail */
+	INCORRECT_PASSWORD,  /*Incorrect password in AP Profile*/
+};
+/*
+struct event_msg
+@status: status value
+@reason: reason code
+@addr: MAC address
+@frame_subtype: frame subtype
+*/
+struct event_msg {
+	u32 status;
+	u32 reason;
+	u8 addr[ETH_ALEN];
+	u8 frame_subtype;
+};
+#endif
+/**
  * struct hostapd_wmm_rule - WMM regulatory rule
  * @min_cwmin: Lower bound of CW_min value
  * @min_cwmax: Lower bound of CW_max value
@@ -383,6 +409,9 @@ struct wpa_scan_results {
 	struct wpa_scan_res **res;
 	size_t num;
 	struct os_reltime fetch_time;
+#ifdef SPIRENT_PORT
+       int is_cache;
+#endif
 };
 
 /**
@@ -4338,7 +4367,29 @@ struct wpa_driver_ops {
 	int (*set_fils_aad)(void *priv,
 			struct wpa_driver_sta_auth_params *param);
 
-
+#ifdef SPIRENT_PORT
+	/**
+	 * hold_unhold_bss - Send bssid to driver to add/remove to/from bssid hold list
+	 * @priv: Private driver interface data
+	 * @bssid: bssid param to send
+	 * @bss_flag: 0 - flag to add bssid  1 - flag to remove bssid
+	 * Return: 0 on success, -1 on failure
+	 */
+	int (*hold_unhold_bss) (void *priv, u8 *bssid, int bss_flag);
+	/**
+	* update_btm_stats  - Send btm counters to driver
+	* @priv: Private driver interface data
+	* @counter to send
+	* Return: 0 on success, -1 on failure
+	*/
+	int (*update_btm_stats) (void *priv,  u32 *counter);
+	/**
+	 * update_ft_failure - send ft failure notification to driver
+	 * @priv: Private driver interface data
+	 * Return: 0 on success, -1 on failure
+	 */
+	int (*update_ft_failure) (void *priv);
+#endif
 	/**
 	 * update_dh_ie - Update DH IE
 	 * @priv: Private driver interface data

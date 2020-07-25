@@ -65,8 +65,12 @@ int wpa_derive_ptk_ft(struct wpa_sm *sm, const unsigned char *src_addr,
 				 sm->own_addr, sm->bssid, sm->pmk_r1_name, ptk,
 				 ptk_name, sm->key_mgmt, sm->pairwise_cipher);
 }
-
-
+#ifdef SPIRENT_PORT
+u8 wpa_sm_get_ft_capab(struct wpa_sm *sm)
+{
+	return sm->mdie_ft_capab;
+}
+#endif
 /**
  * wpa_sm_set_ft_params - Set FT (IEEE 802.11r) parameters
  * @sm: Pointer to WPA state machine data from wpa_sm_init()
