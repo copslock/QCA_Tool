@@ -220,7 +220,11 @@
 #define CFG_TGT_VDEVS_MAX 9
 #endif
 #else
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+#define CFG_TGT_VDEVS_MAX 251
+#else
 #define CFG_TGT_VDEVS_MAX 16
+#endif
 #endif
 #define CFG_TGT_VDEVS_DEFAULT CFG_TGT_VDEVS_MAX
 

@@ -37,7 +37,11 @@
 
 #define ACS_11NG_NOISE_FLOOR_REJ (-80)
 #define ACS_11NA_NOISE_FLOOR_REJ (-80)
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+#define IEEE80211_MAX_ACS_EVENT_HANDLERS 16
+#else
 #define IEEE80211_MAX_ACS_EVENT_HANDLERS WLAN_UMAC_PDEV_MAX_VDEVS
+#endif
 #define LIMITED_OBSS_CHECK 1
 #define DEBUG_EACS 1
 #define MIN_DWELL_TIME        200  /* scan param to be used during acs scan 200 ms */

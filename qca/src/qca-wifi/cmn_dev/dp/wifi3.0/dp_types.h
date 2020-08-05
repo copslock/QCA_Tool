@@ -89,11 +89,15 @@
 #define MAX_NSS        8
 #endif
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_DATA_PATH)
+#define MAX_VDEV_CNT 251
+#else
 /* Max no. of VDEV per PSOC */
 #ifdef WLAN_PSOC_MAX_VDEVS
 #define MAX_VDEV_CNT WLAN_PSOC_MAX_VDEVS
 #else
 #define MAX_VDEV_CNT 51
+#endif
 #endif
 
 #define MAX_TXDESC_POOLS 4
