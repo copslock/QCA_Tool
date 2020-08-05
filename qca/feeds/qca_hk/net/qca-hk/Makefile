@@ -9,6 +9,7 @@ PKG_LABEL:=$(shell echo $(PKG_VERSION) | cut -d'-' -f2)
 PKG_SPIN:=$(shell echo $(PKG_VERSION) | cut -d'-' -f4)
 
 PKG_SOURCE:=qca-wifi-fw-QCA8074_v1.0-$(PKG_VERSION).tar.bz2
+PKG_SOURCE_V2:=qca-wifi-fw-QCA8074_v2.0-$(PKG_VERSION).tar.bz2
 PKG_SOURCE_URL:=http://vm-cnsswebserv/cnss_win/santaclara/dev01/WLAN.HK.2.3/$(PKG_VERSION)
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 PKG_MD5SUM:=skip
@@ -50,7 +51,20 @@ define WifiFirmware
   endef
 
   define Package/$(PKG_NAME)-hw1-10.4-asic/install
-	true
+#	true
+	$(INSTALL_DIR) $$(1)/lib/firmware/IPQ8074
+	$(HOST_TAR) jxvf $(DL_DIR)/$(PKG_SOURCE_V2) -C $(PKG_BUILD_DIR) --strip-components=1
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PIL_IMAGES/* $$(1)/lib/firmware/IPQ8074/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/bdwlan* $$(1)/lib/firmware/IPQ8074/
+	$(INSTALL_DIR) $$(1)/vendor/firmware
+#	$(INSTALL_DATA) $(PKG_BUILD_DIR)/Data.msc $$(1)/vendor/firmware/
+	$(CP) ./files/lib/firmware/IPQ8074/* $$(1)/lib/firmware/IPQ8074/
+	$(INSTALL_DIR) $$(1)/lib/firmware/qcn9000
+	$(CP) ./files/lib/firmware/qcn9000/* $$(1)/lib/firmware/qcn9000/
+	$(CP) ./files/lib/firmware/qcn9000/firmware_rdp_feature.ini $$(1)/lib/firmware/
+#	$(CP) ./files/vendor/firmware/Data.msc $$(1)/vendor/firmware/
+	$(INSTALL_DIR) $$(1)/etc/init.d
+	# $(INSTALL_BIN) ./files/etc/init.d/wifi_fw_mount $$(1)/etc/init.d
   endef
 
   $$(eval $$(call BuildPackage,$(PKG_NAME)$(1)))

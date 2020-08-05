@@ -15,8 +15,9 @@ boot() {
 			mount_wifi_fw "IPQ6018"
 			;;
 		*"IPQ807x"*)
-			. /etc/init.d/wifi_fw_mount
-			mount_wifi_fw "IPQ8074"
+			#. /etc/init.d/wifi_fw_mount
+			#mount_wifi_fw "IPQ8074"
+			echo "Script mount"
 			;;
 		esac
 	fi

@@ -194,7 +194,8 @@ boot() {
 	local board=$(grep -o "IPQ.*" /proc/device-tree/model | awk -F/ '{print $2}')
 
 	if [ "$platform" == "IPQ807x" ]; then
-		mount_wifi_fw "IPQ8074"
+		#mount_wifi_fw "IPQ8074"
+		echo "Script mount"
 	elif [ "$platform" == "IPQ6018" ]; then
 		mount_wifi_fw "IPQ6018"
 		case "$board" in
