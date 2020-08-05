@@ -2,6 +2,7 @@ all: eapol-key-auth
 include ../rules.include
 
 CFLAGS += -DCONFIG_IEEE80211R_AP
+CFLAGS += -DCONFIG_IEEE80211W
 CFLAGS += -DCONFIG_IEEE80211R
 CFLAGS += -DCONFIG_TDLS
 
