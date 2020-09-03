@@ -33,6 +33,11 @@
 #include "nss_dp_dev.h"
 #include "edma.h"
 
+#ifdef CONFIG_PORT_SPIRENT_HK
+#include <linux/gpio.h>
+#define SPT_BSP 1
+#endif
+
 /*
  * Number of host CPU cores
  */
@@ -43,6 +48,11 @@
  */
 #define NSS_DP_NETDEV_TX_QUEUE_NUM NSS_DP_HOST_CPU_NUM
 #define NSS_DP_NETDEV_RX_QUEUE_NUM NSS_DP_HOST_CPU_NUM
+
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+#define FPGA_SPARE_MAC_ADDR_IDEN_GPIO       31
+#define ETH_MAC_NODE_5                      5
+#endif
 
 /* ipq40xx_mdio_data */
 struct ipq40xx_mdio_data {
@@ -440,6 +450,10 @@ static int32_t nss_dp_of_get_pdata(struct device_node *np,
 	uint8_t *maddr;
 	struct nss_dp_dev *dp_priv;
 	struct resource memres_devtree = {0};
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	uint8_t default_addr[6] = {0x00, 0x60, 0xf3, 0x00, 0x20, 0x01};
+	int mac_index = 0;
+#endif
 
 	dp_priv = netdev_priv(netdev);
 
@@ -478,12 +492,34 @@ static int32_t nss_dp_of_get_pdata(struct device_node *np,
 	of_property_read_u32(np, "qcom,forced-speed", &dp_priv->forced_speed);
 	of_property_read_u32(np, "qcom,forced-duplex", &dp_priv->forced_duplex);
 
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* set the default address as ethernet mac address for node 5 */
+	if (dp_priv->macid == ETH_MAC_NODE_5) {
+		maddr = default_addr;
+		/* Get the value from MAC_ADDR_IDEN and increase mac address by 1
+		to change mac address for IPQ connected to secondary slot */
+		mac_index = gpio_get_value(FPGA_SPARE_MAC_ADDR_IDEN_GPIO);
+		if( mac_index ) {
+			maddr[5] = maddr[5] + 1;
+		}
+	} else {
+
+		maddr = (uint8_t *)of_get_mac_address(np);
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 4, 0))
+		if (IS_ERR((void *)maddr)) {
+			maddr = NULL;
+		}
+#endif	// (LINUX_VERSION_CODE > KERNEL_VERSION(5, 4, 0))
+
+	}
+#else // #if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
 	maddr = (uint8_t *)of_get_mac_address(np);
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 4, 0))
 	if (IS_ERR((void *)maddr)) {
 		maddr = NULL;
 	}
 #endif
+#endif // #if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
 
 	if (maddr && is_valid_ether_addr(maddr)) {
 		ether_addr_copy(netdev->dev_addr, maddr);

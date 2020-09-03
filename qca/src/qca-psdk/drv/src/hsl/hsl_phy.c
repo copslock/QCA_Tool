@@ -219,11 +219,23 @@ int qca_ssdk_phy_info_init(a_uint32_t dev_id)
 	memset(phy_information, 0, sizeof(*phy_information));
 	phy_info[dev_id] = phy_information;
 
+#ifdef PORT_SPIRENT_HK
+	/* We have only one external phy connected to port1.
+	So configuring phy address as 0x4 for port1 */
+#endif
 	for (j = SSDK_PHYSICAL_PORT0; j < SW_MAX_NR_PORT; j ++)
 	{
 		if(j == SSDK_PHYSICAL_PORT0)
 		{
 			phy_info[dev_id]->phy_address[j] = INVALID_PHY_ADDR;
+#ifdef PORT_SPIRENT_HK
+		} else if(j == 1)
+		{
+			phy_info[dev_id]->phy_address[j] = 0x4;
+		} else if(j == 5)
+		{
+			phy_info[dev_id]->phy_address[j] = 0;
+#endif
 		}
 		else
 		{

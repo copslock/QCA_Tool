@@ -22,7 +22,7 @@ Build/Compile=true
 
 define Package/wififw_mount_script/install
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/etc/init.d/wifi_fw_mount $(1)/etc/init.d
+	#$(INSTALL_BIN) ./files/etc/init.d/wifi_fw_mount $(1)/etc/init.d
 endef
 
 $(eval $(call BuildPackage,wififw_mount_script))

@@ -2715,7 +2715,14 @@ adpt_hppe_port_mux_mac_type_set(a_uint32_t dev_id, fal_port_t port_id,
 		}
 	}
 
+#if defined(PORT_SPIRENT_HK) && defined(SPT_BSP)
+	/* Using Uniphy0 PSGMII interface as SGMII. So, should not set speed for port 2/3/4 */
+	if(port_id != SSDK_PHYSICAL_PORT2 && port_id != SSDK_PHYSICAL_PORT3 && port_id != SSDK_PHYSICAL_PORT4) {
+		rv = _adpt_hppe_port_mux_set(dev_id, port_id,mode1, mode2);
+	}
+#else
 	rv = _adpt_hppe_port_mux_set(dev_id, port_id,mode1, mode2);
+#endif
 
 	return rv;
 }
