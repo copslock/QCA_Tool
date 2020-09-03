@@ -14,21 +14,13 @@
 #define RPP_MAX_RECV_SIZE               8096
 #define RPP_APP_BUFF_SIZE               1024
 
-#ifdef THREE_RADIO
-#define PHY_HANDLE_5G 0
-#define PHY_HANDLE_5G2 1
-#define PHY_HANDLE_2G 2
-extern uint8_t spirent_to_qcom_map[];
-#else
-#define PHY_HANDLE_5G 0
-#define PHY_HANDLE_2G  1
-#endif
+#define IS_THREE_RADIO_PROFILE          (rpp_num_of_radios == 3)
+#define PHY_HANDLE_5G                   0
+#define PHY_HANDLE_5G2                  (IS_THREE_RADIO_PROFILE?1:2)
+#define PHY_HANDLE_2G                   (IS_THREE_RADIO_PROFILE?2:1)
 
-#ifdef THREE_RADIO
-#define REMAP_PHY_HANDLE(handle)        handle = spirent_to_qcom_map[handle]
-#else
-#define REMAP_PHY_HANDLE(handle)
-#endif
+uint8_t spirent_to_qcom_radio_num(uint8_t handle);
+#define REMAP_PHY_HANDLE(handle)        handle = spirent_to_qcom_radio_num(handle)
 
 #define RPP_NG_ENABLE(phy)           (phy->noisegeneratorchannel)
 

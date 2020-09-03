@@ -23,11 +23,7 @@ int32_t capPortAddrlen;;
 extern char* sourceIp;
 static int32_t createServerSocket = 0;
 extern int32_t createClientSocket;
-#ifdef THREE_RADIO
 int32_t capSocketPort_perRadio[RPP_NUM_OF_RADIO] = {CAPDAEMON_RADIO_0_PORT, CAPDAEMON_RADIO_1_PORT,CAPDAEMON_RADIO_2_PORT};
-#else
-int32_t capSocketPort_perRadio[RPP_NUM_OF_RADIO] = {CAPDAEMON_RADIO_0_PORT, CAPDAEMON_RADIO_1_PORT};
-#endif
 /******************************************************************************
  * Function Name    : rpp_get_system_interfaceIp
  * Description      : This Function used to get the ip address of the interface

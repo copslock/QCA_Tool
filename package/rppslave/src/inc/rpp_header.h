@@ -32,11 +32,8 @@
 #include <errno.h>
 #include<syslog.h>
 
-#ifdef THREE_RADIO
-	#define RPP_NUM_OF_RADIO 3
-#else
-	#define RPP_NUM_OF_RADIO 2
-#endif
+extern int rpp_num_of_radios;
+#define RPP_NUM_OF_RADIO 3
 
 #define FIVE_G_RADIO_0 0
 #define TWO_G_RADIO_1 1
@@ -82,8 +79,13 @@ extern uint8_t PROXY_STA[RPP_NUM_OF_RADIO];
 #define dbg_printf(msg, ...)  do { }while(false)
 #endif
 
+#ifdef RDP419 /* No syslog in RDP419 */
+#define SYSLOG_PRINT(x,fmt, ...) {\
+printf("\n%s:%d: " fmt, __FILE__, __LINE__,  ##__VA_ARGS__);}
+#else
 #define SYSLOG_PRINT(x,fmt, ...) {\
 syslog(x, fmt,  ##__VA_ARGS__);  }
+#endif
 
 enum rppAppFuncErrCode {
     RPP_APP_RET_FILEOPEN_FAILED = -7,
