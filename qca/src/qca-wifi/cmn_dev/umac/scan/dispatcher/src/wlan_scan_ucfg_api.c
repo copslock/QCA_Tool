@@ -1277,6 +1277,12 @@ is_chan_enabled_for_scan(struct regulatory_channel *reg_chan,
 		return false;
 	if (reg_chan->nol_chan)
 		return false;
+#if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_SUPPORT_6G)
+    /* 6 GHz channel */
+    if ( 5940 + (5 * reg_chan->chan_num) == reg_chan->center_freq ) {
+        return true;
+    } else
+#endif
 	/* 2 GHz channel */
 	if ((util_scan_scm_chan_to_band(reg_chan->chan_num) ==
 			WLAN_BAND_2_4_GHZ) &&
