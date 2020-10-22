@@ -1,0 +1,154 @@
+#!/bin/sh /etc/rc.common
+# (C) 2008 openwrt.org
+
+START=99
+STOP=10
+
+gpio_initialize()
+{
+    echo 26 > /sys/class/gpio/export
+    echo 31 > /sys/class/gpio/export
+    echo 54 > /sys/class/gpio/export
+    echo 64 > /sys/class/gpio/export
+}
+
+gpio_uninitialize()
+{
+    echo 26 > /sys/class/gpio/unexport
+    echo 31 > /sys/class/gpio/unexport
+    echo 54 > /sys/class/gpio/unexport
+    echo 64 > /sys/class/gpio/unexport
+}
+
+disable_lan()
+{
+    brctl delif br-lan eth1
+    brctl delif br-lan eth2
+    ifconfig br-lan down
+    brctl delbr br-lan
+}
+
+disable_wan()
+{
+    RELOAD=0
+    uci show network.wan > /dev/null 2>&1
+    if [ $? -eq 0 ];then
+        uci delete network.wan 2>/dev/null
+        RELOAD=1
+    fi
+    uci show network.wan6 > /dev/null 2>&1
+    if [ $? -eq 0 ];then
+        uci delete network.wan6 2>/dev/null
+        RELOAD=1
+    fi
+
+    if [ $RELOAD -eq 1 ];then
+        uci commit
+        sync
+        /etc/init.d/network restart
+        sleep 10
+    fi
+}
+hostapd_env_setup()
+{
+    killall wpa_supplicant
+    killall hostapd
+    mkdir -p /var/run/hostapd-wifi0
+    mkdir -p /var/run/hostapd-wifi1
+    mkdir -p /var/run/hostapd-wifi2
+    touch /var/run/hostapd-wifi0/dummy
+    touch /var/run/hostapd-wifi1/dummy
+    touch /var/run/hostapd-wifi2/dummy
+}
+
+start() {
+    # disable lan and wan
+    disable_wan
+    disable_lan
+
+    chmod 777 /bin/dmesgLogHandle
+    dmesgLogHandle &
+
+    #Copy the ssh public key from etc to /etc/dropbear/
+    cp /etc/x86_ssh_pub_key /etc/dropbear/authorized_keys
+    chmod 0700 /etc/dropbear
+    chmod 0600 /etc/dropbear/authorized_keys
+
+    gpio_initialize
+
+    NUM_PORTS=`ls -A /sys/class/net | grep eth | wc`
+    ETH_NUM_PORTS=`echo $NUM_PORTS | cut -c 1`
+
+    if [ $ETH_NUM_PORTS -eq "2" ]; then
+        ETH_INTF=eth0
+        ifconfig eth1 up
+    else
+        ETH_INTF=eth1
+    fi
+
+    ifconfig $ETH_INTF 192.168.1.2
+
+    # Console log level
+    dmesg -n 1
+
+    /usr/bin/revanche_upgrade > /tmp/upgrade_log.txt 2>&1
+
+    # Configure CPU affinity
+    # Enable smp_affinity for Lithium
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring4' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'nss_empty_buf_sos' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 2 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_empty_buf_queue' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 2 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'nss_queue0' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    # Enable cpumask for Rx work queue
+    echo 4 >  /sys/devices/virtual/workqueue/dp_rx_work_queue0/cpumask
+    echo 4 >  /sys/devices/virtual/workqueue/dp_rx_work_queue1/cpumask
+
+    echo 1 > /proc/spirent_pkt_fwd
+
+    hostapd_env_setup
+
+    /sbin/syslogd -s 300 -b 10 -l 6 -O /log/ipq_log/rppslave_log/rppslave.log
+    /usr/bin/rppslave_ap &
+
+    /usr/bin/rev_utils_monitor &
+}
+
+
+stop() {
+
+    gpio_uninitialize
+    killall rppslave_ap
+    killall wpa_supplicant
+    killall syslogd
+
+}
+
+shutdown() {
+        stop
+}
