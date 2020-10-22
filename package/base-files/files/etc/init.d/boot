@@ -36,6 +36,10 @@ boot() {
 	grep -q debugfs /proc/filesystems && /bin/mount -o noatime -t debugfs debugfs /sys/kernel/debug
 	[ "$FAILSAFE" = "true" ] && touch /tmp/.failsafe
 
+        #inserting pcie fpga driver before wifi driver to access FPGA registers
+        echo "Insert Module pcie-fpga-drv.ko"
+        insmod /lib/modules/4.4.60/pcie-fpga-drv.ko
+
 	/sbin/kmodloader
 
 	# allow wifi modules time to settle
