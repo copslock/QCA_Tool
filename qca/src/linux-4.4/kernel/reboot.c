@@ -111,7 +111,6 @@ void emergency_restart(void)
 {
 	kmsg_dump(KMSG_DUMP_EMERG);
 #if defined(CONFIG_PORT_SPIRENT_HK) && defined(SPT_BSP)
-jasuja
         machine_power_off();
 #else
 	machine_emergency_restart();

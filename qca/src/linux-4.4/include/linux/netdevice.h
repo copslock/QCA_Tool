@@ -68,6 +68,8 @@ void netdev_set_default_ethtool_ops(struct net_device *dev,
 #define SPT_ADV_STATS 1
 #define SPT_DATA_PATH 1
 #define SPT_MULTI_CLIENTS 1
+#define SPT_BSP 1
+
 
 /* Backlog congestion levels */
 #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */

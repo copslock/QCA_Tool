@@ -1617,9 +1617,9 @@
 			phy-names = "pciephy-gen2", "pciephy-gen3";
 
 			ranges = <0x81000000 0 0x20200000 0x20200000
-				  0 0x0010000   /* downstream I/O */
-				  0x82000000 0 0x20220000 0x20220000
-				  0 0x0fde0000>; /* non-prefetchable memory */
+				  0 0x00100000   /* downstream I/O */
+				  0x82000000 0 0x20300000 0x20300000
+				  0 0x04000000>; /* non-prefetchable memory */
 
 			interrupts = <0 52 0>, <0 416 0>, <0 417 0>,
 					<0 418 0>, <0 419 0>, <0 420 0>,
@@ -1721,9 +1721,9 @@
 			phy-names = "pciephy";
 
 			ranges = <0x81000000 0 0x10200000 0x10200000
-				  0 0x00010000   /* downstream I/O */
-				  0x82000000 0 0x10220000 0x10220000
-				  0 0x0fde0000>; /* non-prefetchable memory */
+				  0 0x00100000   /* downstream I/O */
+				  0x82000000 0 0x10300000 0x10300000
+				  0 0x04000000>; /* non-prefetchable memory */
 
 			interrupts = <0 85 0>, <0 432 0>, <0 433 0>,
 					<0 434 0>, <0 435 0>, <0 436 0>,
@@ -1925,7 +1925,7 @@
 				"wbm2host-tx-completions-ring2",
 				"wbm2host-tx-completions-ring1",
 				"tcl2host-status-ring";
-			status = "ok";
+			status = "disabled";
 		};
 
 		wifi1: wifi1@c0000000 {
@@ -2052,7 +2052,7 @@
 				"wbm2host-tx-completions-ring2",
 				"wbm2host-tx-completions-ring1",
 				"tcl2host-status-ring";
-			status = "ok";
+			status = "disabled";
 			qcom,pta-num = <0>;
 			qcom,coex-mode = <0x2>;
 			qcom,bt-active-time = <0x12>;
