@@ -388,7 +388,7 @@
 		pinctrl-0 = <&uniphy_pins>;
 		pinctrl-names = "default";
 		switch_cpu_bmp = <0x1>;  /* cpu port bitmap */
-		switch_lan_bmp = <0x3e>; /* lan port bitmap */
+        switch_lan_bmp = <0x3e>; /* lan port bitmap */
 		switch_wan_bmp = <0x40>; /* wan port bitmap */
 		switch_mac_mode = <0xff>; /* mac mode for uniphy instance0*/
 		switch_mac_mode1 = <0xe>; /* mac mode for uniphy instance1*/
@@ -870,7 +870,7 @@
 #ifdef __IPQ_MEM_PROFILE_512_MB__
 	qcom,tgt-mem-mode = <2>;
 #endif
-	qcom,board_id = <0x290>;
+	qcom,board_id = <0x211>;
 	status = "ok";
 };
 
@@ -912,7 +912,7 @@
 #endif
 	caldb-size = <0x800000>;
 	board_id = <0xa2>;
-	status = "ok";
+	status = "disabled";
 #if defined(__CNSS2__)
 	pcie0_mhi: pcie0_mhi {
 		status = "ok";

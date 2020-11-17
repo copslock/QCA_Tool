@@ -639,7 +639,10 @@ enum PhyFreqBand {
     FREQBAND_2_4_GHz = 0,
     FREQBAND_5_0_GHz,
     FREQBAND_5_0_GHz_2,
-    FREQBAND_60_GHz
+    FREQBAND_60_GHz,
+#ifdef RDP419
+    FREQBAND_6_0_GHz
+#endif
 };
 
 enum GetPhyErrCode{
@@ -650,10 +653,10 @@ enum GetPhyErrCode{
 };
 
 enum FreqBand {
-    FREQBAND_DUALBAND,
-    FREQBAND_2_4_GHZ = 1,
-    FREQBAND_5_0_GHZ,
-    FREQBAND_5_0_GHZ_2,
+    FREQ_BAND_AUTO = 0, 
+    FREQ_BAND_2_4_GHZ,
+    FREQ_BAND_5_0_GHZ,
+    FREQ_BAND_6_0_GHZ
 };
 
 enum PhyIntfCfgReqErrorCode {
