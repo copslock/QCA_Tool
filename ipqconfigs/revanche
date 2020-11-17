@@ -35,11 +35,6 @@ start() {
 
     sleep 2
 
-    brctl delif br-lan eth1
-    brctl delif br-lan eth2
-    ifconfig br-lan down
-    brctl delbr br-lan
-
     chmod 777 /bin/dmesgLogHandle
     dmesgLogHandle &
 
@@ -50,14 +45,17 @@ start() {
 
     gpio_initialize
 
-    NUM_PORTS=`ls -A /sys/class/net | grep eth | wc`
-    ETH_NUM_PORTS=`echo $NUM_PORTS | cut -c 1`
-
-    if [ $ETH_NUM_PORTS -eq "2" ]; then
-        ETH_INTF=eth0
-    else
-        ETH_INTF=eth1
-    fi
+    # SPT_BSP
+    uci set network.lan=interface
+    uci set network.lan.ifname='eth0'
+    uci set network.lan.type=lan
+    uci set network.lan.ipaddr=192.168.1.2
+    uci set network.wan.disabled=1
+    uci set network.wan6.disabled=1
+    uci commit network
+    uci set qcacfg80211.config.enable=0
+    uci commit qcacfg80211
+    /etc/init.d/network restart
 
     ifconfig $ETH_INTF 192.168.1.2
     ifconfig eth1 up
@@ -120,7 +118,6 @@ start() {
 
     /usr/bin/rev_utils_monitor &
 }
-
 
 stop() {
 

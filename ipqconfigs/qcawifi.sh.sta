@@ -8,21 +8,69 @@
 # Copyright (c) 2014, 2016, The Linux Foundation. All rights reserved.
 #
 append DRIVERS "qcawifi"
+log_file="/tmp/qcawifi_commands.txt"
+g_qdss_tracing=0
+g_daemon=0
+g_cold_boot_support=0
+fw_ini_file=""
+board_name=""
+daemon_features_default_string=""
 
-qdss_tracing=0
-daemon=0
-cold_boot_support=0
+sysctl_cmd() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo "sysctl -w $1=$2" >> $log_file
+	sysctl -w $1=$2 >/dev/null 2>/dev/null
+}
 
-update_daemon_coldboot_qdss_support_variables() {
-	local board_name=""
+echo_cmd() {
+	if [[ $# == 3 ]] ; then
+		[ -n "${CFG80211_UPDATE_FILE}" ] && echo "echo $1 $2 > $3" >> $log_file
+		echo $1 $2 > $3
+	else
+		[ -n "${CFG80211_UPDATE_FILE}" ] && echo "echo $1 > $2" >> $log_file
+		echo $1 > $2
+	fi
+}
+
+insmod_cmd() {
+	if [[ $# == 2 ]] ; then
+		[ -n "${CFG80211_UPDATE_FILE}" ] && echo "insmod $1 $2" >> $log_file
+		insmod $1 $2
+	else
+		[ -n "${CFG80211_UPDATE_FILE}" ] && echo "insmod $1" >> $log_file
+		insmod $1
+	fi
+}
+
+rmmod_cmd() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo "rmmod $1" >> $log_file
+	rmmod $1
+}
+
+update_global_daemon_coldboot_qdss_support_variables() {
 	local board_prefix=""
 	local version=0
-	local fw_ini_file=/lib/firmware/firmware_rdp_feature.ini
+	local custom_ini_file=""
+	local default_ini_file=""
 
-	[ ! -f $fw_ini_file  ] && {
-		echo "******FW ini file not found******" >> /dev/console
+	if [ -e /sys/firmware/devicetree/base/MP_512 ]
+	then
+		custom_ini_file=/ini/firmware_rdp_feature_512P.ini
+		default_ini_file=/lib/firmware/firmware_rdp_feature_512P.ini
+	else
+		custom_ini_file=/ini/firmware_rdp_feature.ini
+		default_ini_file=/lib/firmware/firmware_rdp_feature.ini
+	fi
+
+	if [ -f $custom_ini_file ]
+	then
+		fw_ini_file=$custom_ini_file
+	elif [ -f $default_ini_file ]
+	then
+		fw_ini_file=$default_ini_file
+	else
+		echo "******FW ini file not found******" > /dev/console
 		return
-	}
+	fi
 
 	# Low Mem 256 profile does not support these
 	[ -e /sys/firmware/devicetree/base/MP_256 ] && {
@@ -47,51 +95,76 @@ update_daemon_coldboot_qdss_support_variables() {
 			version="$(hexdump -n 1 -e '"%1d"' /sys/firmware/devicetree/base/soc_version_major)"
 		}
 
-		local default_string=$board_prefix"_v"$version"_default"
+		daemon_features_default_string=$board_prefix"_v"$version"_default"
 		;;
 	*)
-		local default_string=$board_prefix"_default"
+		daemon_features_default_string=$board_prefix"_default"
 		;;
 	esac
 
 	#Grep the board_name in the fw_ini_file, if its not found, use the
 	#default string
 	boardname_grep_result=`grep -ci $board_name $fw_ini_file`
-	default_grep_result=`grep -ci $default_string $fw_ini_file`
+	default_grep_result=`grep -ci $daemon_features_default_string $fw_ini_file`
 
 	if [ $boardname_grep_result != 0 ]
 	then
-		daemon=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | awk -F'=' '{print $2}' | cut -c 1`
-		cold_boot_support=`grep -i $board_name $fw_ini_file | grep "enable_cold_boot_support" | awk -F'=' '{print $2}' | cut -c 1`
-		qdss_tracing=`grep -i $board_name $fw_ini_file | grep "enable_qdss_tracing" | awk -F'=' '{print $2}' | cut -c 1`
+		g_daemon=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | awk -F '=' '{print $2}' | grep -c 1`
+		g_cold_boot_support=`grep -i $board_name $fw_ini_file | grep "enable_cold_boot_support" | awk -F '=' '{print $2}' | grep -c 1`
+		g_qdss_tracing=`grep -i $board_name $fw_ini_file | grep "enable_qdss_tracing" | awk -F '=' '{print $2}' | grep -c 1`
+		g_qdss_tracing=$(($g_qdss_tracing && $g_daemon))
 	elif [ $default_grep_result != 0 ]
 	then
-		daemon=`grep -i $default_string $fw_ini_file | grep "enable_daemon_support" | awk -F'=' '{print $2}' | cut -c 1`
-		cold_boot_support=`grep -i $default_string $fw_ini_file | grep "enable_cold_boot_support" | awk -F'=' '{print $2}' | cut -c 1`
-		qdss_tracing=`grep -i $default_string $fw_ini_file | grep "enable_qdss_tracing" | awk -F'=' '{print $2}' | cut -c 1`
+		g_daemon=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_daemon_support" | awk -F'=' '{print $2}' | cut -c 1`
+		g_cold_boot_support=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_cold_boot_support" | awk -F'=' '{print $2}' | cut -c 1`
+		g_qdss_tracing=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_qdss_tracing" | awk -F'=' '{print $2}' | cut -c 1`
+		g_qdss_tracing=$(($g_qdss_tracing && $g_daemon))
 	else
 		echo "***** No coldboot or daemon support for $board_name******" > /dev/console
 	fi
+}
 
+iw() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo iw "$@" >> $log_file
+	/usr/sbin/iw "$@"
 }
 
 wlanconfig() {
-	[ -n "${DEBUG}" ] && echo wlanconfig "$@"
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo wlanconfig "$@" >> $log_file
 	/usr/sbin/wlanconfig "$@"
 }
 
 iwconfig() {
-	[ -n "${DEBUG}" ] && echo iwconfig "$@"
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo iwconfig "$@" >> $log_file
 	/usr/sbin/iwconfig "$@"
 }
 
 iwpriv() {
-	[ -n "${DEBUG}" ] && echo iwpriv "$@"
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo iwpriv "$@" >> $log_file
 	/usr/sbin/iwpriv "$@"
 }
 
+ifconfig() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo ifconfig "$@" >> $log_file
+	/sbin/ifconfig "$@"
+}
+
+wpa_cli() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo wpa_cli "$@" >> $log_file
+	/usr/sbin/wpa_cli "$@"
+}
+
+hostapd() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo hostapd "$@" >> $log_file
+	/usr/sbin/hostapd "$@"
+}
+
+hostapd_cli() {
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo hostapd_cli "$@" >> $log_file
+	/usr/sbin/hostapd_cli "$@"
+}
 start_recovery_daemon() {
-	[ -n "${DEBUG}" ] && echo starting recovery daemon
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo starting recovery daemon > /dev/console
 	killall acfg_tool
 	/usr/sbin/acfg_tool -e -s > /dev/console &
 }
@@ -121,54 +194,136 @@ find_qcawifi_phy() {
 }
 
 enable_qdss_tracing() {
-	local board_name
+	local qdss_tracing=0
 
-	[ -f /tmp/sysinfo/board_name ] && {
-		board_name=$(cat /tmp/sysinfo/board_name)
+	[ $g_qdss_tracing = 0 ] && {
+		return
 	}
 
-	case "$board_name" in
-	ap-hk*)
-		[ ! -f /tmp/qdss_trace_commands ] && {
-			echo "q6mem" > /sys/bus/coresight/devices/coresight-tmc-etr/out_mode
-			echo 1 > /sys/bus/coresight/devices/coresight-tmc-etr/curr_sink
-			echo "0x06021FB0 0xc5acce55" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06130FB0 0xc5acce55" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06021000 0x00000320" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06130000 0x00000340" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo 1 > /sys/bus/coresight/devices/coresight-stm/enable
-			echo "*****Registers configuration for qdss_tracing completed*******" > /dev/console
+	for slot in pci0 pci1
+	do
+		qdss_tracing=`grep -i $board_name $fw_ini_file | grep "enable_qdss_tracing" | grep -i $slot | awk -F'=' '{print $2}' | grep -c 1`
+		[ $qdss_tracing = 1 ] && {
+			echo "****** Starting QDSS for $slot ********" > /dev/console
+			cnsscli -i $slot --qdss_start > /dev/null
 		}
-		echo -e "qdss_trace_load_config\nqdss_trace_start\nquit\n" > /tmp/qdss_trace_commands
-		echo "******Starting cnss_cli********" > /dev/console
-		cnsscli < /tmp/qdss_trace_commands > /dev/null
-		;;
-	ap-cp*)
-		[ ! -f /tmp/qdss_trace_commands ] && {
-			echo "q6mem" > /sys/bus/coresight/devices/coresight-tmc-etr/out_mode
-			echo 1 > /sys/bus/coresight/devices/coresight-tmc-etr/curr_sink
-			echo "0x06041FB0 0xc5acce55" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06130FB0 0xc5acce55" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06041000 0x00000320" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo "0x06130000 0x00000340" > /sys/bus/coresight/devices/coresight-hwevent/setreg
-			echo 1 > /sys/bus/coresight/devices/coresight-stm/enable
-			echo "*****Registers configuration for qdss_tracing completed*******" > /dev/console
+	done
+
+	#For Integrated Radio
+	qdss_tracing=`grep -i $board_name $fw_ini_file | grep "enable_qdss_tracing" | grep -v pci | awk -F'=' '{print $2}' | cut -c 1`
+	[ -z $qdss_tracing ] && {
+		qdss_tracing=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_qdss_tracing" | awk -F'=' '{print $2}' | grep -c 1`
+	}
+
+	[ $qdss_tracing = 1 ] && {
+		[ ! -f /tmp/qdss_sink_config_done ] && {
+			echo_cmd "q6mem" /sys/bus/coresight/devices/coresight-tmc-etr/out_mode
+			echo_cmd 1 /sys/bus/coresight/devices/coresight-tmc-etr/curr_sink
+			echo_cmd 5 /sys/bus/coresight/devices/coresight-funnel-mm/funnel_ctrl
+			echo_cmd 6 /sys/bus/coresight/devices/coresight-funnel-in0/funnel_ctrl
+			echo_cmd 1 /sys/bus/coresight/devices/coresight-stm/enable
+			echo "***** QDSS Tracing Configuration completed *******" > /dev/console
 		}
-		echo -e "qdss_trace_load_config\nqdss_trace_start\nquit\n" > /tmp/qdss_trace_commands
-		echo "******Starting cnss_cli********" > /dev/console
-		cnsscli < /tmp/qdss_trace_commands > /dev/null
-		;;
-	*)
-		echo "INFO:QDSS_tracing not applicable for $board_name" > /dev/console
-		;;
-	esac
+		echo "****** Starting QDSS for Integrated ********" > /dev/console
+		cnsscli -i integrated --qdss_start > /dev/null
+		touch /tmp/qdss_sink_config_done
+	}
+}
+
+start_cnssdaemon() {
+	args=""
+	local daemon=0
+
+	# Check if cnssdaemon is already running
+	cnssd_pid=$(pgrep cnssdaemon)
+	[ ! -z "$cnssd_pid" ] && {
+		return
+	}
+
+	#Daemon User Socket uses loopback interface, make sure it is up
+	ifconfig lo up
+
+	#For Integrated Radio
+	daemon=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | grep -v pci | awk -F'=' '{print $2}' | grep -c 1`
+	if [ $daemon != 0 ]
+	then
+		args=" -i integrated"
+	fi
+
+	for slot in pci0 pci1
+	do
+		daemon=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | grep -i $slot | awk -F'=' '{print $2}' | grep -c 1`
+		if [ $daemon != 0 ]
+		then
+			args="$args -i $slot"
+		fi
+	done
+
+	# If args is empty here, then INI parsing has gone to default string
+	# In this case, daemon is started without any args,
+	# which will make it connect to the first available QMI server.
+	echo "***** starting cnssdaemon $args *****" > /dev/console
+	/usr/bin/cnssdaemon $args > /dev/null &
+
+	# cnssdaemon opens up sockets which is required for cnsscli.
+	# sleep here is to ensure the sockets are open before cnsscli is used.
+	sleep 1
+	cnssd_pid=$(pgrep cnssdaemon)
+	[ ! -z "$cnssd_pid" ] && {
+		echo_cmd -1000 "/proc/$cnssd_pid/oom_score_adj"
+		echo "*****cnssdaemon pid=$cnssd_pid*********" > /dev/console
+	}
+	[ -n "${CFG80211_UPDATE_FILE}"  ] && echo "/usr/bin/cnssdaemon $args" >> $log_file
+}
+
+update_daemon_cold_boot_support_to_plat_priv() {
+	local daemon_support=0
+	local cold_boot_support=0
+
+	for slot in pci0 pci1
+	do
+		daemon_support=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | grep -i $slot | awk -F'=' '{print $2}' | grep -c 1`
+		cold_boot_support=`grep -i $board_name $fw_ini_file | grep "enable_cold_boot_support" | grep -i $slot | awk -F'=' '{print $2}' | grep -c 1`
+		[ $daemon_support = 1 ] && {
+			cnsscli -i $slot --enable_daemon_support $daemon_support > /dev/null
+		}
+		[ $cold_boot_support = 1 ] && {
+			cnsscli -i $slot --enable_cold_boot_support $cold_boot_support > /dev/null
+		}
+	done
+
+	#For Integrated Radio
+	daemon_support=`grep -i $board_name $fw_ini_file | grep "enable_daemon_support" | grep -v pci | awk -F'=' '{print $2}' | cut -c 1`
+	[ -z $daemon_support ] && {
+		daemon_support=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_daemon_support" | awk -F'=' '{print $2}' | grep -c 1`
+	}
+
+	cold_boot_support=`grep -i $board_name $fw_ini_file | grep "enable_cold_boot_support" | grep -v pci | awk -F'=' '{print $2}' | cut -c 1`
+	[ -z $cold_boot_support ] && {
+		cold_boot_support=`grep -i $daemon_features_default_string $fw_ini_file | grep "enable_cold_boot_support" | awk -F'=' '{print $2}' | grep -c 1`
+	}
+
+	[ $daemon_support = 1 ] && {
+		cnsscli -i integrated --enable_daemon_support $daemon_support > /dev/null
+	}
+
+	[ $cold_boot_support = 1 ] && {
+		cnsscli -i integrated --enable_cold_boot_support $cold_boot_support > /dev/null
+	}
 }
 
 do_cold_boot_calibration() {
 	#Update the daemon, coldboot and qdss support variables from FW INI
-	update_daemon_coldboot_qdss_support_variables
+	update_global_daemon_coldboot_qdss_support_variables
 
-	[ $cold_boot_support = 0 ] && {
+	#Daemon needs to be started if enabled from ini, even if coldboot is
+	#disabled, it might be used by QDSS
+	[ $g_daemon != 0  ] && {
+		start_cnssdaemon
+		update_daemon_cold_boot_support_to_plat_priv
+	}
+
+	[ $g_cold_boot_support = 0 ] && {
 		echo "******No cold_boot_support*****"  > /dev/console
 		return 0
 	}
@@ -178,14 +333,6 @@ do_cold_boot_calibration() {
 		return 0
 	}
 
-	#daemon and cold_boot_support are assigned a value globally
-	echo $cold_boot_support > /sys/module/cnss2/parameters/cold_boot_support
-	echo $daemon > /sys/module/cnss2/parameters/daemon_support
-
-	[ $daemon = 1 ] && {
-		echo "*****starting cnssdaemon*****" > /dev/console
-		/usr/bin/cnssdaemon &
-	}
 	echo "*********initiating cold boot calibration*************" > /dev/console
 	coldbootmode=7
 	#Set Cold boot mode to 10 for FTM Mode, 7 otherwise
@@ -194,17 +341,41 @@ do_cold_boot_calibration() {
 		coldbootmode=10
 		echo "*****FTM Coldboot mode set to 10*****" > /dev/console
 	}
-	insmod qca_ol testmode=$coldbootmode
 
-	pid=`pgrep cnssdaemon` && echo -1000 > /proc/$pid/oom_score_adj
-	echo "*****cnssdaemon pid=$pid*********" > /dev/console
+	#Set driver_mode as coldboot to the kernel
+	echo $coldbootmode > /sys/module/cnss2/parameters/driver_mode
+	insmod_cmd qca_ol testmode=$coldbootmode
 	# insmod and rmmod wifi_3_0 kernel object in addition to qca_ol
 	# as wifi_3_0 initiates and shuts down driver.
-	insmod wifi_3_0
-	rmmod wifi_3_0
-	rmmod qca_ol
+	insmod_cmd wifi_3_0
+	rmmod_cmd wifi_3_0
+	rmmod_cmd qca_ol
+	#Reset driver_mode to 0 for mission mode
+	echo 0 > /sys/module/cnss2/parameters/driver_mode
 	sync
 	touch /tmp/cold_boot_done
+}
+
+is_son_enabled()
+{
+	local son_is_enabled=""
+	local is_son_hyd_enabled=""
+	local is_son_lbd_enabled=""
+
+	config_load lbd
+	config_get is_son_lbd_enabled config "Enable" 0
+
+	config_load hyd
+	config_get is_son_hyd_enabled config "Enable" 0
+
+	if [ $is_son_hyd_enabled = "1" ] || [ $is_son_lbd_enabled = "1" ]
+	then
+		son_is_enabled=1
+		echo $son_is_enabled
+	else
+		son_is_enabled=0
+		echo $son_is_enabled
+	fi
 }
 
 scan_qcawifi() {
@@ -216,6 +387,9 @@ scan_qcawifi() {
 
 	local ifidx=0
 	local radioidx=${device#wifi}
+	local son_enabled=""
+
+	son_enabled=$( is_son_enabled )
 
 	config_get vifs "$device" vifs
 	for vif in $vifs; do
@@ -227,8 +401,13 @@ scan_qcawifi() {
 
 		[ $ifidx -gt 0 ] && vifname="ath${radioidx}$ifidx" || vifname="ath${radioidx}"
 
-		config_get ifname "$vif" ifname "$vifname"
-		config_set "$vif" ifname $ifname
+		if [ $son_enabled = "1" ]
+		then
+			config_set "$vif" ifname $vifname
+		else
+			config_get ifname "$vif" ifname "$vifname"
+			config_set "$vif" ifname $ifname
+		fi
 
 		config_get mode "$vif" mode
 		case "$mode" in
@@ -346,12 +525,17 @@ config_tx_fc_buf() {
 
 function update_ini_file()
 {
-	grep -q $1 /ini/global.ini && sed -i "/$1=/c $1=$2" /ini/global.ini || echo $1=$2 >> /ini/global.ini
+	update_ini_cmd="grep -q $1 /ini/global.ini && sed -i '/$1=/c $1=$2' /ini/global.ini || echo $1=$2 >> /ini/global.ini"
+	eval $update_ini_cmd
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo $update_ini_cmd >> $log_file
+	sync
 }
 
 function update_internal_ini()
 {
-	grep -q $2 /ini/internal/$1 && sed -i "/$2=/c $2=$3" /ini/internal/$1 || echo $2=$3 >> /ini/internal/$1
+	update_ini_cmd="grep -q $2 /ini/internal/$1 && sed -i '/$2=/c $2=$3' /ini/internal/$1 || echo $2=$3 >> /ini/internal/$1"
+	eval $update_ini_cmd
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo $update_ini_cmd >> $log_file
 	sync
 }
 
@@ -361,6 +545,15 @@ function update_ini_for_lowmem()
 	update_internal_ini $1 dp_rxdma_monitor_dst_ring 128
 	update_internal_ini $1 dp_rxdma_monitor_desc_ring 4096
 	update_internal_ini $1 dp_rxdma_monitor_status_ring 512
+	update_internal_ini $1 num_vdevs_pdev0 9
+	update_internal_ini $1 num_vdevs_pdev1 9
+	update_internal_ini $1 num_vdevs_pdev2 9
+	update_internal_ini $1 num_peers_pdev0 128
+	update_internal_ini $1 num_peers_pdev1 128
+	update_internal_ini $1 num_peers_pdev2 128
+	update_internal_ini $1 num_monitor_pdev0 0
+	update_internal_ini $1 num_monitor_pdev1 0
+	update_internal_ini $1 num_monitor_pdev2 0
 	sync
 }
 
@@ -401,10 +594,33 @@ function update_ini_nss_info()
 
 function update_ini_for_512MP_dp_tx_desc()
 {
-	update_internal_ini $1 dp_tx_desc 0x4000
-	update_internal_ini $1 dp_tx_desc_limit_0 8192
-	update_internal_ini $1 dp_tx_desc_limit_1 8192
-	update_internal_ini $1 dp_tx_desc_limit_2 8192
+	local board_name
+
+	[ -f /tmp/sysinfo/board_name ] && {
+		board_name=$(cat /tmp/sysinfo/board_name)
+	}
+
+	if [ $1 == "QCN9000_i.ini" ]; then
+		update_internal_ini $1 dp_tx_desc 0x2000
+		update_internal_ini $1 dp_tx_desc_limit_0 8192
+	else
+		# For RDPs that have QCN9000, internal radio config in 512M
+		# profile is on par with 256M profile values
+		case "$board_name" in
+		ap-cp01-c3|ap-hk10*|ap-hk14*)
+			update_internal_ini $1 dp_tx_desc 0x2000
+			update_internal_ini $1 dp_tx_desc_limit_0 4096
+			update_internal_ini $1 dp_tx_desc_limit_1 4096
+			update_internal_ini $1 dp_tx_desc_limit_2 4096
+			;;
+		*)
+			update_internal_ini $1 dp_tx_desc 0x4000
+			update_internal_ini $1 dp_tx_desc_limit_0 8192
+			update_internal_ini $1 dp_tx_desc_limit_1 8192
+			update_internal_ini $1 dp_tx_desc_limit_2 8192
+			;;
+		esac
+	fi
 	sync
 }
 
@@ -419,14 +635,59 @@ function update_ini_for_512MP_P_build()
 	update_internal_ini $1 dp_rxdma_monitor_dst_ring 128
 	update_internal_ini $1 dp_rxdma_monitor_desc_ring 4096
 
-	case "$board_name" in
-	ap-cp*)
-        update_internal_ini $1 dp_rxdma_monitor_status_ring 1024
-		;;
-	*)
-        update_internal_ini $1 dp_rxdma_monitor_status_ring 512
-		;;
-	esac
+	if [ $1 == "QCN9000_i.ini"  ]; then
+		update_internal_ini $1 dp_rxdma_monitor_status_ring 1024
+		update_internal_ini $1 num_vdevs_pdev0 9
+		update_internal_ini $1 num_peers_pdev0 128
+		update_internal_ini $1 num_monitor_pdev0 0
+	else
+		case "$board_name" in
+		ap-cp*)
+			update_internal_ini $1 dp_rxdma_monitor_status_ring 1024
+			;;
+		*)
+			update_internal_ini $1 dp_rxdma_monitor_status_ring 512
+			;;
+		esac
+		# For RDPs that have QCN9000, internal radio config in 512M
+		# profile is on par with 256M profile values
+		case "$board_name" in
+		ap-cp01-c3|ap-hk10*|ap-hk14*)
+			update_internal_ini $1 num_vdevs_pdev0 4
+			update_internal_ini $1 num_vdevs_pdev1 4
+			update_internal_ini $1 num_vdevs_pdev2 4
+			update_internal_ini $1 num_peers_pdev0 64
+			update_internal_ini $1 num_peers_pdev1 64
+			update_internal_ini $1 num_peers_pdev2 64
+			update_internal_ini $1 max_wmi_cmds 512
+			;;
+		*)
+			update_internal_ini $1 num_vdevs_pdev0 9
+			update_internal_ini $1 num_vdevs_pdev1 9
+			update_internal_ini $1 num_vdevs_pdev2 9
+			update_internal_ini $1 num_peers_pdev0 128
+			update_internal_ini $1 num_peers_pdev1 128
+			update_internal_ini $1 num_peers_pdev2 128
+			;;
+		esac
+		update_internal_ini $1 num_monitor_pdev0 0
+		update_internal_ini $1 num_monitor_pdev1 0
+		update_internal_ini $1 num_monitor_pdev2 0
+	fi
+	sync
+}
+
+function update_ini_for_512MP_E_build()
+{
+	update_internal_ini $1 num_vdevs_pdev0 8
+	update_internal_ini $1 num_vdevs_pdev1 8
+	update_internal_ini $1 num_vdevs_pdev2 8
+	update_internal_ini $1 num_peers_pdev0 128
+	update_internal_ini $1 num_peers_pdev1 128
+	update_internal_ini $1 num_peers_pdev2 128
+	update_internal_ini $1 num_monitor_pdev0 1
+	update_internal_ini $1 num_monitor_pdev1 1
+	update_internal_ini $1 num_monitor_pdev2 1
 	sync
 }
 
@@ -435,6 +696,15 @@ function update_ini_for_monitor_buf_ring()
 	update_internal_ini $1 dp_rxdma_monitor_buf_ring 4096
 	update_internal_ini $1 dp_rxdma_monitor_dst_ring 4096
 	update_internal_ini $1 dp_rxdma_monitor_desc_ring 4096
+	update_internal_ini $1 dp_rxdma_monitor_status_ring 1024
+	sync
+}
+
+function update_ini_for_mon_buf_ring_chainmask_2()
+{
+	update_internal_ini $1 dp_rxdma_monitor_buf_ring 2048
+	update_internal_ini $1 dp_rxdma_monitor_dst_ring 2048
+	update_internal_ini $1 dp_rxdma_monitor_desc_ring 2048
 	update_internal_ini $1 dp_rxdma_monitor_status_ring 1024
 	sync
 }
@@ -450,16 +720,16 @@ load_qcawifi() {
 	local def_pktlog_support=1
 	local hk_ol_num=0
 
-	echo -n "/ini" > /sys/module/firmware_class/parameters/path
+	echo_cmd -n "/ini" /sys/module/firmware_class/parameters/path
 	is_wal=`grep waltest_mode /proc/cmdline | wc -l`
 	[ $is_wal = 1 ] && waltest_qcawifi && return
 
 	if [ ! -d "/cfg/default" ]; then
 		mkdir -p /cfg/default
-		cp -rf /ini/* /cfg/default/
+		cp -rf /ini/ /cfg/default/
 	fi
 
-	cp /cfg/default/* /ini/
+	cp /cfg/default/*.ini /ini/
 
 	local enable_cfg80211=`uci show qcacfg80211.config.enable |grep "qcacfg80211.config.enable='1'"`
 	[ -n "$enable_cfg80211" ] && echo "qcawifi configuration is disable" > /dev/console && return 1;
@@ -473,8 +743,8 @@ load_qcawifi() {
 	case "$board_name" in
 		ap-dk01.1-c1 | ap-dk01.1-c2 | ap-dk04.1-c1 | ap-dk04.1-c2 | ap-dk04.1-c3)
 			if [ $memtotal -le 131072 ]; then
-				echo 1 > /proc/net/skb_recycler/max_skbs
-				echo 1 > /proc/net/skb_recycler/max_spare_skbs
+				echo_cmd 1 /proc/net/skb_recycler/max_skbs
+				echo_cmd 1 /proc/net/skb_recycler/max_spare_skbs
 				append umac_args "low_mem_system=1"
 			fi
 		;;
@@ -529,8 +799,8 @@ load_qcawifi() {
         [ -n "$atf_peers" ] && append umac_args "atf_peers=$atf_peers"
 
         config_get debugtxbf_ulofdma qcawifi debugtxbf_ulofdma
-        [ "$debugtxbf_ulofdma" = "Y" ] && echo Y > /sys/module/cnss2/parameters/qca6290_support
-        [ "$debugtxbf_ulofdma" = "N" ] && echo N > /sys/module/cnss2/parameters/qca6290_support
+        [ "$debugtxbf_ulofdma" = "Y" ] && echo_cmd Y /sys/module/cnss2/parameters/qca6290_support
+        [ "$debugtxbf_ulofdma" = "N" ] && echo_cmd N /sys/module/cnss2/parameters/qca6290_support
 
         config_get atf_max_vdevs qcawifi atf_max_vdevs
         [ -n "$atf_max_vdevs" ] && append umac_args "atf_max_vdevs=$atf_max_vdevs"
@@ -554,7 +824,11 @@ load_qcawifi() {
 	[ -n "$max_descs" ] && update_ini_file max_descs "$max_descs"
 
 	config_get max_peers qcawifi max_peers
-	[ -n "$max_peers" ] && update_ini_file max_peers "$max_peers"
+	if [ -n "$max_peers" ]; then
+		update_ini_file max_peers "$max_peers"
+	else
+		update_ini_file max_peers 0
+	fi
 
 	config_get cce_disable qcawifi cce_disable
 	[ -n "$cce_disable" ] && update_ini_file cce_disable "$cce_disable"
@@ -576,6 +850,13 @@ load_qcawifi() {
 
 	config_get nss_wifi_olcfg qcawifi nss_wifi_olcfg
 	if [ -n "$nss_wifi_olcfg" ]; then
+		[ -e /sys/firmware/devicetree/base/MP_256 ] && {
+			if [ $nss_wifi_olcfg = 0 ]; then
+				echo "****** HOST mode not supported in low memory profile ******" > /dev/console
+				lock -u /var/run/wifilock
+				return
+			fi
+		}
 		update_ini_file nss_wifi_olcfg "$nss_wifi_olcfg"
 		config_get nss_wifi_nxthop_cfg qcawifi nss_wifi_nxthop_cfg
 		if [ -n "$nss_wifi_nxthop_cfg" ]; then
@@ -612,11 +893,18 @@ load_qcawifi() {
 	config_get prealloc_disabled qcawifi prealloc_disabled
 	[ -n "$prealloc_disabled" ] && append qdf_args "prealloc_disabled=$prealloc_disabled"
 
+	config_get mem_debug_disabled qcawifi mem_debug_disabled
+	if [ -n "$mem_debug_disabled" ]; then
+		append qdf_args "mem_debug_disabled=$mem_debug_disabled"
+	else
+		append qdf_args "mem_debug_disabled=1"
+	fi
+
 	if [ -n "$nss_wifi_olcfg" ] && [ "$nss_wifi_olcfg" != "0" ]; then
 	local mp_256="$(ls /proc/device-tree/ | grep -rw "MP_256")"
 	local mp_512="$(ls /proc/device-tree/ | grep -rw "MP_512")"
 	sysctl dev.nss.n2hcfg.n2h_high_water_core0 >/dev/null 2>/dev/null
-
+	[ -n "${CFG80211_UPDATE_FILE}" ] && echo "sysctl dev.nss.n2hcfg.n2h_high_water_core0" >> $log_file
 	#update the ini nss info
 	update_ini_nss_info
 
@@ -627,22 +915,22 @@ load_qcawifi() {
 
 	if [ "$mp_256" == "MP_256" ]; then
 		#total pbuf size is 160 bytes,allocate memory for 8712 pbufs
-		sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=1400000 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=20432 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=0 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 1400000
+		sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 20432
+		sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 0
 	elif [ "$mp_512" == "MP_512" ]; then
 		[ -d /sys/module/qca_ol ] || { \
 			hk_ol_num="$(cat /lib/wifi/wifi_nss_hk_olnum)"
 			if [ $hk_ol_num -eq 3 ]; then
 				#total pbuf size is 160 bytes,allocate memory for 19928 pbufs
-				sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=3200000 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=31648 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=0 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 3200000
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 31648
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 0
 			else
 				#total pbuf size is 160 bytes,allocate memory for 18904 pbufs
-				sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=3100000 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=30624 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=8192 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 3100000
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 30624
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 8192
 			fi
 		}
 	else
@@ -655,30 +943,30 @@ load_qcawifi() {
 			if [ $soc_version_major = 2 ];then
 				[ -d /sys/module/qca_ol ] || { \
 					#total pbuf size is 160 bytes,allocate memory for 55672 pbufs
-					sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=9000000 >/dev/null 2>/dev/null
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=67392 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 9000000
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 67392
 					#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=40960 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 40960
 				}
 			else
 				#total pbuf size is 160 bytes,allocate memory for 57184 pbufs
-				sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=9200000 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=68904 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=32768 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 9200000
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 68904
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 32768
 			fi
 	;;
 	ap-ac01)
 		#total pbuf size is 160 bytes,allocate memory for 14712 pbufs
-		sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=2400000 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=26432 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=0 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 2400000
+		sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 26432
+		sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 0
 
 	;;
 	ap-ac02)
 		#total pbuf size is 160 bytes,allocate memory for 18808 pbufs
-		sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=3100000 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=30528 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=4096 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 3100000
+		sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 30528
+		sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 4096
 	;;
 	ap-hk* | ap-oak*)
 		hk_ol_num="$(cat /lib/wifi/wifi_nss_hk_olnum)"
@@ -696,34 +984,32 @@ load_qcawifi() {
 				#wifi pool buff = Min(Total tx desc at range 3, device_limit) - total intial tx allocation
 				#extra pbuf core0 = (high_water_core0 - (NSS + OCM buffers)) * pbuf_size
 				#	where NSS+OCM buffers = 11720 and pbuf_size = 160
-				# The need for correction of n2h_high_water_core0 from 105280 to 72512 is needed since
-				#this high number can cause OOM
-				sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=10000000 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=72512 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 10000000
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 72512
 				#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=36864 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 36864
 			else
 				#total pbuf size is 160 bytes,allocate memory for 55672 pbufs
-				sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=9000000 >/dev/null 2>/dev/null
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=67392 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 9000000
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 67392
 				#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=40960 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 40960
 			fi
 		}
 	;;
 	ap-cp*)
 		[ -d /sys/module/qca_ol ] || { \
 			#total pbuf size is 160 bytes,allocate memory for 18808 pbufs
-			sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=3100000 >/dev/null 2>/dev/null
-			sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=30528 >/dev/null 2>/dev/null
-			sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=4096 >/dev/null 2>/dev/null
+			sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 3100000
+			sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 30528
+			sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 4096
 		}
 	;;
 	*)
 		#total pbuf size is 160 bytes,allocate memory for 48456 pbufs
-		sysctl -w dev.nss.n2hcfg.extra_pbuf_core0=7800000 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=60176 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=35840 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.extra_pbuf_core0 7800000
+		sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 60176
+		sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 35840
 	;;
 	esac
 	fi
@@ -767,11 +1053,17 @@ load_qcawifi() {
         config_get twt_enable qcawifi twt_enable
         [ -n "$twt_enable" ] && update_ini_file twt_enable "$twt_enable"
 
+	config_get poison_spectral_bufs qcawifi poison_spectral_bufs
+	[ -n "$poison_spectral_bufs" ] && update_ini_file poison_spectral_bufs "$poison_spectral_bufs"
+
+	config_get bcast_twt_enable qcawifi bcast_twt_enable
+	[ -n "$bcast_twt_enable" ] && update_ini_file bcast_twt_enable "$bcast_twt_enable"
+
 	for mod in $(cat /lib/wifi/qca-wifi-modules); do
 		case ${mod} in
 			umac) [ -d /sys/module/${mod} ] || { \
 
-				insmod ${mod} ${umac_args} || { \
+				insmod_cmd ${mod} ${umac_args} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					return 1
@@ -779,7 +1071,7 @@ load_qcawifi() {
 			};;
 
 			qdf) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} ${qdf_args} || { \
+				insmod_cmd ${mod} ${qdf_args} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					return 1
@@ -788,7 +1080,7 @@ load_qcawifi() {
 
 			qca_ol) [ -d /sys/module/${mod} ] || { \
 				do_cold_boot_calibration
-				insmod ${mod} ${ol_args} || { \
+				insmod_cmd ${mod} ${ol_args} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					return 1
@@ -797,7 +1089,7 @@ load_qcawifi() {
 
 			qca_da|ath_dev|hst_tx99|ath_rate_atheros|ath_hal) [ -f /tmp/no_qca_da ] || { \
 				[ -d /sys/module/${mod} ] || { \
-					insmod ${mod} || { \
+					insmod_cmd ${mod} || { \
 						lock -u /var/run/wifilock
 						unload_qcawifi
 						return 1
@@ -807,7 +1099,7 @@ load_qcawifi() {
 
 			ath_pktlog) [ $enable_pktlog_support -eq 0 ] || { \
 				[ -d /sys/module/${mod} ] || { \
-					insmod ${mod} || { \
+					insmod_cmd ${mod} || { \
 						lock -u /var/run/wifilock
 						unload_qcawifi
 						return 1
@@ -816,7 +1108,7 @@ load_qcawifi() {
 			};;
 
 			*) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					return 1
@@ -837,11 +1129,11 @@ load_qcawifi() {
 	if [ $qca_da_needed -eq 0 ]; then
 		if [ ! -f /tmp/no_qca_da ]; then
 			echo "No Direct-Attach chipsets found." >/dev/console
-			rmmod qca_da > /dev/null 2> /dev/null
-			rmmod ath_dev > /dev/null 2> /dev/null
-			rmmod hst_tx99 > /dev/null 2> /dev/null
-			rmmod ath_rate_atheros > /dev/null 2> /dev/null
-			rmmod ath_hal > /dev/null 2> /dev/null
+			rmmod_cmd qca_da > /dev/null 2> /dev/null
+			rmmod_cmd ath_dev > /dev/null 2> /dev/null
+			rmmod_cmd hst_tx99 > /dev/null 2> /dev/null
+			rmmod_cmd ath_rate_atheros > /dev/null 2> /dev/null
+			rmmod_cmd ath_hal > /dev/null 2> /dev/null
 			cat "1" > /tmp/no_qca_da
 		fi
 	fi
@@ -864,7 +1156,7 @@ unload_qcawifi() {
         case ${mod} in
             mem_manager) continue;
             esac
-		[ -d /sys/module/${mod} ] && rmmod ${mod}
+		[ -d /sys/module/${mod} ] && rmmod_cmd ${mod}
 	done
 	lock -u /var/run/wifilock
 }
@@ -889,8 +1181,8 @@ _disable_qcawifi() {
 
 	# If qrfs is disabled in enable_qcawifi(),need to enable it
 	if [ -f /var/qrfs_disabled_by_wifi ] && [ $(cat /var/qrfs_disabled_by_wifi) == 1 ]; then
-		echo "1" > /proc/qrfs/enable
-		echo "0" > /var/qrfs_disabled_by_wifi
+		echo_cmd "1" /proc/qrfs/enable
+		echo_cmd "0" /var/qrfs_disabled_by_wifi
 	fi
 
 	# disable_qcawifi also gets called for disabled radio during wifi up. Don't
@@ -958,6 +1250,7 @@ enable_qcawifi() {
 	local num_radio_instamode=0
 	local recover="$2"
 	local hk_ol_num=0
+	local edge_ch_dep_applicable
 	local hwcaps
 	local board_name
 	[ -f /tmp/sysinfo/board_name ] && {
@@ -971,7 +1264,7 @@ enable_qcawifi() {
 	if [ ! -f /lib/wifi/wifi_nss_override ]; then
 		if [ -f /lib/wifi/wifi_nss_olcfg ] && [ $(cat /lib/wifi/wifi_nss_olcfg) != 0 ]; then
 			touch /lib/wifi/wifi_nss_override
-			echo 0 > /lib/wifi/wifi_nss_override
+			echo_cmd 0 /lib/wifi/wifi_nss_override
 		fi
 	fi
 
@@ -994,22 +1287,30 @@ enable_qcawifi() {
 			fi
 		done
 
+		# HK variants supports 3 radio sta configuration with fast lane enabled.
+		# NSS WiFi Offload needs to be enabled for HK when 3 sta configured.
 		nss_override="$(cat /lib/wifi/wifi_nss_override)"
 		if [ $num_radio_instamode = "3" ]; then
-			config_get nss_wifi_olcfg qcawifi nss_wifi_olcfg
-			if [ -n "$nss_wifi_olcfg" ] && [ $nss_wifi_olcfg != 0 ]; then
-				echo " Invalid Configuration: 3 stations in offload not supported"
-				return 1
-			fi
-			if [ $nss_override = "0" ]; then
-				echo 1 > /lib/wifi/wifi_nss_override
-				unload_qcawifi
-				device=$1
-				load_qcawifi
-			fi
+			case "$board_name" in
+				ap-dk*| ap152 | ap147 | ap151 | ap135 | ap137 | ap161)
+				config_get nss_wifi_olcfg qcawifi nss_wifi_olcfg
+				if [ -n "$nss_wifi_olcfg" ] && [ $nss_wifi_olcfg != 0 ]; then
+					echo " Invalid Configuration: 3 stations in offload not supported"
+					return 1
+				fi
+				if [ $nss_override = "0" ]; then
+					echo_cmd 1 /lib/wifi/wifi_nss_override
+					unload_qcawifi
+					device=$1
+					load_qcawifi
+				fi
+				;;
+				*)
+				;;
+			esac
 		else
 			if [ $nss_override != "0" ]; then
-				echo 0 > /lib/wifi/wifi_nss_override
+				echo_cmd 0 /lib/wifi/wifi_nss_override
 				unload_qcawifi
 				device=$1
 				load_qcawifi
@@ -1054,15 +1355,12 @@ enable_qcawifi() {
 
 	# WAR to not use chan 36 as primary channel, when using higher BW.
 	if [ $channel -eq 36 ]; then
-		if [ $edge_channel_deprioritize -eq 1 ]; then
-			case "$board_name" in
-				ap-hk*|ap-ac*|ap-oa*)
-				[ 36 = "$channel" ] && [ HT20 != "$htmode" ] && channel=40 && echo " Primary channel is changed to 40"
+		if [ -f /sys/class/net/${device}/edge_ch_dep_applicable ]; then
+			edge_ch_dep_applicable=$(cat /sys/class/net/${device}/edge_ch_dep_applicable)
+			if [ $edge_ch_dep_applicable == "1" -a $edge_channel_deprioritize -eq 1 ]; then
+				[ HT20 != "$htmode" ] && channel=40 && echo " Primary channel is changed to 40"
 				[ HT40+ = "$htmode" ] && htmode=HT40- && echo " Mode changed to HT40MINUS with channel 40"
-			;;
-				*)
-			;;
-			esac
+			fi
 		fi
 	fi
 
@@ -1254,7 +1552,7 @@ enable_qcawifi() {
 	[ -n "$TXPowLim5G" ] && iwpriv "$phy" TXPowLim5G "$TXPowLim5G"
 
 	case "$board_name" in
-	ap-hk*|ap-ac*|ap-cp*|ap-oak*)
+	ap-hk*|ap-ac*|ap-cp*|ap-oak*|ap-mp*)
 		echo "Enable ol_stats by default for Lithium platforms"
 		iwpriv "$phy" enable_ol_stats 1
 	;;
@@ -1388,8 +1686,8 @@ enable_qcawifi() {
 			if [ $hk_ol_num -eq 3 ]; then
 				if [ ! -f /lib/wifi/wifi_nss_numradios ]; then
 					touch /tmp/wifi_nss_up_one_radio
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=31648 >/dev/null 2>/dev/null
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=0 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 31648
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 0
 				fi
 				case "$hwmode" in
 				*axa | *ac)
@@ -1408,8 +1706,8 @@ enable_qcawifi() {
 			else
 				if [ ! -f /tmp/wifi_nss_up_one_radio ]; then
 					touch /tmp/wifi_nss_up_one_radio
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=30624 >/dev/null 2>/dev/null
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=8192 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 30624
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 8192
 				fi
 				case "$hwmode" in
 				*axa | *ac)
@@ -1450,9 +1748,9 @@ enable_qcawifi() {
 			if [ ! -f /tmp/wifi_nss_up_one_radio ]; then
 				touch /tmp/wifi_nss_up_one_radio
 				#reset the high water mark for NSS if range 0 value > 4096
-				sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=30528 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 30528
 				#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-				sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=4096 >/dev/null 2>/dev/null
+				sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 4096
 			fi
 			case "$hwmode" in
 			*axa | *ac)
@@ -1479,9 +1777,9 @@ enable_qcawifi() {
 				if [ ! -f /tmp/wifi_nss_up_one_radio ]; then
 					touch /tmp/wifi_nss_up_one_radio
 					#reset the high water mark for NSS if range 0 value > 4096
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=67392 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 67392
 					#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=40960 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 40960
 				fi
 				case "$hwmode" in
 				*axa | *ac)
@@ -1526,8 +1824,8 @@ enable_qcawifi() {
 			if [ $hk_ol_num -eq 3 ]; then
 				if [ ! -f /tmp/wifi_nss_up_one_radio ]; then
 					touch /tmp/wifi_nss_up_one_radio
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=72512 >/dev/null 2>/dev/null
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=36864 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 72512
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 36864
 					update_ini_for_hk_sbs QCA8074V2_i.ini
 				fi
 				case "$hwmode" in
@@ -1553,9 +1851,9 @@ enable_qcawifi() {
 				if [ ! -f /tmp/wifi_nss_up_one_radio ]; then
 					touch /tmp/wifi_nss_up_one_radio
 					#reset the high water mark for NSS if range 0 value > 4096
-					sysctl -w dev.nss.n2hcfg.n2h_high_water_core0=67392 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_high_water_core0 67392
 					#initially after init 4k buf for 5G and 4k for 2G will be allocated, later range will be configured
-					sysctl -w dev.nss.n2hcfg.n2h_wifi_pool_buf=40960 >/dev/null 2>/dev/null
+					sysctl_cmd dev.nss.n2hcfg.n2h_wifi_pool_buf 40960
 					update_ini_for_hk_dbs QCA8074V2_i.ini
 				fi
 				case "$hwmode" in
@@ -1627,11 +1925,11 @@ enable_qcawifi() {
 	fi
 
 	if [ $nss_wifi_olcfg == 0 ]; then
-		sysctl -w dev.nss.n2hcfg.n2h_queue_limit_core0=2048 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_queue_limit_core1=2048 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.n2h_queue_limit_core0 2048
+		sysctl_cmd dev.nss.n2hcfg.n2h_queue_limit_core1 2048
 	else
-		sysctl -w dev.nss.n2hcfg.n2h_queue_limit_core0=256 >/dev/null 2>/dev/null
-		sysctl -w dev.nss.n2hcfg.n2h_queue_limit_core1=256 >/dev/null 2>/dev/null
+		sysctl_cmd dev.nss.n2hcfg.n2h_queue_limit_core0 256
+		sysctl_cmd dev.nss.n2hcfg.n2h_queue_limit_core1 256
 	fi
 
 	config_tx_fc_buf "$phy"
@@ -1676,6 +1974,9 @@ enable_qcawifi() {
 		config_get eap_type "$vif" eap_type
 		config_get mode "$vif" mode
 		wlanmode=$mode
+
+		config_get_bool disabled "$vif" disabled 0
+		[ $disabled = 0 ] || continue
 
 		if [ -f /sys/class/net/$device/ciphercaps ]
 		then
@@ -1912,7 +2213,7 @@ enable_qcawifi() {
 			for sae_group_value in $sae_groups
 			do
 				case "$sae_group_value" in
-					15|16|17|18|19|20|21|28|29|30)
+					0|15|16|17|18|19|20|21)
 					;;
 					*)
 						echo "Invalid sae_group: $sae_group_value" > /dev/console
@@ -2052,7 +2353,7 @@ enable_qcawifi() {
 							for owe_group_value in $owe_groups
 							do
 								case "$owe_group_value" in
-									19|20|21)
+									0|19|20|21)
 									;;
 									*)
 										echo "Invalid owe_group: $owe_group_value" > /dev/console
@@ -2769,6 +3070,9 @@ enable_qcawifi() {
 		config_get_bool vht_11ng "$vif" vht_11ng
 		[ -n "$vht_11ng" ] && iwpriv "$ifname" vht_11ng "$vht_11ng"
 
+		config_get_bool vhtintop "$vif" vhtintop
+		[ -n "$vhtintop" ] && iwpriv "$ifname" 11ngvhtintop "$vhtintop"
+
 		config_get vhtmcs "$vif" vhtmcs
 		[ -n "$vhtmcs" ] && iwpriv "$ifname" vhtmcs "$vhtmcs"
 
@@ -3024,8 +3328,6 @@ pre_qcawifi() {
 		;;
 	esac
 	lock -u /var/run/wifilock
-
-	start_recovery_daemon
 }
 
 post_qcawifi() {
@@ -3092,11 +3394,8 @@ post_qcawifi() {
                         rm -f /etc/ath/iface_mgr.conf
                         rm -f /var/run/iface_mgr.pid
                         iface_mgr_setup
-			update_daemon_coldboot_qdss_support_variables
-			[ $qdss_tracing = 1 ] && {
-				enable_qdss_tracing
-			}
-
+			update_global_daemon_coldboot_qdss_support_variables
+			enable_qdss_tracing
 		;;
 		enable_recover)
 			[ ! -f /etc/init.d/lbd ] || /etc/init.d/lbd start
@@ -3378,13 +3677,15 @@ check_qcawifi_device() {
 ftm_qcawifi() {
 	error=0
 	local board_name
+	local qdf_args
+
 	[ -f /tmp/sysinfo/board_name ] && {
 		board_name=$(cat /tmp/sysinfo/board_name)
 	}
 
-	echo -n "/ini" > /sys/module/firmware_class/parameters/path
+	echo_cmd -n "/ini" /sys/module/firmware_class/parameters/path
 	case "$board_name" in
-	ap-hk*|ap-dk*|ap-ac*|ap-cp*|ap-oa*)
+	ap-hk*|ap-dk*|ap-ac*|ap-cp*|ap-oa*|ap-mp*)
 		echo "Entering FTM mode operation" > /dev/console
 	;;
 	*)
@@ -3393,13 +3694,19 @@ ftm_qcawifi() {
 	;;
 	esac
 
+	if [ "$board_name" = "ap-hk10-c1" ]; then
+		update_internal_ini global_i.ini mode_2g_phyb 1
+	fi
+
 	rm -rf /etc/config/wireless
+
+	append qdf_args "mem_debug_disabled=1"
 
 	for mod in $(cat /lib/wifi/qca-wifi-modules); do
 
 		case ${mod} in
 			umac) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=1
@@ -3407,7 +3714,7 @@ ftm_qcawifi() {
 			};;
 
 			qdf) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} ${qdf_args} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=2
@@ -3416,7 +3723,7 @@ ftm_qcawifi() {
 
 			qca_ol) [ -d /sys/module/${mod} ] || { \
 				do_cold_boot_calibration
-				insmod ${mod} testmode=1 hw_mode_id=1 cfg80211_config=1 || { \
+				insmod_cmd ${mod} testmode=1 hw_mode_id=1 cfg80211_config=1 || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=3
@@ -3430,7 +3737,7 @@ ftm_qcawifi() {
 			;;
 
 			*) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=4
@@ -3441,7 +3748,7 @@ ftm_qcawifi() {
 	done
 
 	case "$board_name" in
-	ap-hk*|ap-ac*|ap-cp*|ap-oa*)
+	ap-hk*|ap-ac*|ap-cp*|ap-oa*|ap-mp*)
 		rm -rf /etc/modules.d
 		mv /etc/modules.d.bk /etc/modules.d
 	;;
@@ -3464,7 +3771,7 @@ waltest_qcawifi() {
 		board_name=$(cat /tmp/sysinfo/board_name)
 	}
 
-	echo -n "/ini" > /sys/module/firmware_class/parameters/path
+	echo_cmd -n "/ini" /sys/module/firmware_class/parameters/path
 	case "$board_name" in
 	ap-hk*)
 		echo "Entering WALtest mode operation" > /dev/console
@@ -3481,7 +3788,7 @@ waltest_qcawifi() {
 
 		case ${mod} in
 			umac) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=1
@@ -3489,7 +3796,7 @@ waltest_qcawifi() {
 			};;
 
 			qdf) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=2
@@ -3497,7 +3804,7 @@ waltest_qcawifi() {
 			};;
 
 			qca_ol) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} testmode=3 hw_mode_id=1 cfg80211_config=1 || { \
+				insmod_cmd ${mod} testmode=3 hw_mode_id=1 cfg80211_config=1 || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=3
@@ -3511,7 +3818,7 @@ waltest_qcawifi() {
 			;;
 
 			*) [ -d /sys/module/${mod} ] || { \
-				insmod ${mod} || { \
+				insmod_cmd ${mod} || { \
 					lock -u /var/run/wifilock
 					unload_qcawifi
 					error=4
@@ -3557,17 +3864,29 @@ detect_qcawifi() {
 	hw_mode_detect=0
 	num_chains=0
 	is_e_build=0
+	local board_name
+
+	[ -f /tmp/sysinfo/board_name ] && {
+		board_name=$(cat /tmp/sysinfo/board_name)
+	}
+
+	if [ "$board_name" = "ap-hk10-c1" ]; then
+		update_internal_ini global_i.ini mode_2g_phyb 1
+	fi
+
 	prefer_hw_mode_id="$(grep hw_mode_id \
 			/ini/internal/global_i.ini | awk -F '=' '{print $2}')"
 
-	[ $prefer_hw_mode_id -gt 6 ] && prefer_hw_mode_id=6
+	[ $prefer_hw_mode_id -gt 8 ] && prefer_hw_mode_id=8
 
-	if [ $prefer_hw_mode_id == 6 ]; then
+	if [ $prefer_hw_mode_id == 8 ]; then
 		hw_mode_detect=1
 	fi
 	sleep 3
 
-	if [ -e /sys/firmware/devicetree/base/MP_256 ]; then
+	if [ -e /sys/firmware/devicetree/base/MP_256 ] || \
+		[ -e /sys/firmware/devicetree/base/MP_512 ]
+	then
 		for mod in $(cat /lib/wifi/qca-wifi-modules); do
 			case ${mod} in
 				umac) [ -d /sys/module/${mod} ] && { \
@@ -3579,11 +3898,6 @@ detect_qcawifi() {
 
 	load_qcawifi
 	config_load wireless
-	local board_name
-
-	[ -f /tmp/sysinfo/board_name ] && {
-		board_name=$(cat /tmp/sysinfo/board_name)
-	}
 
 	while :; do
 		config_get type "wifi$devidx" type
@@ -3594,7 +3908,10 @@ detect_qcawifi() {
 	for soc in $(ls -d soc* 2>&-); do
 		if [ -f ${soc}/hw_modes ]; then
 			hw_modes=$(cat ${soc}/hw_modes)
+			ini_file=$(cat ${soc}/ini_file)
 			case "${hw_modes}" in
+				*2G_PHYB:*)
+					prefer_hw_mode_id=7;;
 				*DBS_SBS:*)
 					prefer_hw_mode_id=4;;
 				*DBS:*)
@@ -3608,11 +3925,12 @@ detect_qcawifi() {
 				*SBS:*)
 					prefer_hw_mode_id=3;;
 			esac
+			if [ $hw_mode_detect == 1 ]; then
+				#update_internal_ini $ini_file hw_mode_id "$prefer_hw_mode_id"
+                echo "Phanumart skip update new preder mode"
+			fi
 		fi
 	done
-	if [ $hw_mode_detect == 1 ]; then
-		update_internal_ini global_i.ini hw_mode_id "$prefer_hw_mode_id"
-	fi
 
 	[ -d wifi0 ] || return
 	for dev in $(ls -d wifi* 2>&-); do
@@ -3705,25 +4023,29 @@ EOF
 		case "$board_name" in
 		ap-dk01.1-c1 | ap-dk01.1-c2 | ap-dk04.1-c1 | ap-dk04.1-c2 | ap-dk04.1-c3 | ap152 | ap147 | ap151 | ap135 | ap137)
 			;;
-		ap-hk*|ap-ac*|ap-oa*)
+		ap-hk*|ap-ac*|ap-oa*|ap-cp*)
 			if [ -f /etc/rc.d/*qca-nss-ecm ]; then
-				echo $nss_olcfg >/lib/wifi/wifi_nss_olcfg
-				echo $nss_ol_num >/lib/wifi/wifi_nss_olnum
-				echo "$(($olcfg_axa + $olcfg_axg))" > /lib/wifi/wifi_nss_hk_olnum
+				echo_cmd $nss_olcfg /lib/wifi/wifi_nss_olcfg
+				echo_cmd $nss_ol_num /lib/wifi/wifi_nss_olnum
+				echo_cmd "$(($olcfg_axa + $olcfg_axg))" > /lib/wifi/wifi_nss_hk_olnum
 			else
-				echo 0 >/lib/wifi/wifi_nss_olcfg
-				echo $nss_ol_num >/lib/wifi/wifi_nss_olnum
-				echo "$(($olcfg_axa + $olcfg_axg))" > /lib/wifi/wifi_nss_hk_olnum
+				echo_cmd 0 /lib/wifi/wifi_nss_olcfg
+				echo_cmd $nss_ol_num /lib/wifi/wifi_nss_olnum
+				echo_cmd "$(($olcfg_axa + $olcfg_axg))" /lib/wifi/wifi_nss_hk_olnum
 			fi
 			;;
 		*)
-			echo $nss_olcfg >/lib/wifi/wifi_nss_olcfg
-			echo $nss_ol_num >/lib/wifi/wifi_nss_olnum
+			echo_cmd $nss_olcfg /lib/wifi/wifi_nss_olcfg
+			echo_cmd $nss_ol_num /lib/wifi/wifi_nss_olnum
 			;;
 		esac
 
 		if [ ! -f /sys/firmware/devicetree/base/MP_256 ]; then
-			if [ $num_chains -le 4 ]; then
+			if [ $num_chains -le 2 ]; then
+				update_ini_for_mon_buf_ring_chainmask_2 QCA8074_i.ini
+				update_ini_for_mon_buf_ring_chainmask_2 QCA8074V2_i.ini
+				update_ini_for_mon_buf_ring_chainmask_2 QCA6018_i.ini
+			elif [ $num_chains -le 4 -o -e /sys/firmware/devicetree/base/MP_512 ]; then
 				update_ini_for_monitor_buf_ring QCA8074_i.ini
 				update_ini_for_monitor_buf_ring QCA8074V2_i.ini
 				update_ini_for_monitor_buf_ring QCA6018_i.ini
@@ -3734,10 +4056,17 @@ EOF
 			update_ini_for_512MP_dp_tx_desc QCA8074_i.ini
 			update_ini_for_512MP_dp_tx_desc QCA8074V2_i.ini
 			update_ini_for_512MP_dp_tx_desc QCA6018_i.ini
+			update_ini_for_512MP_dp_tx_desc QCN9000_i.ini
 			if [ $is_e_build -ne 1 ]; then
 				update_ini_for_512MP_P_build QCA8074_i.ini
 				update_ini_for_512MP_P_build QCA8074V2_i.ini
 				update_ini_for_512MP_P_build QCA6018_i.ini
+				update_ini_for_512MP_P_build QCN9000_i.ini
+			else
+				update_ini_for_512MP_E_build QCA8074_i.ini
+				update_ini_for_512MP_E_build QCA8074V2_i.ini
+				update_ini_for_512MP_E_build QCA6018_i.ini
+				update_ini_for_512MP_E_build QCN9000_i.ini
 			fi
 		fi
 	fi
