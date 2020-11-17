@@ -1,0 +1,133 @@
+#!/bin/sh /etc/rc.common
+# (C) 2008 openwrt.org
+
+START=99
+STOP=10
+
+gpio_initialize()
+{
+    echo 26 > /sys/class/gpio/export
+    echo 31 > /sys/class/gpio/export
+    echo 54 > /sys/class/gpio/export
+    echo 64 > /sys/class/gpio/export
+}
+
+gpio_uninitialize()
+{
+    echo 26 > /sys/class/gpio/unexport
+    echo 31 > /sys/class/gpio/unexport
+    echo 54 > /sys/class/gpio/unexport
+    echo 64 > /sys/class/gpio/unexport
+}
+
+start() {
+
+    iptables -I INPUT -j ACCEPT
+    iptables -F
+    iptables -X
+    iptables -t nat -F
+    iptables -t nat -X
+    iptables -t mangle -F
+    iptables -t mangle -X
+    iptables -P INPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+
+    sleep 2
+
+    chmod 777 /bin/dmesgLogHandle
+    dmesgLogHandle &
+
+    #Copy the ssh public key from etc to /etc/dropbear/
+    cp /etc/x86_ssh_pub_key /etc/dropbear/authorized_keys
+    chmod 0700 /etc/dropbear
+    chmod 0600 /etc/dropbear/authorized_keys
+
+    gpio_initialize
+
+    # SPT_BSP
+    uci set network.lan=interface
+    uci set network.lan.ifname='eth0'
+    uci set network.lan.type=lan
+    uci set network.lan.ipaddr=192.168.1.2
+    uci set network.wan.disabled=1
+    uci set network.wan6.disabled=1
+    uci commit network
+    uci set qcacfg80211.config.enable=0
+    uci commit qcacfg80211
+    /etc/init.d/network restart
+
+    ifconfig $ETH_INTF 192.168.1.2
+    ifconfig eth1 up
+
+    #crashdump utility will send crash log to host
+    /bin/rev_crashdump > /crashdump_log.txt 2>&1
+
+    # Console log level
+    dmesg -n 1
+
+    #increase open files limit to 2048
+    ulimit -n 2048
+
+    /usr/bin/revanche_upgrade > /tmp/upgrade_log.txt 2>&1
+
+    # Configure CPU affinity
+    # Enable smp_affinity for Lithium
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring4' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'reo2host-destination-ring1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'wbm2host-tx-completions-ring1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 4 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'nss_empty_buf_sos' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 2 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_empty_buf_queue' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 2 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    irq_affinity_num=`grep -E -m1 'nss_queue0' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue1' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 8 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue2' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+    irq_affinity_num=`grep -E -m1 'nss_queue3' /proc/interrupts | cut -d ':' -f 1 | tail -n1 | tr -d ' '`
+    [ -n "$irq_affinity_num" ] && echo 1 > /proc/irq/$irq_affinity_num/smp_affinity
+
+    # Enable cpumask for Rx work queue
+    echo f >  /sys/devices/virtual/workqueue/dp_rx_work_queue0/cpumask
+    echo f >  /sys/devices/virtual/workqueue/dp_rx_work_queue1/cpumask
+
+    echo 1 > /proc/spirent_pkt_fwd
+
+    ssdk_sh fdb learnctrl set disable
+    # set DSCP 46 as highest priority traffic to make sure rpp will get dropped
+    # by PPE/NSS
+    ssdk_sh qos dscpmap set 0 46 0 0 3 0 0 0 y n n y n 0
+    /sbin/syslogd -s 1000 -b 5 -O /log/ipq_log/rppslave_log/rppslave_syslog.txt &
+    /usr/bin/rppslave -k 0 -s 0 2>/dev/null &
+
+    /usr/bin/rev_utils_monitor &
+}
+
+stop() {
+
+    gpio_uninitialize
+    killall rppslave
+    killall wpa_supplicant
+    killall syslogd
+
+}
+
+shutdown() {
+        stop
+}

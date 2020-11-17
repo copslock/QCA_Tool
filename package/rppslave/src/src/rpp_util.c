@@ -37,8 +37,12 @@ int util_install_certificate(const uint32_t phyhandle, const char* sta, const ch
     if (stat(certFile, &c_st))
     {
         SYSLOG_PRINT(LOG_DEBUG, "CERT ------ file does not exist %s",certFile);
+#ifdef RDP419 // RDP419 certificate files located in directory: /tmp/certs
+        system_cmd_set_f("cp /tmp/certs/%s %s/.", cert_filename, dirName);
+#else
         system_cmd_set_f("tftp -g -r %s %s", cert_filename, sourceIp);
         system_cmd_set_f("mv %s %s/", cert_filename,dirName);
+#endif
     }
 
     // wpa_cli -i staX0 set_network 0 ca_cert "/tmp/cert_wifi0/ca.pem"

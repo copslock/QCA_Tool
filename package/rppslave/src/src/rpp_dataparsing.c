@@ -666,6 +666,12 @@ uint8_t rpp_parser_ap_list(char * msg , ScanInfo * info ) {
                     info->enctype = ENTERPRISE;
                     strcpy((char *)info->encinfo, "Enterprise");
                 }
+#ifdef RDP419
+                else if ( strstr(s_ptr,"SAE") != NULL ) {               // No PSK, no 802.1x, SAE (Supported in spf11.2)
+                    info->enctype = WPA3_PERSONAL;
+                    strcpy((char *)info->encinfo, "CCMP-SAE");
+                }
+#endif
                 else if ( strstr(s_ptr,"unknown (8)") != NULL ) {               // No PSK, no 802.1x, unknown 8
                     s_ptr = p_keyword(parsing_info,"unknown (8)");
                     if ( strstr(s_ptr,"unknown (6)") != NULL ) {                // No PSK, no 802.1x, unknown 8, unknown 6
@@ -681,6 +687,12 @@ uint8_t rpp_parser_ap_list(char * msg , ScanInfo * info ) {
                     info->enctype = ENHANCED_OPEN;
                     strcpy((char *)info->encinfo, "CCMP-OWE");
                 }
+#ifdef RDP419
+                else if ( strstr(s_ptr,"8021X_SUITE_B_192") != NULL ) {               // No PSK, no 802.1x, 8021X_SUITE_B_192 (Supported in spf11.2)
+                    info->enctype = WPA3_ENTERPRISE;
+                    strcpy((char *)info->encinfo, "WPA3 Enterprise");
+                }
+#endif
                 else if ( strstr(s_ptr,"unknown (12)") != NULL ) {              // No PSK, no 802.1x, no unknown 8 , no unknown 18, unknown 12
                     info->enctype = WPA3_ENTERPRISE;
                     strcpy((char *)info->encinfo, "WPA3 Enterprise");

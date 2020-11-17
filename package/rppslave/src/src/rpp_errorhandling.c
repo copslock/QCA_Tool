@@ -4,16 +4,16 @@
 int32_t rpp_validate_phyhandle(int32_t phyhandle)
 {
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_validate_phyhandle_fun()_start");
-#ifdef THREE_RADIO
-    if ((phyhandle != 0xff) && (phyhandle == PHY_HANDLE_2G || phyhandle == PHY_HANDLE_5G || phyhandle == PHY_HANDLE_5G2))
-#else 
-    if ((phyhandle != 0xff) && (phyhandle == PHY_HANDLE_2G || phyhandle == PHY_HANDLE_5G ))
-#endif
-    {
-        return 0;
+    if (IS_THREE_RADIO_PROFILE) {
+        if ((phyhandle != 0xff) && (phyhandle == PHY_HANDLE_2G || phyhandle == PHY_HANDLE_5G || phyhandle == PHY_HANDLE_5G2)) {
+            return 0;
+        }
     } else {
-        return RPP_APP_DEFNUM_ONE;
+        if ((phyhandle != 0xff) && (phyhandle == PHY_HANDLE_2G || phyhandle == PHY_HANDLE_5G )) {
+            return 0;
+        }
     }
+    return RPP_APP_DEFNUM_ONE;
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_validate_phyhandle_fun()_exit");
 }
 

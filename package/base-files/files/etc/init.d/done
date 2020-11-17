@@ -15,6 +15,7 @@ boot() {
 			mount_wifi_fw "IPQ6018"
 			;;
 		*"IPQ807x"*)
+			# SPT_BSP
 			#. /etc/init.d/wifi_fw_mount
 			#mount_wifi_fw "IPQ8074"
 			echo "Script mount"

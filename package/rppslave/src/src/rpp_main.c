@@ -8,6 +8,8 @@
 #include "rpp_header.h"
 #include <sys/stat.h>
 #include <stdarg.h>
+#include <dirent.h>
+int rpp_num_of_radios;
 
 #define     RPP_HIGH_PRIORITY_THREAD 0
 
@@ -22,11 +24,7 @@ int32_t createClientSocket = 0;
 pthread_mutex_t assocStatLock[RPP_NUM_OF_RADIO] =  {PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER ,PTHREAD_MUTEX_INITIALIZER};
 pthread_mutex_t proxyStateLock[RPP_NUM_OF_RADIO] =  {PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER ,PTHREAD_MUTEX_INITIALIZER};
 pthread_mutex_t staProcessLock =  PTHREAD_MUTEX_INITIALIZER;
-#ifdef THREE_RADIO
-   uint8_t radio[RPP_NUM_OF_RADIO] = {FIVE_G_RADIO_0,TWO_G_RADIO_1,FIVE_G_RADIO_2};
-#else
-   uint8_t radio[RPP_NUM_OF_RADIO] ={FIVE_G_RADIO_0,TWO_G_RADIO_1};
-#endif
+uint8_t radio[RPP_NUM_OF_RADIO] = {FIVE_G_RADIO_0,TWO_G_RADIO_1,FIVE_G_RADIO_2};
 
 /******************************************************************************
  * Function Name    : thread_msgParserFromFpga
@@ -192,7 +190,7 @@ int32_t rpp_slave_init()
 
     //Separate thread for each radio for stamon
 
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         ret = pthread_create(&staMonThreadId[radioIndex], &attr,
         thread_staMonRadio, (void *)&radio[radioIndex]);
         if (ret != 0) {
@@ -210,6 +208,7 @@ int32_t rpp_slave_init()
         return -1;
     }
 
+#ifndef RDP419 // Modules not support for RDP419
     if(set_ipq_appln_bootup_status(0) == REVANCHE_IRET_SUCCESS) {        
         SYSLOG_PRINT(LOG_DEBUG, "DEBUG_MSG------->Writing ipq appln boot status success");
     } else {
@@ -223,13 +222,13 @@ int32_t rpp_slave_init()
         SYSLOG_PRINT(LOG_ERR, "ERR_MSG------->Boot Count Write FAIL%d",
             revanche_update_boot_count((revanche_inf_ecode_et *)&p_ecode));
     }
-
+#endif
 
     /* Initalize the rpp station handle structure */
     rpp_stahandle_init();
 
     pthread_join(msgPaserThreadId,NULL);
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         pthread_join(staMonThreadId[radioIndex],NULL);
     }
     pthread_join(staStatsThreadId,NULL);
@@ -258,6 +257,10 @@ void rpp_sigint_handler(int signal)
 
 int32_t main(int32_t argc, char** argv)
 {
+    DIR *dir;
+    struct dirent *ent;
+    int num_entries=0;
+
     char  ipAddress[32] = RPP_LOCAL_HOST_IP_ADDRESS;
     int32_t choice;
     int32_t ret = 0;
@@ -268,6 +271,20 @@ int32_t main(int32_t argc, char** argv)
 
     signal(SIGINT, rpp_sigint_handler);
     signal(SIGTERM, rpp_sigint_handler);
+
+    if ((dir = opendir ("/sys/class/net/")) != NULL) {
+        while ((ent = readdir (dir)) != NULL) {
+            if(strcmp(ent->d_name, "." ) == 0 || strcmp(ent->d_name, "..") == 0)
+                continue;
+            if(strncmp(ent->d_name, "wifi", 4) == 0) {
+                num_entries++;
+            }
+        }
+        closedir (dir);
+
+    }
+    rpp_num_of_radios = num_entries;
+    SYSLOG_PRINT(LOG_DEBUG, "DEBUG_MSG------->rpp_num_of_radios: %d", rpp_num_of_radios);
 
     while ((choice = getopt (argc, argv, "l:hk:")) != -1) {
         switch (choice) {

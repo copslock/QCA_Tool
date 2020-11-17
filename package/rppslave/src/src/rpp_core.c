@@ -31,10 +31,6 @@
 #define RPP_DEFAULT_RSSI_VALUE      128
 #define RPP_BW_SHIFT_VALUE          3
 
-#ifdef THREE_RADIO
-uint8_t spirent_to_qcom_map[] = {0,2,1};
-#endif
-
 #define CAPDAEMON_PORT_NUMBER_5G    63560
 #define CAPDAEMON_PORT_NUMBER_2G    63561
 #define CAPDAEMON_PORT_NUMBER_5G2   63564
@@ -52,7 +48,12 @@ uint8_t spirent_to_qcom_map[] = {0,2,1};
 #define RPP_DEASSOC_NOTIFY_UNSET        0
 #define RPP_DEASSOC_NOTIFY_SET          1
 
+#ifdef RDP419
+// RDP419 maximum tx power is 30
+#define TX_MAX_POWER    30
+#else
 #define TX_MAX_POWER    31
+#endif
 #define PROXY_STA_ASSOCTIME 15
 
 //Increased OWE transition association time
@@ -88,14 +89,22 @@ char *phyMapping_2G[][5] = { {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
                 {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
                 {"11GHE20", "11GHE40", "11GHE40", "11GHE40", "11GHE40"} };
 
+#ifdef RDP419
+#define AUTO_PHY_6G "11AHE160"
+char *phyMapping_6G[][5] = { {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"} };
+#endif
 
 #define DEFAULT_WIFI_MAC_ID "00:11:12:13:14:15"
 const char *gDefAthMac[RPP_NUM_OF_RADIO] = {
                         "00:41:42:43:44:45",
                         "00:51:52:53:54:55",
-#ifdef THREE_RADIO
                         "00:61:62:63:64:65"
-#endif
 };
 
 typedef enum {
@@ -152,9 +161,7 @@ typedef enum {
 // Initialize wpa_ctrl interface
 staAssocInfo staAssocHdl[RPP_NUM_OF_RADIO] = {
                                                 {.monIntf=NULL, .msgParserIntf=NULL},
-#ifdef THREE_RADIO
                                                 {.monIntf=NULL, .msgParserIntf=NULL},
-#endif
                                                 {.monIntf=NULL, .msgParserIntf=NULL}
 };
 
@@ -231,12 +238,10 @@ typedef struct {
 
 RppProxyStaStatusStruct RppProxyStaStatusHdl[RPP_NUM_OF_RADIO];
 
-unsigned char *gPidValue[RPP_NUM_OF_RADIO]
-    = {NULL,
-#ifdef THREE_RADIO
-       NULL,
-#endif
-       NULL
+unsigned char *gPidValue[RPP_NUM_OF_RADIO] = {
+    NULL,
+    NULL,
+    NULL
 };
 uint32_t gPhyHandle[RPP_NUM_OF_RADIO];
 
@@ -256,6 +261,20 @@ apMacAddData gPrevAPbssid[RPP_MAX_STA_SUPPORTED];
                                                                                 if (vsnprintf(iwCmd, CMD_LEN , format, ap) < 0) \
                                                                                     return -1; \
                                                                                 va_end(ap);
+/******************************************************************************
+ * Function Name    : spirent_to_qcom_radio_num
+ * Description      : This Function is used to map spirent to qualcom radio number
+ ******************************************************************************/
+uint8_t spirent_to_qcom_radio_num(uint8_t handle)
+{
+    if (IS_THREE_RADIO_PROFILE) {
+        static uint8_t spirent_to_qcom_map[] = {0,2,1};
+        return spirent_to_qcom_map[handle];
+    }
+     // Two radio profile
+    return handle;
+}
+
 /******************************************************************************
  * Function Name    : system_cmd
  * Description      : This Function is used to execute commands
@@ -783,7 +802,7 @@ int32_t rpp_session_cleanup()
     /*re-initialization of station association handle structure*/
     SYSLOG_PRINT(LOG_DEBUG, " DEBUG_MSG------->initialization of station association handle structure.\n");
 
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         RppPhyCaptureHdl[radioIndex].gProcStatus = 0xFF;
         RppPhyCaptureHdl[radioIndex].gProcStatus_SDR = 0xFF;
         RppPhyCaptureHdl[radioIndex].captureMode = 0xFF;
@@ -796,10 +815,10 @@ int32_t rpp_session_cleanup()
     memset (gPhyHandle, 0xFF, sizeof (uint32_t)*RPP_NUM_OF_RADIO);
 
     /*initialize assocstate lock per radio */
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         pthread_mutex_lock( &assocStatLock[radioIndex] );
     }
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         staAssocHdl[radioIndex].staCount = 0;
         stainfo = &staAssocHdl[radioIndex].staCountInfo[0];
         for (stationIndex = 0; stationIndex < RPP_MAX_STA_PER_RADIO; stationIndex++, stainfo++) {
@@ -813,7 +832,7 @@ int32_t rpp_session_cleanup()
             stainfo->staRoamTrialCount = 0;
         }
     }
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         pthread_mutex_unlock( &assocStatLock[radioIndex] );
     }
     pthread_mutex_lock( &staProcessLock );
@@ -852,7 +871,7 @@ int32_t rpp_session_cleanup()
     /*re-initialization of gsetModeInfo structure*/
     /*Also checking and deleting the ath interface*/
     /*And also checking and deleting the mon interface and process*/
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         gsetModeInfo[radioIndex].modeVal = 0;
         gsetModeInfo[radioIndex].captype = 0;
         gsetModeInfo[radioIndex].filterexplen = 0;
@@ -904,7 +923,7 @@ int32_t rpp_session_cleanup()
         SYSLOG_PRINT(LOG_DEBUG, " initialization of gSphyBandData structure structure.\n");
         gSphyBandData[radioIndex].freqband = 0xff;
         gSphyBandData[radioIndex].chwidth = 0;
-        gSphyBandData[radioIndex].bw160nssworkaround = DEFAULT_NSS;
+        gSphyBandData[radioIndex].bw160nssworkaround  = false;
         gSphyBandData[radioIndex].is11kEnable = false;
         gSphyBandData[radioIndex].is11ktriggered = false;
         gSphyBandData[radioIndex].is11vEnable = false;
@@ -930,7 +949,7 @@ int32_t rpp_session_cleanup()
     pthread_mutex_unlock( &staProcessLock );
 
     // Close wpa control interface connection
-    for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+    for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
         pthread_mutex_lock( &staAssocHdl[radioIndex].wpaCtrlLock);
         close_wpa_ctrl_conn(radioIndex);
         pthread_mutex_unlock( &staAssocHdl[radioIndex].wpaCtrlLock);
@@ -1052,7 +1071,7 @@ void *thread_get_stats(void *p_threadData)
 
 #if ENABLE_STATS_FROM_ETHTOOL_LIB
         /* This loop belongs to get the signal strength for mpsta and stored in local variable */
-        for (radioIndex = 0; radioIndex < RPP_NUM_OF_RADIO; radioIndex++) {
+        for (radioIndex = 0; radioIndex < rpp_num_of_radios; radioIndex++) {
             pthread_mutex_lock( &staProcessLock );
             /* Find the total number of stations */
             totalSta = rppStaHandle.totalCount;
@@ -1097,6 +1116,7 @@ void *thread_get_stats(void *p_threadData)
                 }
             }
 
+#ifndef RDP419 // RDP419 disable cca stats for now
             ethdump = calloc(1, WAL_CCA_CNTR_HIST_LEN * sizeof(pdev_stats_cca_counters) + sizeof(struct ethtool_dump));
             if (!ethdump) 
             {
@@ -1135,6 +1155,7 @@ void *thread_get_stats(void *p_threadData)
                 }
                 free(ethdump);
             }
+#endif
 
             numOfStats = get_stringsetlen(ctx, offsetof(struct ethtool_drvinfo, n_stats));
 
@@ -1217,11 +1238,9 @@ void *thread_get_stats(void *p_threadData)
                 temp_val = (int32_t)(ethstats->data[loop++]);
 	        rxChnBw = temp_val;
                 stats->chnbw = temp_val + RPP_APP_DEFNUM_ONE;
-                #ifndef THREE_RADIO
-                if (stats->chnbw == RPP_APP_DEFNUM_FOUR) {
+                if (!IS_THREE_RADIO_PROFILE && stats->chnbw == RPP_APP_DEFNUM_FOUR) {
                     stats->chnbw = RPP_APP_DEFNUM_FIVE;  /*Report 160 instead of 80+80 */
                 }
-                #endif
                 //txmcsindex and rxmcsindex changed to default -1 as 0 is valid MCS and +1 is added to matching enum with STC
                 temp_val = ethstats->data[loop++];
                 stats->txmcsindex = temp_val +1;
@@ -1319,14 +1338,14 @@ void *thread_get_stats(void *p_threadData)
 
 #ifdef ADVANCE_STATS
                 // SYSLOG_PRINT(LOG_DEBUG,"RI %d, SI %d, SN %d, WF %d \n", radioIndex, stationIndex, nbrOfStationsPerRadio, wifinum);
-                #ifdef THREE_RADIO
-                if(radioIndex == 2) {
-                    firstSMAindex = 4;
+                if (IS_THREE_RADIO_PROFILE) {
+                    if(radioIndex == 2) {
+                        firstSMAindex = 4;
+                    }
+                    else {
+                        firstSMAindex = 0;
+                    }
                 }
-                else {
-                    firstSMAindex = 0;
-                }
-                #endif
                 /* per nss tx counter  - ps_txpkts */
                 for (nssIndex = firstSMAindex; nssIndex < RPP_NUM_OF_NSS; nssIndex++) {
                     stats->ps_txpkts[nssIndex] = (uint64_t)ethstats->data[loop++];
@@ -1349,26 +1368,44 @@ void *thread_get_stats(void *p_threadData)
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_txpkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per mcstype rx counter */
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_rxpkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per mcstype tx su mcs counter */
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_txsupkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per mcstype rx su mcs counter */
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_rxsupkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per mcstype tx mu mcs counter */
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_txmupkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per mcstype rx mu mcs counter */
                 for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                     stats->pmcs_rxmupkts[mcsIndex] = (uint64_t)ethstats->data[loop++];
                 }
+#ifndef ENABLE_MCS12_13_STATS
+                loop += 2; // Driver stats already extended, skip it
+#endif
                 /* per GUI tx couter */
                 for (giIndex = 0; giIndex < RPP_NUM_OF_GI; giIndex++) {
                     stats->pgi_txpkts[giIndex] = (uint64_t)ethstats->data[loop++];
@@ -1379,6 +1416,9 @@ void *thread_get_stats(void *p_threadData)
                     for (mcsIndex = 0; mcsIndex < RPP_NUM_OF_MCS; mcsIndex++) {
                         stats->pgi_rxpkts[giIndex][mcsIndex] = (uint64_t)ethstats->data[loop++];
                     }
+#ifndef ENABLE_MCS12_13_STATS
+                    loop += 2; // Driver stats already extended, skip it
+#endif
                 }
                 /* per stream rssi */
                 for (bwIndex = 0; bwIndex < RPP_NUM_OF_BW; bwIndex++) {
@@ -2252,12 +2292,12 @@ int32_t rpp_get_phy_req (void)
 
     for (radioIndex = 0; radioIndex < noOfPhy; radioIndex++) {
         tempRadioIndex = radioIndex;
-#ifdef THREE_RADIO
-        if(radioIndex == 1)
-            tempRadioIndex = 2;
-        else if(radioIndex == 2)
-            tempRadioIndex = 1;
-#endif
+        if (IS_THREE_RADIO_PROFILE) {
+            if(radioIndex == 1)
+                tempRadioIndex = 2;
+            else if(radioIndex == 2)
+                tempRadioIndex = 1;
+        }
         //wlanconfig ath0 create wlandev wifi0 wlanmode sta
         system_cmd_set_f("wlanconfig staX%d create wlandev wifi%d wlanmode sta ", radioIndex, radioIndex);
 
@@ -2278,29 +2318,39 @@ int32_t rpp_get_phy_req (void)
 
         /* Find supported band(for 2.4 GHz is is 0 and for 5 GHz it is 1) */
         rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwconfig staX%d | grep \"Frequency:\" | cut -d \":\" -f 3 | cut -d \" \" -f 1",radioIndex);
-        freqValue = atoi(tempBuf);
-
-        if (freqValue >= 2 && freqValue < 3)
+        freqValue = atof(tempBuf) * 1000;
+        if (freqValue >= 2000 && freqValue < 3000) {
             phys[tempRadioIndex].supportedbands = FREQBAND_2_4_GHz;
-        else if (freqValue >= 5 && freqValue < 6)
+            gSphyBandData[radioIndex].freqband = FREQ_BAND_2_4_GHZ;
+        } else if (freqValue >= 5000 && freqValue < 5925) {
             phys[tempRadioIndex].supportedbands = FREQBAND_5_0_GHz;
-
-        /* To validate the applicable band support when setting the phy cfg */
-        gSphyBandData[radioIndex].freqband = phys[radioIndex].supportedbands + 1;
+            gSphyBandData[radioIndex].freqband = FREQ_BAND_5_0_GHZ;
+        } else if (freqValue >= 5925 && freqValue <= 7125) {
+            phys[tempRadioIndex].supportedbands = FREQBAND_6_0_GHz;
+            gSphyBandData[radioIndex].freqband = FREQ_BAND_6_0_GHZ;
+        } else {
+            gSphyBandData[radioIndex].freqband = FREQ_BAND_AUTO;
+            SYSLOG_PRINT(LOG_ERR,"ERR_MSG------->staX%d invalid supported band for frequency: %d MHz (string: %s)", radioIndex, freqValue, tempBuf);
+            continue;
+        }
         SYSLOG_PRINT(LOG_DEBUG,"\nDEBUG_MSG------->staX%d supported band = %d", radioIndex, phys[tempRadioIndex].supportedbands);
 
         /* Find capabilities(i.e HtCapabilities) */
+        set_phy_mode_ht = NULL;
+        set_phy_mode_vht = NULL;
+        set_phy_mode_he = NULL;
         rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u %s", radioIndex, GET_PHY_MODE);
         if (phys[tempRadioIndex].supportedbands == FREQBAND_5_0_GHz) {
             if ((strstr(tempBuf,"AUTO") != NULL) || (strstr(tempBuf,"11A") != NULL)) {
-               set_phy_mode_ht = "11NAHT40";
-               set_phy_mode_vht = "11ACVHT160";
-               set_phy_mode_he = " 11AHE80_80";
-#ifdef THREE_RADIO
-               set_phy_mode_vht = "11ACVHT80";
-               set_phy_mode_he = " 11AHE80";  //for 3-radio, 4X4 is supported
-#endif
-               he_index = RPP_APP_DEFNUM_ONE;
+                set_phy_mode_ht = "11NAHT40";
+                if (IS_THREE_RADIO_PROFILE) {
+                    set_phy_mode_vht = "11ACVHT80";
+                    set_phy_mode_he = " 11AHE80";  //for 3-radio, 4X4 is supported
+                } else {
+                    set_phy_mode_vht = "11ACVHT160";
+                    set_phy_mode_he = " 11AHE80_80";
+                }
+                he_index = RPP_APP_DEFNUM_ONE;
             }
         } else if (phys[tempRadioIndex].supportedbands == FREQBAND_2_4_GHz) {
             if ((strstr(tempBuf,"AUTO") != NULL) || (strstr(tempBuf,"11B") != NULL)) {
@@ -2308,20 +2358,30 @@ int32_t rpp_get_phy_req (void)
                 set_phy_mode_he = "11GHE40";
                 he_index = 0;
             }
+        } else if (phys[tempRadioIndex].supportedbands == FREQBAND_6_0_GHz) {
+            if ((strstr(tempBuf,"AUTO") != NULL) || (strstr(tempBuf,"11A") != NULL)) {
+                /* The wlanmgrd is no more use the capability, skip phy capability for 6 GHz radio */
+                // set_phy_mode_he = AUTO_PHY_6G;
+                // he_index = RPP_APP_DEFNUM_TWO;
+            }
         }
 
-        system_cmd_set_f("iwpriv staX%d mode %s", radioIndex, set_phy_mode_ht);
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d get_mode", radioIndex);
-        //SYSLOG_PRINT(LOG_DEBUG, "Mode : %s\n",tempBuf);
+        // HT capability
+        if (set_phy_mode_ht != NULL) {
+            system_cmd_set_f("iwpriv staX%d mode %s", radioIndex, set_phy_mode_ht);
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d get_mode", radioIndex);
+            //SYSLOG_PRINT(LOG_DEBUG, "Mode : %s\n",tempBuf);
 
-        /* Find capabilities(i.e VhtCapabilities) */
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d %s", radioIndex, GET_PHY_HTCAP);
-        sscanf (tempBuf, "%hd", (uint16_t *)&phys[tempRadioIndex].htcap[he_index]);
+            /* Find capabilities(i.e VhtCapabilities) */
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d %s", radioIndex, GET_PHY_HTCAP);
+            sscanf (tempBuf, "%hd", (uint16_t *)&phys[tempRadioIndex].htcap[he_index]);
 
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].htcap[0] = 0x%x", radioIndex, phys[tempRadioIndex].htcap[0]);
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].htcap[RPP_APP_DEFNUM_ONE] = 0x%x", radioIndex, phys[tempRadioIndex].htcap[RPP_APP_DEFNUM_ONE]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].htcap[0] = 0x%x", radioIndex, phys[tempRadioIndex].htcap[0]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].htcap[RPP_APP_DEFNUM_ONE] = 0x%x", radioIndex, phys[tempRadioIndex].htcap[RPP_APP_DEFNUM_ONE]);
+        }
 
-        if (phys[tempRadioIndex].supportedbands != FREQBAND_2_4_GHz) {
+        // VHT capability
+        if (set_phy_mode_vht != NULL) {
             system_cmd_set_f("iwpriv staX%d mode %s", radioIndex, set_phy_mode_vht);
             rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d get_mode", radioIndex);
             rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u %s", radioIndex, GET_PHY_VHTCAP);
@@ -2333,49 +2393,53 @@ int32_t rpp_get_phy_req (void)
                 phys[tempRadioIndex].vhtcap[RPP_APP_DEFNUM_ONE]);
         }
 
-        system_cmd_set_f("iwpriv staX%d mode %s", radioIndex, set_phy_mode_he);
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d get_mode", radioIndex);
-        //SYSLOG_PRINT(LOG_DEBUG, "Mode : %s\n",tempBuf);
+        // HE capability
+        if (set_phy_mode_he) {
+            system_cmd_set_f("iwpriv staX%d mode %s", radioIndex, set_phy_mode_he);
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d get_mode", radioIndex);
+            //SYSLOG_PRINT(LOG_DEBUG, "Mode : %s\n",tempBuf);
 
-        /*Getting HeMac capabilities*/
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hemac_low | grep \"g_hemac_low\" | cut -d \":\" -f 2", radioIndex);
-        low_he = atoi(tempBuf);
+            /*Getting HeMac capabilities*/
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hemac_low | grep \"g_hemac_low\" | cut -d \":\" -f 2", radioIndex);
+            low_he = atoi(tempBuf);
 
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hemac_high | grep \"g_hemac_high\" | cut -d \":\" -f 2", radioIndex);
-        high_he = atoi(tempBuf);
-        /*TODO what are we doing with the high bit */
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hemac_high | grep \"g_hemac_high\" | cut -d \":\" -f 2", radioIndex);
+            high_he = atoi(tempBuf);
+            /*TODO what are we doing with the high bit */
 
-        phys[tempRadioIndex].hemaccap[he_index] = ((phys[tempRadioIndex].hemaccap[he_index] << 32) | low_he);
+            phys[tempRadioIndex].hemaccap[he_index] = ((phys[tempRadioIndex].hemaccap[he_index] << 32) | low_he);
 
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hemaccap[0] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hemaccap[0]);
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hemaccap[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hemaccap[RPP_APP_DEFNUM_ONE]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hemaccap[0] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hemaccap[0]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hemaccap[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hemaccap[RPP_APP_DEFNUM_ONE]);
 
-        /*Getting HePhy capabilities*/
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hephy_0 | grep \"g_hephy_0\" | cut -d \":\" -f 2", radioIndex);
-        low_he = atoi(tempBuf);
+            /*Getting HePhy capabilities*/
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hephy_0 | grep \"g_hephy_0\" | cut -d \":\" -f 2", radioIndex);
+            low_he = atoi(tempBuf);
 
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d g_hephy_1 | grep \"g_hephy_1\" | cut -d \":\" -f 2", radioIndex);
-        high_he = atoi(tempBuf);
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d g_hephy_1 | grep \"g_hephy_1\" | cut -d \":\" -f 2", radioIndex);
+            high_he = atoi(tempBuf);
 
-        phys[tempRadioIndex].hephycaplow[he_index] = high_he;
-        phys[tempRadioIndex].hephycaplow[he_index] = ((phys[tempRadioIndex].hephycaplow[he_index] << 32) | low_he);
+            phys[tempRadioIndex].hephycaplow[he_index] = high_he;
+            phys[tempRadioIndex].hephycaplow[he_index] = ((phys[tempRadioIndex].hephycaplow[he_index] << 32) | low_he);
 
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaplow[0] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hephycaplow[0]);
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaplow[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hephycaplow[RPP_APP_DEFNUM_ONE]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaplow[0] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hephycaplow[0]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaplow[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hephycaplow[RPP_APP_DEFNUM_ONE]);
 
-        rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hephy_2 | grep \"g_hephy_2\" | cut -d \":\" -f 2", radioIndex);
-        low_he = atoi(tempBuf);
+            rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%u g_hephy_2 | grep \"g_hephy_2\" | cut -d \":\" -f 2", radioIndex);
+            low_he = atoi(tempBuf);
 
-        phys[tempRadioIndex].hephycaphigh[he_index] = low_he;
+            phys[tempRadioIndex].hephycaphigh[he_index] = low_he;
 
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaphigh[0] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hephycaphigh[0]);
-        SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaphigh[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
-            phys[tempRadioIndex].hephycaphigh[RPP_APP_DEFNUM_ONE]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaphigh[0] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hephycaphigh[0]);
+            SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].hephycaphigh[RPP_APP_DEFNUM_ONE] = 0x%lx", radioIndex,
+                phys[tempRadioIndex].hephycaphigh[RPP_APP_DEFNUM_ONE]);
+        }
+
         /* Find max number of spatial streams(MaxNSS) supported  */
         //iwpriv ath0 get_nss |grep "get_nss" | cut -d  ":" -f 2
         rc = system_cmd_get_f(tempBuf, sizeof(tempBuf), "iwpriv staX%d %s", radioIndex, GET_PHY_MAXNSS);
@@ -2389,10 +2453,12 @@ int32_t rpp_get_phy_req (void)
         phys[tempRadioIndex].maxsta = atoi(tempBuf);
 
         SYSLOG_PRINT(LOG_DEBUG, "\nDEBUG_MSG------->phys[%d].maxsta = %d", radioIndex, phys[tempRadioIndex].maxsta);
-        gPhyHandle[radioIndex] = radioIndex;
-#ifdef THREE_RADIO
-        gPhyHandle[radioIndex]=phys[radioIndex].handle;
-#endif
+        if (IS_THREE_RADIO_PROFILE) {
+            gPhyHandle[radioIndex]=phys[radioIndex].handle;
+        } else {
+            gPhyHandle[radioIndex] = radioIndex;
+        }
+
         /*Enable the OL stats.*/
         //iwpriv wifi0 enable_ol_stats 1
         system_cmd_set_f("iwpriv wifi%d enable_ol_stats 1", radioIndex);
@@ -2539,7 +2605,7 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
         system_cmd_set_f("iwpriv %s%d he_rxmcsmap 0x%x", infName, staNode, computedHeRxmcsVal);
         system_cmd_set_f("iwpriv %s%d he_txmcsmap 0x%x", infName, staNode, computedHeTxmcsVal);
         system_cmd_set_f("iwpriv %s%d he_mcs 0x%x", infName, staNode, txFixedMcs);
-        //}
+        
         /* Enable VHT MCS 10-11 if Supported HEMCS set as 0-11 in GUI, else disable. MCS 0-9 are already enabled in rpp_set_supported_hemcs for this case */
         /* VHT MCS 10-11 command at the driver level would enable/disable HE MCS 10-11 as well */
         if (phyCfg->supportedhemcsset >= HERxMCS_0_11) {
@@ -2616,11 +2682,11 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
             if (phyCfg->flags & (1<<count))
                 bitcount++ ;
         }
-        #ifndef THREE_RADIO
+        if (!IS_THREE_RADIO_PROFILE) {
            numOfBwOptions = 4;  //For 5G Radio 2 radio mode- BW 20/40/80/160
-        #else
+        } else {
            numOfBwOptions = 3; //For 5G Radio 3 radio mode -BW 20/40/80
-        #endif
+        }
         if (bitcount == numOfBwOptions) {
             system_cmd_set_f("iwpriv %s%d cwmenable 1",  infName, staNode);
         }
@@ -2884,6 +2950,27 @@ int32_t rpp_set_phy_req (int8_t *buf)
 }
 
 /******************************************************************************
+ * Function Name    : get_phy_mode_str
+ * Description      : This Function is used to get phy mode string by phy handle and preamble type.
+ ******************************************************************************/
+const char *get_phy_mode_str(uint32_t phyhandle, uint8_t preambleType)
+{
+#ifdef RDP419
+    if (phyhandle == 0) 
+#else
+    if ((phyhandle == 0) || (phyhandle == RPP_APP_DEFNUM_TWO)) 
+#endif
+        return phyMapping_5G[preambleType][gSphyBandData[phyhandle].chwidth];
+    else if (phyhandle == RPP_APP_DEFNUM_ONE)
+        return phyMapping_2G[preambleType][gSphyBandData[phyhandle].chwidth];
+#ifdef RDP419
+    else if (phyhandle == RPP_APP_DEFNUM_TWO)
+        return phyMapping_6G[preambleType][gSphyBandData[phyhandle].chwidth];
+#endif
+    return NULL;
+}
+
+/******************************************************************************
  * Function Name    : rpp_add_station_req
  * Description      : This Function is used to add the station.
  ******************************************************************************/
@@ -3043,10 +3130,9 @@ int32_t rpp_add_station_req (int8_t *buf)
         system_cmd_set_f("iwpriv sta%u mode AUTO", sta);
         //This is moved at top as chwidth gets calculated here, needed for no proxy mode
         rc = rpp_configure_phy_settings(&addStaPhyData[staCfg->phyhandle], "sta", sta, staCfg->protocolrate);
-        if ((staCfg->phyhandle == 0) || (staCfg->phyhandle == RPP_APP_DEFNUM_TWO)) {
-            system_cmd_set_f("iwpriv sta%u mode %s", sta, phyMapping_5G[staCfg->protocolrate][gSphyBandData[staCfg->phyhandle].chwidth]);
-        } else if (staCfg->phyhandle == RPP_APP_DEFNUM_ONE) {
-            system_cmd_set_f("iwpriv sta%u mode %s", sta, phyMapping_2G[staCfg->protocolrate][gSphyBandData[staCfg->phyhandle].chwidth]);
+        const char *phyMode = get_phy_mode_str(staCfg->phyhandle, staCfg->protocolrate);
+        if (phyMode != NULL) {
+            system_cmd_set_f("iwpriv sta%u mode %s", sta, phyMode);
         }
         /* Set GIMode */
         //iwpriv sta0 shortgi 1 // 0: GI High 1: GI SHORT
@@ -3119,12 +3205,9 @@ int32_t rpp_add_station_req (int8_t *buf)
                 //Setting default mode as auto to avoid any invalid mode configurations and falling back to 11a
                 system_cmd_set_f("iwpriv staX%u mode AUTO", staCfg->phyhandle);
                 /* Setting Legacy mode for Proxy stations */
-                if ((staCfg->phyhandle == 0) || (staCfg->phyhandle == RPP_APP_DEFNUM_TWO)) {
-                    system_cmd_set_f("iwpriv staX%u mode %s", staCfg->phyhandle,
-                        phyMapping_5G[staCfg->protocolrate][gSphyBandData[staCfg->phyhandle].chwidth]);
-                } else if (staCfg->phyhandle == RPP_APP_DEFNUM_ONE){
-                    system_cmd_set_f("iwpriv staX%u mode %s", staCfg->phyhandle,
-                        phyMapping_2G[staCfg->protocolrate][gSphyBandData[staCfg->phyhandle].chwidth]);
+                const char *phyMode = get_phy_mode_str(staCfg->phyhandle, staCfg->protocolrate);
+                if (phyMode != NULL) {
+                    system_cmd_set_f("iwpriv staX%u mode %s", staCfg->phyhandle, phyMode);
                 }
                 /* Set GIMode for proxy station*/
                 system_cmd_set_f("iwpriv staX%u shortgi %d", staCfg->phyhandle, sgiForMpsta);

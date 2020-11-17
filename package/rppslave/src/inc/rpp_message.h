@@ -4,11 +4,17 @@
 #include "spirent.h"
 #include "rpp_header.h"
 
+// #define ENABLE_MCS12_13_STATS
+
 #define ENABLE_STATS_FROM_ETHTOOL_LIB  1
 #define RPP_NUM_OF_NSS 8
 #define RPP_NUM_OF_BW 4
 #define RPP_NUM_OF_GI 4
+#ifdef ENABLE_MCS12_13_STATS
+#define RPP_NUM_OF_MCS 14
+#else
 #define RPP_NUM_OF_MCS 12
+#endif
 
 #if ENABLE_STATS_FROM_ETHTOOL_LIB
 #include <stddef.h>
@@ -410,20 +416,20 @@ typedef struct {
     uint64_t pcw_rxpkts[RPP_NUM_OF_BW]; //0: 20Mhz; 1:40Mhz, 2:80Mhz, 3:80+80/160Mhz
 
     // per mcstype tx/rx counter
-    uint64_t pmcs_txpkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC11
-    uint64_t pmcs_rxpkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS11
+    uint64_t pmcs_txpkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC13
+    uint64_t pmcs_rxpkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS13
 
     // per mcstype tx/rx su-mimo counter
-    uint64_t pmcs_txsupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC11
-    uint64_t pmcs_rxsupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS11
+    uint64_t pmcs_txsupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC13
+    uint64_t pmcs_rxsupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS13
 
     // per mcstype tx/rx mu-mimo counter
-    uint64_t pmcs_txmupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC11
-    uint64_t pmcs_rxmupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS11
+    uint64_t pmcs_txmupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MSC13
+    uint64_t pmcs_rxmupkts[RPP_NUM_OF_MCS]; //MCS0 ~ MCS13
 
     // per GUI tx/rx couter
     uint64_t pgi_txpkts[RPP_NUM_OF_GI]; //0: 400ns; 1: 800ns; 2: 1600ns; 3: 3200ns [400ns~3200ns][MCS0~MCS11]
-    uint64_t pgi_rxpkts[RPP_NUM_OF_GI][RPP_NUM_OF_MCS]; //0: 400ns; 1: 800ns; 2: 1600ns; 3: 3200ns [400ns~3200ns][MCS0~MCS11]
+    uint64_t pgi_rxpkts[RPP_NUM_OF_GI][RPP_NUM_OF_MCS]; //0: 400ns; 1: 800ns; 2: 1600ns; 3: 3200ns [400ns~3200ns][MCS0~MCS13]
     uint32_t  bsscolorcollisioncounter;
     uint8_t  bsscolorcode;
     uint8_t txppdutype;
@@ -639,7 +645,10 @@ enum PhyFreqBand {
     FREQBAND_2_4_GHz = 0,
     FREQBAND_5_0_GHz,
     FREQBAND_5_0_GHz_2,
-    FREQBAND_60_GHz
+    FREQBAND_60_GHz,
+#ifdef RDP419
+    FREQBAND_6_0_GHz
+#endif
 };
 
 enum GetPhyErrCode{
@@ -650,10 +659,10 @@ enum GetPhyErrCode{
 };
 
 enum FreqBand {
-    FREQBAND_DUALBAND,
-    FREQBAND_2_4_GHZ = 1,
-    FREQBAND_5_0_GHZ,
-    FREQBAND_5_0_GHZ_2,
+    FREQ_BAND_AUTO = 0, 
+    FREQ_BAND_2_4_GHZ,
+    FREQ_BAND_5_0_GHZ,
+    FREQ_BAND_6_0_GHZ
 };
 
 enum PhyIntfCfgReqErrorCode {
