@@ -304,6 +304,8 @@ static int init_deinit_service_ext_ready_event_handler(ol_scn_t scn_handle,
 	if (err_code)
 		goto exit;
 
+    printk("NIC_79 current_mode is %d",info->preferred_hw_mode);
+
 	if (init_deinit_is_preferred_hw_mode_supported(psoc, tgt_hdl)
 			== FALSE) {
 		target_if_err("Preferred mode %d not supported",

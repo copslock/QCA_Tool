@@ -3926,7 +3926,8 @@ detect_qcawifi() {
 					prefer_hw_mode_id=3;;
 			esac
 			if [ $hw_mode_detect == 1 ]; then
-				update_internal_ini $ini_file hw_mode_id "$prefer_hw_mode_id"
+				#update_internal_ini $ini_file hw_mode_id "$prefer_hw_mode_id"
+                echo "Skip update new preder mode"
 			fi
 		fi
 	done
