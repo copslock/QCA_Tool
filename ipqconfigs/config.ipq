@@ -4370,6 +4370,11 @@ CONFIG_POSTFIX_CDB=y
 # CONFIG_PACKAGE_ssmtp is not set
 
 #
+# monitor
+#
+CONFIG_PACKAGE_monitor=y
+
+#
 # Multimedia
 #
 

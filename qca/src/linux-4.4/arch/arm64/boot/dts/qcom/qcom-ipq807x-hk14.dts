@@ -912,7 +912,7 @@
 #endif
 	caldb-size = <0x800000>;
 	board_id = <0xa2>;
-	status = "disabled";
+	status = "ok";
 #if defined(__CNSS2__)
 	pcie0_mhi: pcie0_mhi {
 		status = "ok";
