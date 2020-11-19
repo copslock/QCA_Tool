@@ -357,6 +357,16 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STA_11AX_UL_STATS = 33,
 
+    /* HTT_DBG_EXT_VDEV_RTT_RESP_STATS
+     * PARAMS:
+     *   - config_param0:
+     *      [Bit7 : Bit0]   vdev_id:8
+     *      [Bit31 : Bit8]  rsvd:24
+     * RESP MSG:
+     *   -
+     */
+    HTT_DBG_EXT_VDEV_RTT_RESP_STATS = 34,
+
 #if defined(PORT_SPIRENT_HK) && defined(SPT_ADV_STATS)
     /* HTT_DBG_EXT_CAPTURE_STATUS
      * PARAMS:
@@ -364,14 +374,14 @@ enum htt_dbg_ext_stats_type {
      * RESP MSG:
      *   - No Params
      */
-    HTT_DBG_EXT_CAPTURE_STATUS = 34,
+    HTT_DBG_EXT_CAPTURE_STATUS = 35,
  
     /* For BSS Color State Set */
-    HTT_DBG_EXT_BSS_STATUS = 35,
+    HTT_DBG_EXT_BSS_STATUS = 36,
     /* For BSS Colision Count */
-    HTT_DBG_EXT_BSS_COLLISION_COUNTER = 36,
+    HTT_DBG_EXT_BSS_COLLISION_COUNTER = 37,
     /* For BSS Color Request */
-    HTT_DBG_EXT_BSS_COLOR_REQUEST = 37,
+    HTT_DBG_EXT_BSS_COLOR_REQUEST = 38,
 #endif
     /* keep this last */
     HTT_DBG_NUM_EXT_STATS = 256,
