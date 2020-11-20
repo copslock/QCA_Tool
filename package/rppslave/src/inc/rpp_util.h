@@ -21,4 +21,6 @@ char* util_mac_addr_to_str(uint8_t* addr);
 
 uint8_t util_str_to_mac_addr(const char* str, uint8_t* macValue);
 
+uint8_t util_is_intf_online(const char* intfName);
+
 #endif /* _RPP_UTIL_H_ */

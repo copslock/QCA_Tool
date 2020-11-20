@@ -121,3 +121,19 @@ uint8_t util_str_to_mac_addr(const char* addr, uint8_t* values)
     else
         return 0;
 }
+
+/******************************************************************************
+ * Function Name    : util_is_intf_online
+ * Description      : Return 1 when interface is online
+ ******************************************************************************/
+uint8_t util_is_intf_online(const char* intfName)
+{
+#define INF_UP_STR "unknown"
+    char buf[32];
+    system_cmd_get_f(buf, sizeof(buf), "cat /sys/class/net/%s/operstate", intfName);
+    /* When interface is up, in /sys/class/net/<intfName>/operstate will show 'unknown' */
+    if (strlen(buf) && (strncmp(buf, INF_UP_STR, strlen(INF_UP_STR)) == 0)) {
+        return 1;
+    }
+    return 0;
+}

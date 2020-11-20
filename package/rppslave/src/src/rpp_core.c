@@ -125,6 +125,14 @@ typedef enum {
     WIFI2_4G_MAX
 }eWifi2_4GBW;
 
+typedef enum {
+    WIFI6G_160MHZ = 0,
+    WIFI6G_80MHZ,
+    WIFI6G_40MHZ,
+    WIFI6G_20MHZ,
+    WIFI6G_MAX
+}eWifi6GBW;
+
 uint32_t wifi5gbw[][30] = {{50, 114}, {42, 58, 106, 122, 138, 155},
                 {38, 46, 54, 62, 102, 110, 118, 126, 134, 142, 151, 159},
                 {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
@@ -138,6 +146,19 @@ uint32_t wifi2_4gbw[][30] = {{50, 114}, {42, 58, 106, 122, 138, 155},
                 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165}};
 
 char wifi2_4Garrsize[] = {2, 6, 12, 25};
+
+uint32_t wifi6gbw[][60] = {
+                    {15, 47, 79, 111, 143, 175, 207}, 
+                    {7, 23, 39, 55, 71, 87, 103, 119, 135, 151, 167, 183, 199, 215},
+                    {3, 11, 19, 27, 35, 43, 51, 59, 67, 75, 83, 91, 99, 107, 115, 123, 
+                    131, 139, 147, 155, 163, 171, 179, 187, 195, 203, 211, 219, 227},
+                    {1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 65, 
+                    69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 
+                    129, 133, 137, 141, 145, 149, 153, 157, 161, 165, 169, 173, 177, 181, 
+                    185, 189, 193, 197, 201, 205, 209, 213, 217, 221, 225, 229, 233}
+                };
+
+char wifi6Garrsize[] = {7, 14, 29, 59};
 
 typedef struct {
     uint8_t TxpowerStatus;
@@ -4143,11 +4164,18 @@ int32_t rpp_capturemode_req(int8_t *buf)
 
 	    //New command added to fix issue regular capture acting as sniffer, for sniffer value is 0, regular its 1
             system_cmd_set_f("iwpriv %s set_cap_mode %d",infName,captureMode - 1);
+
+            uint8_t infIsOnline = util_is_intf_online(infName);
             /* We need to make it monitor interface up */
             system_cmd_set_f("ifconfig %s up",infName);
 
             if( RppPhyCaptureHdl[capCtrlReq->phyhandle].captureMode == SNIFFER_MODE ) {
                 system_cmd_set_f("iwpriv %s chwidth %d", infName, RppPhyCaptureHdl[capCtrlReq->phyhandle].snifferMode_chwidth);
+
+                // Interface just start, wait 1 second before configure freq
+                if (!infIsOnline) {
+                    usleep(1000 * 1000);
+                }
 
                 /* Configure the ctl_freq */
                 rc = rpp_configure_freq_settings(infName, RppPhyCaptureHdl[capCtrlReq->phyhandle].snifferMode_ctl_freq, RPP_APP_DEFNUM_TWO, capCtrlReq->phyhandle);
@@ -4512,6 +4540,7 @@ int32_t rpp_calculate_prevchannel_value(int32_t fValue, uint8_t phyHandle)
     int32_t bwIndex = 0;
     int32_t channelIndex = 0;
     uint8_t setChannelIdx = 0;
+    int32_t prevFValue = 0;
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_calculate_prevchannel_value_fun()_start");
 
     if (phyHandle == RPP_APP_DEFNUM_ONE) {
@@ -4528,8 +4557,32 @@ int32_t rpp_calculate_prevchannel_value(int32_t fValue, uint8_t phyHandle)
         }
         channelNum = wifi2_4gbw[bwIndex][channelIndex - RPP_APP_DEFNUM_ONE];
         if (channelNum != 0) {
-            return ((channelNum * 5) + 5000);
+            prevFValue = ((channelNum * 5) + 5000);
         }
+#ifdef RDP419
+    } if (phyHandle == RPP_APP_DEFNUM_TWO) {
+        channelNum = (fValue - 5940) / 5;
+        for (bwIndex = 0; bwIndex < WIFI6G_MAX; bwIndex++) {
+            for (channelIndex = 0; channelIndex < wifi6Garrsize[bwIndex]; channelIndex++) {
+                if(channelNum == wifi6gbw[bwIndex][channelIndex]) {
+                    setChannelIdx = RPP_APP_DEFNUM_ONE;
+                    break;
+                }
+            }
+            if (setChannelIdx)
+                break;
+        }
+
+        if (setChannelIdx) {
+            /* Convert 6GHz bandwidth 40/80/160 MHz frequency to 20 MHz frequency by divide input frequency
+                - 160 MHz divide by 70 MHz
+                - 80 MHz divide by 30 MHz
+                - 40 MHz divide by 10 MHz
+             */
+            static int32_t divideFreq[] = {70, 30, 10, 0};
+            prevFValue = fValue - divideFreq[bwIndex];
+        }
+#endif
     } else {
         channelNum = (fValue - 2412) / 5;
         channelNum -= 5;
@@ -4546,11 +4599,12 @@ int32_t rpp_calculate_prevchannel_value(int32_t fValue, uint8_t phyHandle)
         }
         channelNum = wifi2_4gbw[bwIndex][channelIndex - RPP_APP_DEFNUM_ONE];
         if (channelNum != 0) {
-            return (((channelNum - 1) * 5) + 2412);
+            prevFValue = (((channelNum - 1) * 5) + 2412);
         }
     }
+    SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->Input frequency: %d got previous frequency: %d", fValue, prevFValue);
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_calculate_prevchannel_value_fun()_exit");
-    return 0;
+    return prevFValue;
 }
 
 /******************************************************************************
@@ -4691,6 +4745,7 @@ int32_t rpp_setmode_req (int8_t *buf)
             }
             //New command added to fix issue regular capture acting as sniffer, for sniffer value is 0, regular its 1
             system_cmd_set_f("iwpriv %s set_cap_mode %d",infName,setmodeReq->mode - 1);
+            uint8_t infIsOnline = util_is_intf_online(infName);
             /* We need to make it monitor interface up */
             system_cmd_set_f("ifconfig %s up", infName);
             system_cmd_set_f("iwpriv %s chwidth %d", infName, setmodeReq->bw);
@@ -4698,6 +4753,10 @@ int32_t rpp_setmode_req (int8_t *buf)
             RppPhyCaptureHdl[setmodeReq->phyhandle].snifferMode_ctl_freq = setmodeReq->ctl_freq;
             RppPhyCaptureHdl[setmodeReq->phyhandle].snifferMode_center_freq2 = setmodeReq->center_freq2;
 
+            // Interface just start, wait 1 second before configure freq
+            if (!infIsOnline) {
+                usleep(1000 * 1000);
+            }
             /* 4. Configure the ctl_freq */
             rc = rpp_configure_freq_settings(infName, setmodeReq->ctl_freq, RPP_APP_DEFNUM_TWO, setmodeReq->phyhandle);
 
