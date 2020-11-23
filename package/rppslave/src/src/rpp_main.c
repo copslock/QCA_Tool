@@ -208,7 +208,6 @@ int32_t rpp_slave_init()
         return -1;
     }
 
-#ifndef RDP419 // Modules not support for RDP419
     if(set_ipq_appln_bootup_status(0) == REVANCHE_IRET_SUCCESS) {        
         SYSLOG_PRINT(LOG_DEBUG, "DEBUG_MSG------->Writing ipq appln boot status success");
     } else {
@@ -222,7 +221,6 @@ int32_t rpp_slave_init()
         SYSLOG_PRINT(LOG_ERR, "ERR_MSG------->Boot Count Write FAIL%d",
             revanche_update_boot_count((revanche_inf_ecode_et *)&p_ecode));
     }
-#endif
 
     /* Initalize the rpp station handle structure */
     rpp_stahandle_init();

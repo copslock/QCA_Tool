@@ -1,0 +1,63 @@
+#!/bin/sh
+MaxFileSize=200
+MaxFileCount=5
+count=0
+loop=0
+totalCnt=0
+Index=0
+nxtIndex=0
+#DMESG_LOG_DIRECTORY=/log/ipq_log/dmesg_log
+RPPSLAVE_LOG_DIRECTORY=/log/ipq_log/rppslave_log
+
+#Finding the last(ls -lrt | head -n1 - First entry) updated file and total number of file counts
+if [ ! -d "$RPPSLAVE_LOG_DIRECTORY" ]; then
+  mkdir -p $RPPSLAVE_LOG_DIRECTORY
+fi
+
+#if [ ! -d "$DMESG_LOG_DIRECTORY" ]; then
+#  mkdir -p $DMESG_LOG_DIRECTORY
+#else
+#    totalCnt=$(ls -l $DMESG_LOG_DIRECTORY | wc -l)
+
+#    if  [ $totalCnt -ne 0 ]; then
+#    file=$(ls -lrt $DMESG_LOG_DIRECTORY | head -n1 | tr -s '\t' ' ' | cut -d ' ' -f9)
+#    while true
+#    do
+#        fname=dmesg_$loop.log
+#        if [[ "$fname" == "$file" ]]; then
+#                count=$((loop))
+#        break
+#        fi
+#        loop=$((loop+1))
+#   done
+#   fi
+#fi
+#Rotating the files based on file count
+#while true
+#do
+#    if [ -f "$DMESG_LOG_DIRECTORY/dmesg_0.log" ]; then
+#        file_size=`du -k $DMESG_LOG_DIRECTORY/dmesg_0.log | tr -s '\t' ' ' | cut -d' ' -f1`
+#        if [ $file_size -gt $MaxFileSize ]; then
+#            Index=$count
+#            while [ $Index -gt -1 ]
+#                do
+#                        nxtIndex=$((Index+1))
+#                        if [ $nxtIndex -lt $MaxFileCount ]; then
+#                                mv $DMESG_LOG_DIRECTORY/dmesg_$Index.log $DMESG_LOG_DIRECTORY/dmesg_$nxtIndex.log
+#                        fi
+#                        Index=$((Index-1))
+#                done
+#                if [ $count -gt $MaxFileCount ]; then
+#                count=5
+#                else
+#                count=$((count+1))
+#                fi
+#        else
+#        dmesg -c >> $DMESG_LOG_DIRECTORY/dmesg_0.log
+#        sync
+#        fi
+#    else
+#        dmesg -c >> $DMESG_LOG_DIRECTORY/dmesg_0.log
+#        sync
+#    fi
+#done
