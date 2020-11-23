@@ -4685,10 +4685,9 @@ detect_qcawificfg80211() {
 				*SBS:*)
 					prefer_hw_mode_id=3;;
 			esac
-			if [ $hw_mode_detect == 1 ] && [ -f /ini/internal/$ini_file ]; then
+			#if [ $hw_mode_detect == 1 ] && [ -f /ini/internal/$ini_file ]; then
 				#update_internal_ini $ini_file hw_mode_id "$prefer_hw_mode_id"
-                echo "skip update new preder mode"
-			fi
+			#fi
 		fi
 	done
 

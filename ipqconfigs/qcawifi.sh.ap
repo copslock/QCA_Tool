@@ -3329,10 +3329,9 @@ detect_qcawifi() {
 			esac
 		fi
 	done
-	if [ $hw_mode_detect == 1 ]; then
+	#if [ $hw_mode_detect == 1 ]; then
 		#update_internal_ini global_i.ini hw_mode_id "$prefer_hw_mode_id"
-        echo "Phanumart skip update new preder mode"
-	fi
+	#fi
 
 	[ -d wifi0 ] || return
 	for dev in $(ls -d wifi* 2>&-); do
