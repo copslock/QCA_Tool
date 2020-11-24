@@ -1140,7 +1140,6 @@ void *thread_get_stats(void *p_threadData)
                 }
             }
 
-#ifndef RDP419 // RDP419 disable cca stats for now
             ethdump = calloc(1, WAL_CCA_CNTR_HIST_LEN * sizeof(pdev_stats_cca_counters) + sizeof(struct ethtool_dump));
             if (!ethdump) 
             {
@@ -1179,7 +1178,6 @@ void *thread_get_stats(void *p_threadData)
                 }
                 free(ethdump);
             }
-#endif
 
             numOfStats = get_stringsetlen(ctx, offsetof(struct ethtool_drvinfo, n_stats));
 
