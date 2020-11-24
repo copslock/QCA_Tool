@@ -2525,6 +2525,7 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
     uint8_t nssCount = 0;
     uint8_t bw160nss = gSphyBandData[phyCfg->handle].bw160nssworkaround;
     uint8_t vhttxmcs = phyCfg->supportedvhtmcsset & HE_MCS_TX_POSN;
+    int8_t mcsIdMax = HE_MCS_ID_MAX;
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_configure_phy_settings_fun()_start");
 
     /* CfgNSS */
@@ -2555,6 +2556,15 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
             (phyCfg->freqband - RPP_APP_DEFNUM_ONE));*/
     }
 
+#ifdef RDP419
+    // Right now only allow mcs12-13 for 6 GHz radio (No 5GHz radio AP supported mcs 12-13)
+    if (phyCfg->freqband == FREQ_BAND_6_0_GHZ) {
+    // If interface support MCS12-13, use PINE_HE_MCS_ID_MAX instead
+    // if (util_is_mcs12_13_support(infName, staNode)) {
+        mcsIdMax = PINE_HE_MCS_ID_MAX;
+    }
+#endif
+
     //Confugure HT MCS
     if (protocolrate == PROTO_N) {
         /* Set HT mcs setting */
@@ -2579,7 +2589,7 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
         /* Set VHT mcs setting */
         SYSLOG_PRINT(LOG_DEBUG, "\n DEBUG_MSG-------> supportedvhtmcsset : 0x%x", phyCfg->supportedvhtmcsset);
 
-        rpp_set_supported_mcs(phyCfg->supportedvhtmcsset, nssCount, PROTO_AC, &computedVhtRxmcsVal,&computedVhtTxmcsVal, &txFixedMcs);
+        rpp_set_supported_mcs(phyCfg->supportedvhtmcsset, nssCount, PROTO_AC, mcsIdMax, &computedVhtRxmcsVal,&computedVhtTxmcsVal, &txFixedMcs);
         system_cmd_set_f("iwpriv %s%d conf_11acmcs 0x%x", infName, staNode, computedVhtRxmcsVal);
         system_cmd_set_f("iwpriv %s%d vht_txmcsmap 0x%x", infName, staNode, computedVhtTxmcsVal);
         system_cmd_set_f("iwpriv %s%d vhtmcs %d", infName, staNode, txFixedMcs);
@@ -2598,7 +2608,7 @@ int32_t rpp_configure_phy_settings(SetPhyReq *phyCfg, char *infName, int32_t sta
     if (protocolrate == PROTO_AX) {
             /* Set HE MCS setting */
         SYSLOG_PRINT(LOG_DEBUG, "\n DEBUG_MSG-------> supportedhemcsset : 0x%x", phyCfg->supportedhemcsset);
-        rpp_set_supported_mcs(phyCfg->supportedhemcsset, nssCount, PROTO_AX,&computedHeRxmcsVal,&computedHeTxmcsVal, &txFixedMcs);
+        rpp_set_supported_mcs(phyCfg->supportedhemcsset, nssCount, PROTO_AX, mcsIdMax, &computedHeRxmcsVal,&computedHeTxmcsVal, &txFixedMcs);
 
         system_cmd_set_f("iwpriv %s%d he_rxmcsmap 0x%x", infName, staNode, computedHeRxmcsVal);
         system_cmd_set_f("iwpriv %s%d he_txmcsmap 0x%x", infName, staNode, computedHeTxmcsVal);

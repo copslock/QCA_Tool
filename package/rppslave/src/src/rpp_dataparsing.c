@@ -297,7 +297,7 @@ int32_t rpp_set_supported_htmcs(uint16_t htmcsVal,  uint8_t nssCount, int32_t *c
  * Same function has been used to calculate for HE and VHT as inputs are coming similar, 
  * Based on mode differences are handled in calculation
 ******************************************************************************/
-int32_t rpp_set_supported_mcs(uint16_t mcsVal, uint8_t nssCount, int8_t protocolMode,int32_t *computedRxmcsVal, int32_t *computedTxmcsVal,int8_t *txFixedMcs)
+int32_t rpp_set_supported_mcs(uint16_t mcsVal, uint8_t nssCount, int8_t protocolMode, int8_t mcsIdMax, int32_t *computedRxmcsVal, int32_t *computedTxmcsVal,int8_t *txFixedMcs)
 {
     int32_t errCode = RPP_APP_RET_SUCCESS;
     uint8_t streamNum = 0;
@@ -310,7 +310,7 @@ int32_t rpp_set_supported_mcs(uint16_t mcsVal, uint8_t nssCount, int8_t protocol
     uint16_t heRxmcsVal =0;
     bool ulMcsSet = false;
     //Default value to disable fixed transmisison
-    *txFixedMcs = HE_MCS_ID_MAX;
+    *txFixedMcs = mcsIdMax;
     SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->rpp_set_supported_mcs_fun()_start");
 
     //As per new implementation of UI, Upper 6 bits will have Rxmcs and lower 6 will have Tx mcs, enums define din rpp_message.g

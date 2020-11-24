@@ -23,4 +23,6 @@ uint8_t util_str_to_mac_addr(const char* str, uint8_t* macValue);
 
 uint8_t util_is_intf_online(const char* intfName);
 
+uint8_t util_is_mcs12_13_support(const char* infName, uint8_t staNum);
+
 #endif /* _RPP_UTIL_H_ */

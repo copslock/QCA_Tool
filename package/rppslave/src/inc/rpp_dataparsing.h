@@ -40,6 +40,8 @@ typedef struct {
 
 extern gSphyBandInfo gSphyBandData[RPP_NUM_OF_RADIO];
 
+char * p_keyword(const char * buf, const char * kw);
+
 void rpp_stahandle_init(void);
 
 int32_t rpp_stahandle_process(uint32_t staHandle, uint8_t phy, uint8_t command,
@@ -52,7 +54,7 @@ int32_t rpp_set_supported_htmcs(uint16_t htmcsVal, uint8_t nssCount, int32_t *co
 
 int32_t rpp_compute_supportedrates(uint16_t supportedRateGet, float *supportedRateToSet);
 
-int32_t rpp_set_supported_mcs(uint16_t mcsVal, uint8_t nssCount, int8_t protocolMode, int32_t *computedRxmcsVal,int32_t *computedTxmcsVal,int8_t *txFixedMcs);
+int32_t rpp_set_supported_mcs(uint16_t mcsVal, uint8_t nssCount, int8_t protocolMode, int8_t mcsIdMax, int32_t *computedRxmcsVal,int32_t *computedTxmcsVal,int8_t *txFixedMcs);
 
 int32_t gen_fixed_rate_param(uint8_t preambleType, uint8_t nssVal, uint16_t mcsVal, int32_t *fixedRateVal);
 

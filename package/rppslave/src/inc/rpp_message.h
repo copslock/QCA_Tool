@@ -29,6 +29,7 @@
 
 #define radios 4
 #define HE_MCS_ID_MAX 12
+#define PINE_HE_MCS_ID_MAX 14
 
 #if ENABLE_STATS_FROM_ETHTOOL_LIB
 enum ethtool_stringset {

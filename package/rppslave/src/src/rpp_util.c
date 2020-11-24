@@ -1,5 +1,6 @@
 #include "rpp_core.h"
 #include "rpp_wpactrl_helper.h"
+#include "rpp_dataparsing.h"
 
 #define CERT_DIR_NAME "cert_wifi"
 
@@ -132,4 +133,22 @@ uint8_t util_is_intf_online(const char* intfName)
         return 1;
     }
     return 0;
+}
+
+/******************************************************************************
+ * Function Name    : util_is_mcs12_13_support
+ * Description      : Return 1 interface support for mcs12 and 13
+ ******************************************************************************/
+uint8_t util_is_mcs12_13_support(const char* infName, uint8_t staNum)
+{
+#define GET_MCS12_13_KEY_STR "g_mcs12_13_supp:"
+    uint8_t ret = 0;
+    char buf[64];
+    char *s_ptr;
+    system_cmd_get_f(buf, sizeof(buf), "iwpriv %s%d g_mcs12_13_supp", infName, staNum);
+    if (strstr(buf, GET_MCS12_13_KEY_STR) != NULL ) {
+        s_ptr = p_keyword(buf, GET_MCS12_13_KEY_STR);
+        ret = atoi(s_ptr);
+    }
+    return ret;
 }
