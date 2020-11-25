@@ -95,12 +95,12 @@ char *phyMapping_2G[][5] = { {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
 
 #ifdef RDP419
 #define AUTO_PHY_6G "11AHE160"
-char *phyMapping_6G[][5] = { {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
-                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
-                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
-                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
-                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
-                {AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G, AUTO_PHY_6G},
+char *phyMapping_6G[][5] = { {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
+                {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"},
                 {"11AHE20", "11AHE40", "11AHE80", "11AHE160", "11AHE160"} };
 #endif
 
@@ -2965,23 +2965,28 @@ int32_t rpp_set_phy_req (int8_t *buf)
 
 /******************************************************************************
  * Function Name    : get_phy_mode_str
- * Description      : This Function is used to get phy mode string by phy handle and preamble type.
+ * Description      : This Function is used to get phy mode string by frequeny band, phy handle and preamble type.
  ******************************************************************************/
-const char *get_phy_mode_str(uint32_t phyhandle, uint8_t preambleType)
+const char *get_phy_mode_str(uint32_t freqBand, uint32_t phyhandle, uint8_t preambleType)
 {
+    const char *phyMode = NULL;
 #ifdef RDP419
-    if (phyhandle == 0) 
+    if (freqBand == FREQ_BAND_5_0_GHZ) {
+        phyMode = phyMapping_5G[preambleType][gSphyBandData[phyhandle].chwidth];
+    } else if (freqBand == FREQ_BAND_2_4_GHZ) {
+        phyMode = phyMapping_2G[preambleType][gSphyBandData[phyhandle].chwidth];
+    } else if (freqBand == FREQ_BAND_6_0_GHZ) {
+        phyMode = phyMapping_6G[preambleType][gSphyBandData[phyhandle].chwidth];
+    }
 #else
-    if ((phyhandle == 0) || (phyhandle == RPP_APP_DEFNUM_TWO)) 
+    if ((phyhandle == 0) || (phyhandle == RPP_APP_DEFNUM_TWO)) {
+        phyMode = phyMapping_5G[preambleType][gSphyBandData[phyhandle].chwidth];
+    } else if (phyhandle == RPP_APP_DEFNUM_ONE) {
+        phyMode = phyMapping_2G[preambleType][gSphyBandData[phyhandle].chwidth];
+    }
 #endif
-        return phyMapping_5G[preambleType][gSphyBandData[phyhandle].chwidth];
-    else if (phyhandle == RPP_APP_DEFNUM_ONE)
-        return phyMapping_2G[preambleType][gSphyBandData[phyhandle].chwidth];
-#ifdef RDP419
-    else if (phyhandle == RPP_APP_DEFNUM_TWO)
-        return phyMapping_6G[preambleType][gSphyBandData[phyhandle].chwidth];
-#endif
-    return NULL;
+    SYSLOG_PRINT(LOG_DEBUG,"DEBUG_MSG------->freqBand: %d phyhandle: %d preambleType: %d got phy mode: %s", freqBand, phyhandle, preambleType, phyMode?phyMode:"-");
+    return phyMode;
 }
 
 /******************************************************************************
@@ -3144,7 +3149,7 @@ int32_t rpp_add_station_req (int8_t *buf)
         system_cmd_set_f("iwpriv sta%u mode AUTO", sta);
         //This is moved at top as chwidth gets calculated here, needed for no proxy mode
         rc = rpp_configure_phy_settings(&addStaPhyData[staCfg->phyhandle], "sta", sta, staCfg->protocolrate);
-        const char *phyMode = get_phy_mode_str(staCfg->phyhandle, staCfg->protocolrate);
+        const char *phyMode = get_phy_mode_str(gSphyBandData[staCfg->phyhandle].freqband, staCfg->phyhandle, staCfg->protocolrate);
         if (phyMode != NULL) {
             system_cmd_set_f("iwpriv sta%u mode %s", sta, phyMode);
         }
@@ -3219,7 +3224,7 @@ int32_t rpp_add_station_req (int8_t *buf)
                 //Setting default mode as auto to avoid any invalid mode configurations and falling back to 11a
                 system_cmd_set_f("iwpriv staX%u mode AUTO", staCfg->phyhandle);
                 /* Setting Legacy mode for Proxy stations */
-                const char *phyMode = get_phy_mode_str(staCfg->phyhandle, staCfg->protocolrate);
+                const char *phyMode = get_phy_mode_str(gSphyBandData[staCfg->phyhandle].freqband, staCfg->phyhandle, staCfg->protocolrate);
                 if (phyMode != NULL) {
                     system_cmd_set_f("iwpriv staX%u mode %s", staCfg->phyhandle, phyMode);
                 }
